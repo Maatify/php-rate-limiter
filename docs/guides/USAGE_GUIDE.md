@@ -274,7 +274,10 @@ This is Host code, not a package class, and it is not a complete logging policy:
 ## Integration Boundaries
 
 The package supplies the optional official `RedisFullCapabilityStore` for one logical
-non-clustered Redis server. Consumers selecting that store provide a
+non-clustered Redis server running **Redis 7.0 or newer**. Request-atomic storage
+uses `PEXPIRETIME`, Redis `TIME` for physical key expiry, and `redis.acl_check_cmd`
+before applying the write plan. See [Redis account permissions](../FAILURE_SEMANTICS.md#27-request-save-and-the-redis-acl).
+Consumers selecting that store provide a
 `RedisCommandExecutorInterface` implementation, such as
 `CallableRedisCommandExecutor`, backed by a Host-owned Redis client and connection
 lifecycle. Consumers selecting another backend supply the following storage

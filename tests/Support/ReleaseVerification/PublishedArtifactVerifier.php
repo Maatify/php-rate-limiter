@@ -846,7 +846,7 @@ final class PublishedArtifactVerifier
         // 2. Prohibited content: distribution must not add sensitive/development material
         $prohibited = [];
         foreach (ReleaseContract::listFiles($installedPath) as $file) {
-            if (ReleaseContract::isForbiddenPath($file) || is_link($installedPath . '/' . $file)) {
+            if (ReleaseContract::isForbiddenDistributionPath($file) || is_link($installedPath . '/' . $file)) {
                 $prohibited[] = $file;
             }
         }

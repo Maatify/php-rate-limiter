@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Tests\Integration\Redis;
 
+use DateTimeImmutable;
 use DateTimeZone;
+use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Config\FixedWindowThrottlePolicy;
+use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Service\FixedWindowSimpleRateLimiter;
 use Maatify\RateLimiter\Service\SimpleRateLimitOperationalReader;
+use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\Redis\NativeDomain;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 use Maatify\SharedCommon\Contracts\ClockInterface;
@@ -118,6 +122,31 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
         } finally {
             self::assertSame($keysBefore, $this->executor->execute(['KEYS', '*']));
         }
+    }
+
+    public function testBuilderConsumeUsesOneClockSampleForTheWindowAndRetryAfter(): void
+    {
+        $firstTime = new DateTimeImmutable('2026-01-01T00:00:00Z');
+        $secondTime = $firstTime->modify('+2 seconds');
+        $clock = $this->createMock(ClockInterface::class);
+        $clock->expects($this->exactly(2))->method('now')->willReturn($firstTime, $secondTime);
+        $runtime = RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig('current-secret', 'fingerprint-secret', 'prod'),
+            $this->store,
+            new RecordingFailureSignalEmitter(),
+        )->withClock($clock)
+            ->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy('checkout', 1, 60))
+            ->build();
+
+        $first = $runtime->consume('checkout', 'subject');
+        $second = $runtime->consume('checkout', 'subject');
+        $resetAt = $firstTime->getTimestamp() + 60;
+
+        self::assertTrue($first->allowed);
+        self::assertSame($resetAt, $first->resetAt);
+        self::assertFalse($second->allowed);
+        self::assertSame($resetAt, $second->resetAt);
+        self::assertSame(58, $second->retryAfter);
     }
 
     public function testRedisLuaImpossibleExpiryFailsBeforeFreshBranchCreatesPartialState(): void

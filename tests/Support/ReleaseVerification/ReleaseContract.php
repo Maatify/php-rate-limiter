@@ -278,6 +278,24 @@ final class ReleaseContract
         return (bool) preg_match('/\.(pem|key|swp|bak)$|~$/', $base);
     }
 
+    /** Checks the distributed artifact, including task outputs retained in Git. */
+    public static function isForbiddenDistributionPath(string $path): bool
+    {
+        if (self::isForbiddenPath($path)) {
+            return true;
+        }
+
+        $path = ltrim(str_replace('\\', '/', $path), '/');
+        if (! str_starts_with($path, 'investigations/')) {
+            return false;
+        }
+
+        // Keep in sync with the export rules and verify the actual archive.
+        return preg_match('~/(?:raw(?:-[^/]+)?|logs)/~', $path) === 1
+            || preg_match('~(?:\.log(?:\.gz)?|/(?:junit\.xml|phpunit\.out\.gz|runner\.out|progress2?\.txt))$~', $path) === 1
+            || preg_match('~^investigations/stability-release/data/(?:(?:attempt1|runs)/|(?:[^/]+\.jobs\.json|ci-history\.raw\.json)$)~', $path) === 1;
+    }
+
     /**
      * @return list<string> relative file paths (forward slashes), `.git` excluded
      */
