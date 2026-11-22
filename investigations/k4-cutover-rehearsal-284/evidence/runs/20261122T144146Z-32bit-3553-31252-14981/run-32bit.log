@@ -6,7 +6,7 @@ Redis server v=7.0.15 sha=00000000:0 malloc=jemalloc-5.2.1 bits=64 build=d6d81b7
 git version 2.47.3
 PHP 8.4.27 PHP_INT_SIZE=4 ext-redis=6.3.0
 source HEAD=ca626bf9d6f6216036321c79bd8216df98d70b75 tree=b8bf598ffeceb8338744d5de3005878d43b799dc dirty_files=0 remote=https://github.com/Maatify/php-rate-limiter.git
-harness_sha256=0376b5024a03c6ece16e9cf3e6917cd81096819a9e51570f152a410ab26d205f
+harness_sha256=7b8cf598fbe4f1a7a2e7568a71af2ae6f34c946bc34cb62b32f70885a305a9b1
 {
     "mode": "int",
     "checks": {

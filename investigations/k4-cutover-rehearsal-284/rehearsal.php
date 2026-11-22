@@ -1325,21 +1325,66 @@ $reopen = static function (Scenario $s, array $policyNs, callable $expect, strin
     return $per;
 };
 
+const SIGNAL_LEASE_MS = 30000;
+
+/** Lose the CONTROL connection for real: another connection kills it by client id (the next command on it fails, it is not an injected exception). */
+function loseControl(Scenario $s): void
+{
+    $id = (string) $s->ctl->execute(['CLIENT', 'ID']);
+    connect('ctl', pwOf('ctl'))->execute(['CLIENT', 'KILL', 'ID', $id]);
+}
+
 /**
- * The ONLY path that may write the experimental activation signal. The signal key stays ABSENT until every required verification has finished:
- * evaluation 1, a 3 s hold, evaluation 2 (fresh monitoring proof), and the FINAL verification immediately before the write. Any failure or exception in any
- * of them returns with the signal never written. After the write a post-write audit runs; if it fails or throws, the signal is deleted (fail closed).
- * `$hooks['before_final']` / `$hooks['after_write']` are fault-injection points used only by the negative controls.
+ * The ONLY path that may expose the experimental activation signal (`rehearsal:activation:allowed`). Protocol (F291-03):
+ *  1. every required verification: evaluation 1, a 3 s hold, evaluation 2, and the FINAL verification (each includes the monitoring proof);
+ *  2. a PENDING key (`…:pending`, never read by anyone) is written with a lease (PX);
+ *  3. an AUDIT evaluation runs while only the pending key exists;
+ *  4. only then ONE atomic `RENAME pending -> allowed` exposes the signal (the lease travels with it).
+ * Nothing before the RENAME can leave a visible signal, so a lost control connection needs no deletion to be safe (the pending key is invisible and expires).
+ * The outcome is one of ISSUED / NOT_ISSUED / UNCONFIRMED. Exposure is confirmed through the control connection, else through an independent fresh connection;
+ * if neither can confirm, the result is UNCONFIRMED (never "revoked" and never "issued"), and the lease bounds how long such a signal can exist.
+ * Hooks (`before_final`, `after_pending`, `before_rename`, `after_rename`, `no_fallback`, `lease_ms`) are fault-injection points for the controls only.
  * @return array<string,mixed>
  */
 $issueSignal = static function (Scenario $s, array $namespaces, array $first, array $ledger, string $since, array $hooks = []): array {
-    $out = ['permitted' => false, 'revoked' => false, 'signal_written' => false];
+    $pending = 'rehearsal:activation:pending';
+    $allowed = 'rehearsal:activation:allowed';
+    $lease = (string) ($hooks['lease_ms'] ?? SIGNAL_LEASE_MS);
+    $out = ['state' => 'NOT_ISSUED', 'permitted' => false, 'lease_ms' => (int) $lease];
+    $fresh = static function () use ($hooks): ?RespRedisCommandExecutor {
+        if (($hooks['no_fallback'] ?? false) === true) {
+            return null;
+        }
+        try {
+            return connect('ctl', pwOf('ctl'));
+        } catch (\Throwable) {
+            return null;
+        }
+    };
+    /** @return array{reachable:bool,allowed_present?:bool,pending_present?:bool,pttl_ms?:int} read through an independent connection */
+    $independent = static function () use ($fresh, $allowed, $pending): array {
+        $c = $fresh();
+        if ($c === null) {
+            return ['reachable' => false];
+        }
+        try {
+            return ['reachable' => true, 'allowed_present' => $c->execute(['GET', $allowed]) !== null, 'pending_present' => $c->execute(['GET', $pending]) !== null, 'pttl_ms' => (int) $c->execute(['PTTL', $allowed])];
+        } catch (\Throwable) {
+            return ['reachable' => false];
+        }
+    };
     $evaluate = static function () use ($s, $namespaces, $first, $ledger, $since): array {
         $m = $s->monitoringProof();
         $g = gate($s->ctl, $s->base, $namespaces, $first, $ledger, $s->eventViolations($first, $since), $m);
 
         return ['ok' => $g['ok'], 'reasons' => $g['reasons'], 'monitoring' => $m];
     };
+    $hook = static function (string $name) use ($hooks, $s): void {
+        if (isset($hooks[$name]) && is_callable($hooks[$name])) {
+            $hooks[$name]($s);
+        }
+    };
+    // ---- 1. required verifications; nothing has been written yet
     try {
         $out['first_evaluation'] = $evaluate();
         if (! $out['first_evaluation']['ok']) {
@@ -1350,44 +1395,78 @@ $issueSignal = static function (Scenario $s, array $namespaces, array $first, ar
         if (! $out['recheck_after_hold']['ok']) {
             return $out;
         }
-        if (isset($hooks['before_final'])) {
-            $hooks['before_final']($s);
-        }
+        $hook('before_final');
         $out['final_verification'] = $evaluate();
         if (! $out['final_verification']['ok']) {
             return $out;
         }
     } catch (\Throwable $e) {
         $out['exception_before_signal'] = substr($e->getMessage(), 0, 160);
+        $out['nothing_written'] = true; // the failure happened before any write of ours
 
-        return $out; // the signal was never written
+        return $out;
     }
-    $s->ctl->execute(['SET', 'rehearsal:activation:allowed', redisMs($s->ctl)]);
-    $out['signal_written'] = true;
-    $s->mark('activation_signal_set');
+    // ---- 2./3. pending key, then the audit while only the pending key exists
     try {
-        if (isset($hooks['after_write'])) {
-            $hooks['after_write']($s);
-        }
-        $out['audit_after_write'] = $evaluate();
-        if (! $out['audit_after_write']['ok']) {
-            $s->ctl->execute(['DEL', 'rehearsal:activation:allowed']);
-            $out['revoked'] = true;
+        $s->ctl->execute(['SET', $pending, redisMs($s->ctl), 'PX', $lease]);
+        $out['pending_written'] = true;
+        $hook('after_pending');
+        $out['audit_before_exposure'] = $evaluate();
+        if (! $out['audit_before_exposure']['ok']) {
+            try {
+                $s->ctl->execute(['DEL', $pending]);
+            } catch (\Throwable) {
+                // the pending key is invisible and expires by itself: failing to delete it is harmless
+            }
 
             return $out;
         }
     } catch (\Throwable $e) {
-        $out['exception_after_write'] = substr($e->getMessage(), 0, 160);
-        try {
-            $s->ctl->execute(['DEL', 'rehearsal:activation:allowed']);
-        } catch (\Throwable) {
-            // the control connection itself is gone: the next evaluation (any caller) must treat an unverifiable signal as revoked
+        $out['exception_before_exposure'] = substr($e->getMessage(), 0, 160);
+        $out['independent_after_failure'] = $independent();
+
+        return $out; // never exposed: only the invisible pending key may exist and it expires
+    }
+    // ---- 4. the single atomic exposure
+    try {
+        $hook('before_rename');
+        $s->ctl->execute(['RENAME', $pending, $allowed]);
+    } catch (\Throwable $e) {
+        $out['exception_at_exposure'] = substr($e->getMessage(), 0, 160);
+        $ind = $independent();
+        $out['independent_after_failure'] = $ind;
+        if (! $ind['reachable']) {
+            $out['state'] = 'UNCONFIRMED'; // the RENAME may or may not have applied and nothing can say: recorded as such, bounded by the lease
+
+            return $out;
         }
-        $out['revoked'] = true;
+        $out['state'] = ($ind['allowed_present'] ?? false) ? 'ISSUED' : 'NOT_ISSUED';
+        $out['permitted'] = $out['state'] === 'ISSUED';
+        $out['confirmed_by'] = 'fresh_connection';
 
         return $out;
     }
-    $out['permitted'] = true;
+    // exposed: confirm it, through the control connection if it still works, else independently
+    try {
+        $hook('after_rename');
+        $out['signal_visible_after_audit'] = $s->ctl->execute(['GET', $allowed]) !== null;
+        $out['signal_pttl_ms'] = (int) $s->ctl->execute(['PTTL', $allowed]);
+        $out['pending_gone'] = $s->ctl->execute(['GET', $pending]) === null;
+        $out['confirmed_by'] = 'control_connection';
+        $s->mark('activation_signal_set');
+        $out['state'] = $out['signal_visible_after_audit'] && $out['pending_gone'] ? 'ISSUED' : 'UNCONFIRMED';
+    } catch (\Throwable $e) {
+        $out['exception_after_exposure'] = substr($e->getMessage(), 0, 160);
+        $ind = $independent();
+        $out['independent_after_failure'] = $ind;
+        if ($ind['reachable'] && ($ind['allowed_present'] ?? false)) {
+            $out['state'] = 'ISSUED';
+            $out['confirmed_by'] = 'fresh_connection';
+        } else {
+            $out['state'] = 'UNCONFIRMED';
+        }
+    }
+    $out['permitted'] = $out['state'] === 'ISSUED';
 
     return $out;
 };
@@ -1515,7 +1594,7 @@ $fullRun = static function (string $name, array $policyNs, int $syntheticBlockSe
     if ($final['ok']) {
         $signal = $issueSignal($s, $namespaces, $first, $ledger, $since);
         $permitted = $signal['permitted'];
-        $expect($name . ':signal_issued_only_after_final_verification_and_audited_after', $permitted && ! $signal['revoked'] && isset($signal['final_verification']) && $signal['signal_written'], ['signal' => $signal]);
+        $expect($name . ':signal_exposed_only_after_final_verification_and_audit_with_a_lease', $permitted && $signal['state'] === 'ISSUED' && isset($signal['final_verification'], $signal['audit_before_exposure']) && ($signal['audit_before_exposure']['ok'] ?? false) && ($signal['pending_gone'] ?? false) && ($signal['signal_pttl_ms'] ?? 0) > 0 && $signal['signal_pttl_ms'] <= SIGNAL_LEASE_MS, ['signal' => $signal]);
     }
     $legacyLive = array_values(array_filter($liveBeforeKill, static fn($w) => ($w['role'] ?? '') === 'legacy'));
     $postBarrierOk = 0;
@@ -1541,6 +1620,10 @@ $fullRun = static function (string $name, array $policyNs, int $syntheticBlockSe
         'total_stop_to_all_policies_verified_ms' => $ms('intake_closed', 'first_success_after_reopen'),
         'per_policy_reopen_to_verified_result_ms' => array_map(static fn($x) => $x['return_ms'], $perPolicy),
     ];
+    // A host that slept (or a clock that jumped) inside a phase would silently inflate a measured window: the recorded absolute expiries bound what the window can be.
+    $expectedWindowMs = (int) dsub((string) $t['max_block_expiry_ms'], (string) $t['intake_closed']);
+    $totalMs = (int) $measured['total_stop_to_all_policies_verified_ms'];
+    $expect($name . ':window_consistent_with_recorded_expiries_no_host_pause', $totalMs <= $expectedWindowMs + 30000 && (int) $measured['wait_for_natural_expiry_ms'] <= $expectedWindowMs + 5000, ['total_ms' => $totalMs, 'wait_ms' => (int) $measured['wait_for_natural_expiry_ms'], 'longest_recorded_expiry_after_close_ms' => $expectedWindowMs, 'allowed_overhead_ms' => 30000]);
     $res = ['name' => $name, 'policy_ns' => $policyNs, 'intake_close' => $close + ['accepted_later' => $acceptedLater, 'rejected_later' => $rejectedLater], 'k4_representability' => $k4,
         'synthetic_blocks' => $synth, 'synthetic_previous_generation_block' => $synthPrev, 'timeline_redis_ms' => $t, 'measured' => $measured, 'probes' => $probes,
         'user_profiles_after_barrier' => $profilesAfter, 'killed_connections' => $killed, 'gate_while_block_active' => $g1, 'gate_final' => $final, 'activation_permitted' => $permitted, 'signal' => $signal,
@@ -1766,7 +1849,7 @@ $neg('N10_final_verification_fails_signal_never_written', static function (Scena
     [$first, $ledger, $since] = $prepareClean($s);
     $out = $issueSignal($s, ['rl-login'], $first, $ledger, $since, ['before_final' => static fn(Scenario $x) => $x->killWatcher()]);
     $expect('N10:first_two_evaluations_passed', ($out['first_evaluation']['ok'] ?? false) && ($out['recheck_after_hold']['ok'] ?? false), ['first' => $out['first_evaluation']['ok'] ?? null, 'recheck' => $out['recheck_after_hold']['ok'] ?? null]);
-    $expect('N10:final_verification_failed_and_signal_never_written', ! ($out['final_verification']['ok'] ?? true) && $out['signal_written'] === false && $s->ctl->execute(['GET', 'rehearsal:activation:allowed']) === null, ['final' => $out['final_verification'] ?? null]);
+    $expect('N10:final_verification_failed_and_signal_never_written', ! ($out['final_verification']['ok'] ?? true) && $out['state'] === 'NOT_ISSUED' && ! isset($out['pending_written']) && $s->ctl->execute(['GET', 'rehearsal:activation:allowed']) === null && $s->ctl->execute(['GET', 'rehearsal:activation:pending']) === null, ['final' => $out['final_verification'] ?? null]);
 
     return ['out' => $out];
 });
@@ -1777,29 +1860,93 @@ $neg('N10b_final_verification_throws_signal_never_written', static function (Sce
     $out = $issueSignal($s, ['rl-login'], $first, $ledger, $since, ['before_final' => static function (): void {
         throw new \RuntimeException('injected failure in the last verification');
     }]);
-    $expect('N10b:exception_caught_and_signal_never_written', isset($out['exception_before_signal']) && $out['signal_written'] === false && $out['permitted'] === false && $s->ctl->execute(['GET', 'rehearsal:activation:allowed']) === null, ['out' => $out]);
+    $expect('N10b:exception_caught_and_signal_never_written', isset($out['exception_before_signal']) && $out['state'] === 'NOT_ISSUED' && $out['permitted'] === false && $s->ctl->execute(['GET', 'rehearsal:activation:allowed']) === null && $s->ctl->execute(['GET', 'rehearsal:activation:pending']) === null, ['out' => $out]);
 
     return ['out' => $out];
 });
 
-// N10c: the post-write audit FAILS: the signal is deleted
-$neg('N10c_post_write_audit_fails_signal_deleted', static function (Scenario $s) use ($expect, $issueSignal, $prepareClean): array {
+// N10c: the AUDIT (run while only the invisible pending key exists) FAILS: the signal is never exposed
+$neg('N10c_audit_before_exposure_fails_signal_never_exposed', static function (Scenario $s) use ($expect, $issueSignal, $prepareClean): array {
     [$first, $ledger, $since] = $prepareClean($s);
-    $out = $issueSignal($s, ['rl-login'], $first, $ledger, $since, ['after_write' => static fn(Scenario $x) => $x->killWatcher()]);
-    $expect('N10c:signal_was_written_then_deleted_after_a_failed_audit', $out['signal_written'] === true && $out['revoked'] === true && $out['permitted'] === false && $s->ctl->execute(['GET', 'rehearsal:activation:allowed']) === null, ['audit' => $out['audit_after_write'] ?? null]);
+    $out = $issueSignal($s, ['rl-login'], $first, $ledger, $since, ['after_pending' => static fn(Scenario $x) => $x->killWatcher()]);
+    $expect('N10c:pending_written_audit_failed_signal_never_exposed', ($out['pending_written'] ?? false) === true && ! ($out['audit_before_exposure']['ok'] ?? true) && $out['state'] === 'NOT_ISSUED' && $s->ctl->execute(['GET', 'rehearsal:activation:allowed']) === null, ['audit' => $out['audit_before_exposure'] ?? null]);
 
     return ['out' => $out];
 });
 
-// N10d: the post-write audit THROWS: the signal is deleted
-$neg('N10d_post_write_audit_throws_signal_deleted', static function (Scenario $s) use ($expect, $issueSignal, $prepareClean): array {
+// N10d: the audit THROWS: never exposed
+$neg('N10d_audit_before_exposure_throws_signal_never_exposed', static function (Scenario $s) use ($expect, $issueSignal, $prepareClean): array {
     [$first, $ledger, $since] = $prepareClean($s);
-    $out = $issueSignal($s, ['rl-login'], $first, $ledger, $since, ['after_write' => static function (): void {
+    $out = $issueSignal($s, ['rl-login'], $first, $ledger, $since, ['after_pending' => static function (): void {
         throw new \RuntimeException('injected failure in the audit');
     }]);
-    $expect('N10d:signal_deleted_when_the_audit_throws', $out['signal_written'] === true && $out['revoked'] === true && isset($out['exception_after_write']) && $s->ctl->execute(['GET', 'rehearsal:activation:allowed']) === null, ['out' => $out]);
+    $expect('N10d:audit_exception_signal_never_exposed', isset($out['exception_before_exposure']) && $out['state'] === 'NOT_ISSUED' && $s->ctl->execute(['GET', 'rehearsal:activation:allowed']) === null, ['out' => $out]);
 
     return ['out' => $out];
+});
+
+// ---- N11 (F291-03): the CONTROL connection is really lost (killed by id), at each stage of the protocol. The independent observer is a fresh connection of THIS control, not issueSignal's.
+$observe = static function (): array {
+    $c = connect('ctl', pwOf('ctl'));
+
+    return ['allowed' => $c->execute(['GET', 'rehearsal:activation:allowed']) !== null, 'pending' => $c->execute(['GET', 'rehearsal:activation:pending']) !== null, 'allowed_pttl_ms' => (int) $c->execute(['PTTL', 'rehearsal:activation:allowed']), 'pending_pttl_ms' => (int) $c->execute(['PTTL', 'rehearsal:activation:pending'])];
+};
+
+// N11: lost AFTER the pending key was written and BEFORE the audit: the signal never existed, so no deletion is needed (the old design needed a delete that could also fail)
+$neg('N11_control_lost_after_pending_before_audit', static function (Scenario $s) use ($expect, $issueSignal, $prepareClean, $observe): array {
+    [$first, $ledger, $since] = $prepareClean($s);
+    $out = $issueSignal($s, ['rl-login'], $first, $ledger, $since, ['lease_ms' => 3000, 'after_pending' => static fn(Scenario $x) => loseControl($x)]);
+    $o1 = $observe();
+    sleep(4);
+    $o2 = $observe();
+    $expect('N11:signal_never_exposed_without_any_deletion', $out['state'] === 'NOT_ISSUED' && isset($out['exception_before_exposure']) && $o1['allowed'] === false, ['out_state' => $out['state'], 'observer_now' => $o1]);
+    $expect('N11:the_invisible_pending_key_expires_by_itself', $o1['pending'] === true && $o2['pending'] === false && $o2['allowed'] === false, ['observer_later' => $o2]);
+
+    return ['out' => $out, 'observer' => [$o1, $o2]];
+});
+
+// N11b: lost right BEFORE the RENAME and no independent connection is available: the code cannot know whether the exposure happened: UNCONFIRMED (not issued, not revoked)
+$neg('N11b_control_lost_at_exposure_and_no_fallback_is_unconfirmed', static function (Scenario $s) use ($expect, $issueSignal, $prepareClean, $observe): array {
+    [$first, $ledger, $since] = $prepareClean($s);
+    $out = $issueSignal($s, ['rl-login'], $first, $ledger, $since, ['lease_ms' => 3000, 'no_fallback' => true, 'before_rename' => static fn(Scenario $x) => loseControl($x)]);
+    $o1 = $observe();
+    $expect('N11b:recorded_as_unconfirmed_not_as_issued', $out['state'] === 'UNCONFIRMED' && $out['permitted'] === false && isset($out['exception_at_exposure']), ['out' => ['state' => $out['state'], 'permitted' => $out['permitted'], 'independent' => $out['independent_after_failure'] ?? null]]);
+    $expect('N11b:what_the_observer_sees_is_bounded_by_the_lease', $o1['allowed'] === false && ($o1['pending'] === false || $o1['pending_pttl_ms'] <= 3000), ['observer' => $o1]);
+
+    return ['out' => $out, 'observer' => $o1];
+});
+
+// N11c: lost BEFORE the final verification: nothing was written at all
+$neg('N11c_control_lost_before_final_verification', static function (Scenario $s) use ($expect, $issueSignal, $prepareClean, $observe): array {
+    [$first, $ledger, $since] = $prepareClean($s);
+    $out = $issueSignal($s, ['rl-login'], $first, $ledger, $since, ['before_final' => static fn(Scenario $x) => loseControl($x)]);
+    $o = $observe();
+    $expect('N11c:nothing_written_and_not_issued', $out['state'] === 'NOT_ISSUED' && ($out['nothing_written'] ?? false) === true && $o['allowed'] === false && $o['pending'] === false, ['observer' => $o, 'exception' => $out['exception_before_signal'] ?? null]);
+
+    return ['out' => $out, 'observer' => $o];
+});
+
+// N11d: lost right AFTER the exposure, an independent connection IS available: the exposure is confirmed through it
+$neg('N11d_control_lost_after_exposure_confirmed_by_fresh_connection', static function (Scenario $s) use ($expect, $issueSignal, $prepareClean, $observe): array {
+    [$first, $ledger, $since] = $prepareClean($s);
+    $out = $issueSignal($s, ['rl-login'], $first, $ledger, $since, ['lease_ms' => 8000, 'after_rename' => static fn(Scenario $x) => loseControl($x)]);
+    $o = $observe();
+    $expect('N11d:issued_and_confirmed_by_an_independent_connection', $out['state'] === 'ISSUED' && $out['permitted'] === true && ($out['confirmed_by'] ?? '') === 'fresh_connection' && $o['allowed'] === true && $o['allowed_pttl_ms'] > 0 && $o['allowed_pttl_ms'] <= 8000, ['out_state' => $out['state'], 'confirmed_by' => $out['confirmed_by'] ?? null, 'observer' => $o]);
+
+    return ['out' => $out, 'observer' => $o];
+});
+
+// N11e: lost right AFTER the exposure and NO independent connection: the signal exists but the result is UNCONFIRMED (recorded as such), and the lease makes it expire
+$neg('N11e_control_lost_after_exposure_without_fallback_is_unconfirmed_and_expires', static function (Scenario $s) use ($expect, $issueSignal, $prepareClean, $observe): array {
+    [$first, $ledger, $since] = $prepareClean($s);
+    $out = $issueSignal($s, ['rl-login'], $first, $ledger, $since, ['lease_ms' => 3000, 'no_fallback' => true, 'after_rename' => static fn(Scenario $x) => loseControl($x)]);
+    $o1 = $observe();
+    sleep(4);
+    $o2 = $observe();
+    $expect('N11e:recorded_unconfirmed_never_as_issued', $out['state'] === 'UNCONFIRMED' && $out['permitted'] === false && isset($out['exception_after_exposure']), ['out_state' => $out['state'], 'permitted' => $out['permitted']]);
+    $expect('N11e:the_exposed_signal_exists_only_within_its_lease', $o1['allowed'] === true && $o1['allowed_pttl_ms'] <= 3000 && $o2['allowed'] === false, ['observer_now' => $o1, 'observer_after_lease' => $o2]);
+
+    return ['out' => $out, 'observer' => [$o1, $o2]];
 });
 
 // N3d (F291-01): write permission on a family that has NO key at scan time (reentry-claim): found because the families come from the pinned source, not from the scan
@@ -2075,7 +2222,7 @@ $neg('N7_redis_restart_breaks_continuity_and_barrier', static function (Scenario
 
 $expectedIds = ['A_login_protection_own_ns', 'B_otp_protection_own_ns', 'C_api_heavy_protection_own_ns', 'D_login_and_otp_shared_ns',
     'N1_hung_request_blocks_gate', 'N1b_request_between_pull_and_inflight_registration', 'N2_pending_retry_and_delayed_jobs_block_gate', 'N3_unrevoked_writer_and_off_user_with_open_connection',
-    'N3c_partial_family_hole_missed_by_a_single_key_check', 'N3d_absent_family_reentry_claim_hole', 'N3e_admission_shape_permit_hole', 'N10_final_verification_fails_signal_never_written', 'N10b_final_verification_throws_signal_never_written', 'N10c_post_write_audit_fails_signal_deleted', 'N10d_post_write_audit_throws_signal_deleted', 'N9_lost_watcher_blocks_the_signal', 'N9b_replaced_watcher_connection_blocks_the_signal', 'N4_unknown_expiry', 'N4b_early_delete_is_unexplained_absence',
+    'N3c_partial_family_hole_missed_by_a_single_key_check', 'N3d_absent_family_reentry_claim_hole', 'N3e_admission_shape_permit_hole', 'N10_final_verification_fails_signal_never_written', 'N10b_final_verification_throws_signal_never_written', 'N10c_audit_before_exposure_fails_signal_never_exposed', 'N10d_audit_before_exposure_throws_signal_never_exposed', 'N11_control_lost_after_pending_before_audit', 'N11b_control_lost_at_exposure_and_no_fallback_is_unconfirmed', 'N11c_control_lost_before_final_verification', 'N11d_control_lost_after_exposure_confirmed_by_fresh_connection', 'N11e_control_lost_after_exposure_without_fallback_is_unconfirmed_and_expires', 'N9_lost_watcher_blocks_the_signal', 'N9b_replaced_watcher_connection_blocks_the_signal', 'N4_unknown_expiry', 'N4b_early_delete_is_unexplained_absence',
     'N4cd_ledger_and_events_catch_early_delete_and_truncation', 'N4e_last_moment_delete_caught_by_events', 'N5_data_continuity_break_sentinel_lost', 'N6_late_writer_after_barrier_denied_and_gate_holds',
     'N8_request_at_commit_when_barrier_lands', 'N8b_connection_cut_while_commit_pending', 'N5b_eviction_breaks_continuity', 'N7_redis_restart_breaks_continuity_and_barrier'];
 $executedIds = array_merge(array_keys($results['scenarios']), array_keys($results['negative'] ?? []));
