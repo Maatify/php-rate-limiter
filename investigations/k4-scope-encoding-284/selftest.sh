@@ -14,7 +14,7 @@ echo "$*" >> "$FAKE_LOG"
 case "$1" in
   network) exit 0 ;;
   rm) exit 0 ;;
-  exec) if [[ "$3" == redis-cli ]]; then [[ "${FAKE_REDIS_READY:-1}" == 1 ]] && echo PONG; exit 0; fi; echo "Redis server v=7.0.15"; exit 0 ;;
+  exec) if [[ "$3" == redis-cli ]]; then sleep "${FAKE_PONG_DELAY:-0}"; [[ "${FAKE_REDIS_READY:-1}" == 1 ]] && echo PONG; exit 0; fi; echo "Redis server v=7.0.15"; exit 0 ;;
   run)
     for a in "$@"; do
       [[ "$a" == bash ]] && { echo "FAKE-HARNESS-RAN"; exit "${FAKE_HARNESS_RC:-0}"; }
@@ -90,6 +90,53 @@ reset; FAKE_LOG="$work/calls.log" S284_DOCKER_BIN="$work/docker" "$runner" 64 "$
 reset; FAKE_INT_SIZE=8 run 64 "$work/o8a"; a="$(grep -oE 's284-redis-64-[0-9]+-[0-9]+-[0-9]+' "$work/calls.log" | sort -u)"
 reset; FAKE_INT_SIZE=8 run 64 "$work/o8b"; b="$(grep -oE 's284-redis-64-[0-9]+-[0-9]+-[0-9]+' "$work/calls.log" | sort -u)"
 check T8_distinct_names "$([[ -n "$a" && -n "$b" && "$a" != "$b" ]] && echo yes || echo no)" "run A '$a' vs run B '$b'"
+
+# T9 PONG that arrives AFTER the deadline (3s delay, 1s timeout) is a timeout (5), never a pass
+reset; start=$SECONDS; FAKE_INT_SIZE=8 FAKE_PONG_DELAY=3 S284_REDIS_READY_TIMEOUT=1 run 64 "$work/o9"; elapsed=$((SECONDS - start)); expect T9_late_pong 5 "$rc"
+check T9_no_controls "$(grep -q 'FAKE-HARNESS-RAN' "$work/stdout.log" && echo no || echo yes)" "no control ran after a late PONG"
+check T9_cleanup "$(names_cleaned)" "cleanup by name after a late PONG"
+# T10 a probe that hangs is cut at the deadline (bounded), exit 5
+reset; start=$SECONDS; FAKE_INT_SIZE=8 FAKE_PONG_DELAY=30 S284_REDIS_READY_TIMEOUT=2 run 64 "$work/o10"; elapsed=$((SECONDS - start)); expect T10_hung_probe 5 "$rc"
+check T10_bounded "$([[ "$elapsed" -le 10 ]] && echo yes || echo no)" "hung probe cut after ${elapsed}s (timeout 2s)"
+# T10b a PONG within the deadline still passes (control for T9/T10)
+reset; FAKE_INT_SIZE=8 FAKE_PONG_DELAY=1 S284_REDIS_READY_TIMEOUT=5 run 64 "$work/o10b"; expect T10b_timely_pong 0 "$rc"
+
+# T11..T14 container_check.sh with a fake git/php/sha256sum on PATH (the in-container source verification)
+mkdir -p "$work/bin" "$work/study"; cp "$here/container_check.sh" "$work/study/"; echo "<?php" > "$work/study/k4_contract_controls.php"
+cat > "$work/bin/git" <<'FAKE'
+#!/usr/bin/env bash
+[[ "$1" == --version ]] && { echo "git version fake"; exit 0; }
+if [[ "$1" == clone ]]; then mkdir -p "${@: -1}"; exit 0; fi
+[[ "$1" == -C ]] && shift 2
+case "$1" in
+  checkout) exit 0 ;;
+  rev-parse) [[ "${FAKE_GIT_MODE:-}" == revparse_fail ]] && exit 128
+             if [[ "$2" == HEAD ]]; then echo "${FAKE_HEAD:-109f3c6d7d81efda750a2d6d4be13eaa0eff55c6}"; else echo "${FAKE_TREE:-7ec62d35b97f675f33cbe66bb556de74bd82b085}"; fi ;;
+  status) case "${FAKE_GIT_MODE:-}" in status_fail) echo "fatal: not a git repository" >&2; exit 128 ;; dirty) echo " M src/x.php" ;; esac ;;
+  remote) echo "https://github.com/Maatify/php-rate-limiter.git" ;;
+esac
+exit 0
+FAKE
+cat > "$work/bin/php" <<'FAKE'
+#!/usr/bin/env bash
+[[ "$1" == -r ]] && { echo "PHP fake"; exit 0; }
+echo "FAKE-CONTROLS-RAN"; exit "${FAKE_HARNESS_RC:-0}"
+FAKE
+printf '#!/usr/bin/env bash
+echo "0000 -"
+' > "$work/bin/sha256sum"
+chmod +x "$work/bin/git" "$work/bin/php" "$work/bin/sha256sum"
+cc() { # -> rc, output in cc.log
+  PATH="$work/bin:$PATH" S284_WORK="$work/cw$RANDOM" S284_TMP="$work" S284_STUDY="$work/study" "$work/study/container_check.sh" 109f3c6d7d81efda750a2d6d4be13eaa0eff55c6 7ec62d35b97f675f33cbe66bb556de74bd82b085 >"$work/cc.log" 2>&1
+  rc=$?
+}
+FAKE_GIT_MODE= cc; expect T11_clean_source 0 "$rc"
+FAKE_GIT_MODE=status_fail cc; expect T12_git_status_fails_empty_output 4 "$rc"
+check T12_not_run "$(grep -q 'FAKE-CONTROLS-RAN' "$work/cc.log" && echo no || echo yes)" "controls did not run when git status failed"
+FAKE_GIT_MODE=dirty cc; expect T13_dirty_tree 4 "$rc"
+FAKE_GIT_MODE=revparse_fail cc; expect T14_revparse_fails 4 "$rc"
+FAKE_GIT_MODE= FAKE_HEAD=deadbeef cc; expect T15_wrong_head 4 "$rc"
+FAKE_GIT_MODE= FAKE_HARNESS_RC=1 cc; expect T16_controls_rc_passthrough 1 "$rc"
 
 echo "selftest_failures=$failures"
 exit $((failures == 0 ? 0 : 1))

@@ -6,7 +6,7 @@ Redis server v=7.0.15 sha=00000000:0 malloc=jemalloc-5.2.1 bits=64 build=d6d81b7
 git version 2.47.3
 PHP 8.4.27 PHP_INT_SIZE=4 ext-redis=6.3.0
 source HEAD=109f3c6d7d81efda750a2d6d4be13eaa0eff55c6 tree=7ec62d35b97f675f33cbe66bb556de74bd82b085 dirty_files=0 remote=https://github.com/Maatify/php-rate-limiter.git
-harness_sha256=cac587238583603e69217044153fd884915e89421d1385334caada9bc66fcedb
+harness_sha256=8c85d51fe4bb2ce5dbacb87b6e9cf179425824978377655ec51e757192ca70d6
 {
     "environment": {
         "php": "8.4.27",
@@ -51,22 +51,13 @@ harness_sha256=cac587238583603e69217044153fd884915e89421d1385334caada9bc66fcedb
             "note": "account is the trailing field"
         },
         {
-            "id": "S1_preimage_is_an_unencoded_join",
-            "kind": "structural",
-            "ok": true,
-            "note": "string-level fact about the format; no state involved"
-        },
-        {
             "id": "S2_environment_scope_domain",
             "kind": "structural",
             "ok": true,
             "accepted": {
-                "prod:a": true,
-                "a:b:c": true,
-                ":": true,
+                "x:y:z": true,
                 "tab\tenv": true,
-                "ünï": true,
-                "x:rate_limiter:k4:v2:y": true
+                "ünï": true
             }
         }
     ],

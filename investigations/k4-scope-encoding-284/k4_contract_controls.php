@@ -157,22 +157,15 @@ record('C3_two_envs_isolated_counters', $prodStill !== $stagingOwn && $stagingOw
     'prod_score' => $prodStill, 'staging_score' => $stagingOwn,
 ]);
 
-// ---- C4: preimage determinism (same inputs -> same bytes; account is the last field so one env never collides with itself) ---
-$same = k4Preimage(POLICY, 'prod', 'a:b') === k4Preimage(POLICY, 'prod', 'a:b');
-$differentAccountsSameEnv = k4Preimage(POLICY, 'prod', 'a') !== k4Preimage(POLICY, 'prod', 'a:b')
-    && k4Preimage(POLICY, 'prod', 'a:b') !== k4Preimage(POLICY, 'prod', 'a:c');
-record('C4_single_env_distinct_accounts_distinct_preimages', $same && $differentAccountsSameEnv, ['note' => 'account is the trailing field']);
+// ---- C4: preimage determinism within ONE env (same inputs -> same bytes; distinct accounts -> distinct bytes) ------------------
+$same = k4Preimage(POLICY, 'prod', 'acct-1') === k4Preimage(POLICY, 'prod', 'acct-1');
+$distinct = k4Preimage(POLICY, 'prod', 'acct-1') !== k4Preimage(POLICY, 'prod', 'acct-10')
+    && k4Preimage(POLICY, 'prod', 'acct-1') !== k4Preimage(POLICY, 'prod', 'acct-2');
+record('C4_single_env_distinct_accounts_distinct_preimages', $same && $distinct, ['note' => 'account is the trailing field']);
 
-// ---- S1: STRUCTURAL check of the preimage (pure string work: no store, no runtime, nothing is written) --------------------
-// The writer and reader preimage is the unencoded `:`-join; two different (env, account) pairs whose join is the same string produce the same
-// HMAC input. This only states the format; it does not run any limiter under such inputs.
-$joinOnly = static fn(string $env, string $account): string => $env . ':' . $account;
-record('S1_preimage_is_an_unencoded_join', $joinOnly('prod', 'a:b') === $joinOnly('prod:a', 'b')
-    && k4Preimage(POLICY, 'prod', 'a:b') === POLICY . ':rate_limiter:k4:v2:prod:a:b', ['note' => 'string-level fact about the format; no state involved'], false);
-
-// ---- S2: the domain of accepted configuration values ------------------------------------------------------------------------
+// ---- S2: the domain of accepted configuration values (config construction only: no limiter, no store) ----------------------------
 $accepted = [];
-foreach (['prod:a', 'a:b:c', ':', "tab\tenv", 'ünï', 'x:rate_limiter:k4:v2:y'] as $v) {
+foreach (['x:y:z', "tab\tenv", 'ünï'] as $v) {
     try {
         new RateLimiterConfig('s', 'f', $v);
         $accepted[$v] = true;

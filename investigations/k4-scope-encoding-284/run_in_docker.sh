@@ -5,7 +5,7 @@
 #
 # Exit codes (any other value is the harness's own exit code, passed through):
 #   0 all controls held            2 usage / missing dependency directory   3 clone or checkout failed
-#   4 source is not the pinned base (SHA, tree or dirty)                    5 Redis not ready within the timeout
+#   4 source is not provably the pinned clean base (SHA, tree, dirty, or a git command failed/empty)   5 Redis not ready within the timeout (a late PONG counts)
 #   6 PHP_INT_SIZE differs from the requested width                         7 evidence could not be written (log, tee or exit file)
 #
 # Test-only overrides (investigations/k4-scope-encoding-284/selftest.sh): S284_DOCKER_BIN, S284_TEE_BIN, S284_REDIS_READY_TIMEOUT (seconds).
@@ -39,6 +39,7 @@ cleanup() {
   "$docker_bin" rm -f "$php_probe" >/dev/null 2>&1 || true
   "$docker_bin" rm -f "$redis" >/dev/null 2>&1 || true
   "$docker_bin" network rm "$net" >/dev/null 2>&1 || true
+  rm -f "${TMPDIR:-/tmp}/s284-probe-out-$suffix"
 }
 trap cleanup EXIT
 trap 'exit 130' INT
@@ -54,26 +55,27 @@ body() {
   # 2. Isolated Redis, bounded readiness wait.
   "$docker_bin" network create "$net" >/dev/null || return 5
   "$docker_bin" run -d --name "$redis" --network "$net" redis:7.0.15-alpine redis-server --save "" --appendonly no >/dev/null || return 5
-  deadline=$((SECONDS + ready_timeout))
-  until [[ "$("$docker_bin" exec "$redis" redis-cli ping 2>/dev/null || true)" == PONG ]]; do
-    if (( SECONDS >= deadline )); then echo "REDIS NOT READY within ${ready_timeout}s"; return 5; fi
+  # Readiness is bounded as a whole: a PONG that arrives after the deadline is a timeout (5), and a hung probe is killed at the deadline.
+  ready=no; deadline=$((SECONDS + ready_timeout)); probe_out="${TMPDIR:-/tmp}/s284-probe-out-$suffix"
+  while :; do
+    "$docker_bin" exec "$redis" redis-cli ping >"$probe_out" 2>/dev/null &
+    probe_pid=$!
+    while kill -0 "$probe_pid" 2>/dev/null; do
+      if (( SECONDS >= deadline )); then kill "$probe_pid" 2>/dev/null; break; fi
+      sleep 0.2
+    done
+    wait "$probe_pid" 2>/dev/null
+    if (( SECONDS <= deadline )) && [[ "$(cat "$probe_out" 2>/dev/null)" == PONG ]]; then ready=yes; break; fi
+    if (( SECONDS >= deadline )); then break; fi
     sleep 0.5
   done
+  rm -f "$probe_out"
+  [[ "$ready" == yes ]] || { echo "REDIS NOT READY within ${ready_timeout}s"; return 5; }
   echo "== redis-server (from inside redis container) =="; "$docker_bin" exec "$redis" redis-server --version
 
   # 3. Clean clone of the official remote inside the PHP container, pinned base check, then the controls.
   "$docker_bin" run --rm --name "$php_run" ${platform:+--platform "$platform"} --network "$net" -v "$deps:/deps:ro" -v "$here:/study:ro" \
-    -e REDIS_INTEGRATION_HOST="$redis" -e REDIS_INTEGRATION_PORT=6379 "$image" bash -c '
-      set -uo pipefail
-      echo "== php container =="; git --version
-      php -r "echo \"PHP \", PHP_VERSION, \" PHP_INT_SIZE=\", PHP_INT_SIZE, \" ext-redis=\", phpversion(\"redis\"), PHP_EOL;"
-      git clone -q https://github.com/Maatify/php-rate-limiter.git /work && git -C /work checkout -q '"$base_sha"' || { echo "CLONE FAILED"; exit 3; }
-      head=$(git -C /work rev-parse HEAD); tree=$(git -C /work rev-parse "HEAD^{tree}"); dirty=$(git -C /work status --porcelain | wc -l)
-      echo "source HEAD=$head tree=$tree dirty_files=$dirty remote=$(git -C /work remote get-url origin)"
-      [[ "$head" == '"$base_sha"' && "$tree" == '"$base_tree"' && "$dirty" == 0 ]] || { echo "BASE MISMATCH"; exit 4; }
-      echo "harness_sha256=$(sha256sum /study/k4_contract_controls.php | cut -d" " -f1)"
-      cp /study/k4_contract_controls.php /tmp/k4_contract_controls.php
-      php /tmp/k4_contract_controls.php /work; rc=$?; echo "harness_exit_code=$rc"; exit $rc'
+    -e REDIS_INTEGRATION_HOST="$redis" -e REDIS_INTEGRATION_PORT=6379 "$image" bash /study/container_check.sh "$base_sha" "$base_tree"
   rc=$?
   echo "container_exit_code=$rc"
   return "$rc"

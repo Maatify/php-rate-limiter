@@ -15,5 +15,18 @@ PASS T5_exit_file: exit file records 1
 PASS T6_unwritable_out (exit 7)
 PASS T7_bad_width (exit 2)
 PASS T7_missing_deps (exit 2)
-PASS T8_distinct_names: run A 's284-redis-64-32725-12315-33875' vs run B 's284-redis-64-9952-27156-33897'
+PASS T8_distinct_names: run A 's284-redis-64-11932-19474-40376' vs run B 's284-redis-64-7814-21305-40403'
+PASS T9_late_pong (exit 5)
+PASS T9_no_controls: no control ran after a late PONG
+PASS T9_cleanup: cleanup by name after a late PONG
+PASS T10_hung_probe (exit 5)
+PASS T10_bounded: hung probe cut after 2s (timeout 2s)
+PASS T10b_timely_pong (exit 0)
+PASS T11_clean_source (exit 0)
+PASS T12_git_status_fails_empty_output (exit 4)
+PASS T12_not_run: controls did not run when git status failed
+PASS T13_dirty_tree (exit 4)
+PASS T14_revparse_fails (exit 4)
+PASS T15_wrong_head (exit 4)
+PASS T16_controls_rc_passthrough (exit 1)
 selftest_failures=0
