@@ -186,11 +186,28 @@ seed_old "$work/o31"; reset; FAKE_INT_SIZE=8 S284_SCENARIOS=A run 64 "$work/o31"
 check T31_old_evidence_intact "$(old_intact "$work/o31")" "a partial run leaves accepted evidence untouched (and the pointer unchanged)"
 seed_old "$work/o32"; reset; FAKE_INT_SIZE=8 FAKE_RESULTS=incomplete run 64 "$work/o32"; expect T32_incomplete_run_rejected 7 "$rc"
 check T32_old_evidence_intact "$(old_intact "$work/o32")" "an incomplete run (not every expected scenario) leaves accepted evidence untouched"
-seed_old "$work/o33"; mkdir -p "$work/o33/.ACCEPTED-64bit.tmp"; reset; FAKE_INT_SIZE=8 run 64 "$work/o33"; expect T33_pointer_flip_failure 7 "$rc"
-check T33_pointer_and_old_run_intact "$([[ "$(cat "$work/o33/ACCEPTED-64bit.json")" == '{"width":64,"run":"runs/OLD-64bit"}' && "$(cat "$work/o33/runs/OLD-64bit/run-64bit.log")" == OLD ]] && echo yes || echo no)" "the pointer was not flipped and the old run is intact"
+seed_old "$work/o33"; rm -f "$work/o33/ACCEPTED-64bit.json"; mkdir -p "$work/o33/ACCEPTED-64bit.json"; reset; FAKE_INT_SIZE=8 run 64 "$work/o33"; expect T33_pointer_flip_failure 7 "$rc"
+check T33_old_run_and_pointer_slot_intact "$([[ -d "$work/o33/ACCEPTED-64bit.json" && "$(cat "$work/o33/runs/OLD-64bit/run-64bit.log")" == OLD && -z "$(ls -A "$work/o33/ACCEPTED-64bit.json")" ]] && echo yes || echo no)" "the pointer slot was not touched (nothing moved into it) and the old run is intact"
 check T33_new_unit_parked "$([[ -n "$(ls "$work/o33/rejected" 2>/dev/null | grep -- '-rc7')" && "$(ls "$work/o33/runs" | wc -l | tr -d ' ')" == 1 ]] && echo yes || echo no)" "the moved unit was parked under rejected/, not left half-accepted in runs/"
+check T33_no_temp_pointer_left "$([[ -z "$(ls -A "$work/o33" | grep '^\.ACCEPTED' )" ]] && echo yes || echo no)" "the unique temporary pointer file was removed"
 reset; FAKE_INT_SIZE=8 run 64 "$work/o34"; u34a="$(acc_dir "$work/o34")"; sleep 1; reset; FAKE_INT_SIZE=8 run 64 "$work/o34"; u34b="$(acc_dir "$work/o34")"
 check T34_second_good_run_is_a_separate_unit "$([[ -n "$u34a" && -n "$u34b" && "$u34a" != "$u34b" && -s "$u34a/run-64bit.log" && -s "$u34b/run-64bit.log" ]] && echo yes || echo no)" "the first accepted run stays intact; the pointer names the second"
+
+# T35..T37 (F291-05): identity collisions and concurrency. rename(2), unique run identity, unique temporary pointer.
+reset; FAKE_INT_SIZE=8 S284_RUN_SUFFIX=fixed S284_NOW=20261122T000000Z run 64 "$work/o35"; expect T35_first_run_with_forced_identity 0 "$rc"
+u35="$(acc_dir "$work/o35")"; first_sum="$(cat "$u35/MANIFEST.sha256")"; ptr_before="$(cat "$work/o35/ACCEPTED-64bit.json")"
+reset; FAKE_INT_SIZE=8 S284_RUN_SUFFIX=fixed S284_NOW=20261122T000000Z run 64 "$work/o35"; expect T35_second_run_same_second_same_identity_is_rejected 7 "$rc"
+check T35_first_unit_intact_and_not_nested "$([[ "$(cat "$u35/MANIFEST.sha256")" == "$first_sum" && "$(cat "$work/o35/ACCEPTED-64bit.json")" == "$ptr_before" && -z "$(find "$u35" -mindepth 1 -type d)" && "$(ls "$work/o35/runs" | wc -l | tr -d ' ')" == 1 ]] && echo yes || echo no)" "the first accepted run is untouched, nothing was nested inside it, the pointer is unchanged"
+rm -rf "$work/o36"; mkdir -p "$work/o36"
+( FAKE_LOG="$work/c1.log" FAKE_INT_SIZE=8 S284_DOCKER_BIN="$work/docker" "$runner" 64 "$work/deps" "$work/o36" >/dev/null 2>&1; echo $? > "$work/c1.rc" ) &
+( FAKE_LOG="$work/c2.log" FAKE_INT_SIZE=8 S284_DOCKER_BIN="$work/docker" "$runner" 64 "$work/deps" "$work/o36" >/dev/null 2>&1; echo $? > "$work/c2.rc" ) &
+wait
+expect T36_concurrent_runs_both_accepted 0 "$(( $(cat "$work/c1.rc") + $(cat "$work/c2.rc") ))"
+u36="$(acc_dir "$work/o36")"; ok36=yes
+[[ "$(ls "$work/o36/runs" | wc -l | tr -d ' ')" == 2 ]] || ok36=no
+while read -r sum name; do [[ "$( (command -v sha256sum >/dev/null && sha256sum "$u36/$name" || shasum -a 256 "$u36/$name") | cut -d' ' -f1)" == "$sum" ]] || ok36=no; done < "$u36/MANIFEST.sha256"
+[[ -z "$(ls -A "$work/o36" | grep '^\.ACCEPTED')" ]] || ok36=no
+check T36_two_distinct_units_and_a_valid_pointer "$ok36" "two separate run directories, the pointer names one whose manifest verifies, no temporary pointer files left"
 
 echo "selftest_failures=$failures"
 exit $((failures == 0 ? 0 : 1))

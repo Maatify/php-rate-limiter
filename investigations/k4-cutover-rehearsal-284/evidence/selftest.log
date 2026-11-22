@@ -15,7 +15,7 @@ PASS T5_rejected_kept: a failing run is kept under rejected/ and writes no accep
 PASS T6_unwritable_out (exit 7)
 PASS T7_bad_width (exit 2)
 PASS T7_missing_deps (exit 2)
-PASS T8_distinct_names: run A 's284r-redis-64-4933-29043-90940' vs run B 's284r-redis-64-3058-9380-91008'
+PASS T8_distinct_names: run A 's284r-redis-64-25112-4139-5606' vs run B 's284r-redis-64-24146-18593-5675'
 PASS T9_late_pong (exit 5)
 PASS T9_no_controls: no control ran after a late PONG
 PASS T9_cleanup: cleanup by name after a late PONG
@@ -53,7 +53,13 @@ PASS T31_old_evidence_intact: a partial run leaves accepted evidence untouched (
 PASS T32_incomplete_run_rejected (exit 7)
 PASS T32_old_evidence_intact: an incomplete run (not every expected scenario) leaves accepted evidence untouched
 PASS T33_pointer_flip_failure (exit 7)
-PASS T33_pointer_and_old_run_intact: the pointer was not flipped and the old run is intact
+PASS T33_old_run_and_pointer_slot_intact: the pointer slot was not touched (nothing moved into it) and the old run is intact
 PASS T33_new_unit_parked: the moved unit was parked under rejected/, not left half-accepted in runs/
+PASS T33_no_temp_pointer_left: the unique temporary pointer file was removed
 PASS T34_second_good_run_is_a_separate_unit: the first accepted run stays intact; the pointer names the second
+PASS T35_first_run_with_forced_identity (exit 0)
+PASS T35_second_run_same_second_same_identity_is_rejected (exit 7)
+PASS T35_first_unit_intact_and_not_nested: the first accepted run is untouched, nothing was nested inside it, the pointer is unchanged
+PASS T36_concurrent_runs_both_accepted (exit 0)
+PASS T36_two_distinct_units_and_a_valid_pointer: two separate run directories, the pointer names one whose manifest verifies, no temporary pointer files left
 selftest_failures=0

@@ -31,7 +31,7 @@ run_mode=controller; [[ "$width" == 32 ]] && run_mode=int
 exit_file="$out/exit-${width}bit.txt"
 
 # Every resource of THIS run carries the run's own suffix and is removed by that exact name (never by pattern, never another run's).
-suffix="${RANDOM}-${RANDOM}-$$"
+suffix="${S284_RUN_SUFFIX:-${RANDOM}-${RANDOM}-$$}"   # PID + two random words: unique per run, also across concurrent runs
 # Evidence of THIS run is written to a private staging directory. Accepted evidence already in $out is never touched until this run is verified;
 # a rejected run is kept under $out/rejected/ and the previous evidence stays exactly as it was.
 stage="$out/.stage-${suffix}"
@@ -137,10 +137,13 @@ files+=("exit-${width}bit.txt")
 # names; earlier runs are never overwritten, so a failure at any step leaves the previously accepted run exactly as it was (never a mix of two runs).
 : > "$stage/MANIFEST.sha256" || reject 7 "cannot write the manifest"
 for f in "${files[@]}"; do printf '%s  %s\n' "$(sha256_of "$stage/$f")" "$f" >> "$stage/MANIFEST.sha256"; done
-run_name="$(date -u +%Y%m%dT%H%M%SZ)-${width}bit"
+run_name="${S284_NOW:-$(date -u +%Y%m%dT%H%M%SZ)}-${width}bit-${suffix}"
 mkdir -p "$out/runs" || reject 7 "cannot create $out/runs"
-mv "$stage" "$out/runs/$run_name" || reject 7 "cannot move the staged run into place"
 unit="$out/runs/$run_name"
+# rename(2), never `mv`: `mv a existing-dir` would silently move a INSIDE existing-dir; rename(2) of a directory onto an existing non-empty one fails.
+rename_atomic() { perl -e 'rename($ARGV[0], $ARGV[1]) or do { print STDERR "rename failed: $!\n"; exit 1 }' "$1" "$2"; }
+[[ ! -e "$unit" ]] || reject 7 "the run directory name $run_name already exists (two runs of the same width produced the same identity)"
+rename_atomic "$stage" "$unit" || reject 7 "cannot rename the staged run into place"
 unreject() { # the unit was moved but cannot be accepted: park it, the pointer is untouched
   mkdir -p "$out/rejected" && mv "$unit" "$out/rejected/${run_name}-rc7" 2>/dev/null
   echo "EVIDENCE REJECTED: $1 (exit 7); the pointer and the previously accepted run are untouched" >&2
@@ -150,7 +153,8 @@ while read -r sum name; do
   [[ "$(sha256_of "$unit/$name")" == "$sum" ]] || unreject "manifest verification failed for $name"
 done < "$unit/MANIFEST.sha256"
 manifest_sha="$(sha256_of "$unit/MANIFEST.sha256")"
-printf '{"width":%s,"run":"runs/%s","manifest_sha256":"%s","base_sha":"%s","base_tree":"%s"}\n' "$width" "$run_name" "$manifest_sha" "$base_sha" "$base_tree" > "$out/.ACCEPTED-${width}bit.tmp" || unreject "cannot write the pointer"
-mv -f "$out/.ACCEPTED-${width}bit.tmp" "$out/ACCEPTED-${width}bit.json" || unreject "cannot flip the pointer"
+ptr_tmp="$out/.ACCEPTED-${width}bit.${suffix}.tmp"   # unique per run: two concurrent runs never share a temporary pointer file
+printf '{"width":%s,"run":"runs/%s","manifest_sha256":"%s","base_sha":"%s","base_tree":"%s"}\n' "$width" "$run_name" "$manifest_sha" "$base_sha" "$base_tree" > "$ptr_tmp" || unreject "cannot write the pointer"
+rename_atomic "$ptr_tmp" "$out/ACCEPTED-${width}bit.json" || { rm -f "$ptr_tmp"; unreject "cannot flip the pointer"; }
 echo "ACCEPTED: $out/ACCEPTED-${width}bit.json -> runs/$run_name"
 exit 0

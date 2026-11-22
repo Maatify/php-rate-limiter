@@ -51,8 +51,9 @@ const APP_USERS = ['w_direct', 'w_deferred', 'w_retry', 'w_legacy'];
 /** Least privilege for every non-control credential: no ACL management, no CONFIG, no FLUSH*, no DEBUG, no SHUTDOWN (@admin/@dangerous; Redis folds -@admin into -@dangerous when it prints the rule) and no FUNCTION commands (FUNCTION FLUSH is NOT @dangerous in 7.0.15, measured). */
 const WRITER_PROFILE = ['+@all', '-@admin', '-@dangerous', '-function'];
 const ADMIN_PROBES = [['ACL', 'SETUSER', 'x', 'on'], ['CONFIG', 'SET', 'maxmemory', '0'], ['FLUSHALL'], ['FLUSHDB'], ['SWAPDB', '0', '1'], ['DEBUG', 'SLEEP', '0'], ['SHUTDOWN', 'NOSAVE'], ['FUNCTION', 'FLUSH']];
-/** every key family the store writes (physical key `PREFIX:sha256(ns):<family>:sha256(logical)`) */
-const V2_FAMILIES = ['score', 'block', 'budget', 'cycle', 'distinct', 'pause', 'watch', 'circuit', 'probe'];
+/** Reviewed lists of what the pinned base writes; compared at run time with what the pinned clone's SOURCE actually declares (control `v2_shapes_match_source`). */
+const EXPECTED_STORE_FAMILIES = ['block', 'budget', 'circuit', 'cycle', 'distinct', 'distinct-meta', 'pause', 'probe', 'reentry-claim', 'score', 'watch', 'watch-meta'];
+const EXPECTED_ADMISSION_SHAPES = ['b', 'c', 'cfg', 'd', 'epoch', 'p', 'permit', 's'];
 const WRITE_PROBES = [['SET', PREFIX . ':gate-probe:block:x', 'v'], ['DEL', PREFIX . ':gate-probe:block:x'], ['HSET', PREFIX . ':gate-probe:block:x', 'f', 'v'],
     ['EXPIRE', PREFIX . ':gate-probe:block:x', '9'], ['PEXPIREAT', PREFIX . ':gate-probe:block:x', '9'], ['INCRBY', PREFIX . ':gate-probe:block:x', '1'], ['ZADD', PREFIX . ':gate-probe:block:x', '1', 'm']];
 
@@ -164,6 +165,37 @@ function scanAll(RedisCommandExecutorInterface $c, string $pattern): array
     } while ($cursor !== '0');
 
     return array_keys($keys);
+}
+
+/**
+ * The key shapes the pinned clone can write, DERIVED from its source (not a hand-kept list):
+ *  - store families: every `key('<family>'` of RedisFullCapabilityStore  => PREFIX:sha256(ns):<family>:sha256(logical)
+ *  - admission shapes: KIND_CODE values and the `base() . ':<x>:'` literals of RedisAdmissionOperations => PREFIX:{sha256(ns)}:adm:<x>:sha256(...)
+ * @return array{store: list<string>, admission: list<string>, store_counts: array<string,int>}
+ */
+function v2Shapes(): array
+{
+    static $cache = null;
+    if ($cache !== null) {
+        return $cache;
+    }
+    $root = (string) getenv('S284_ROOT');
+    $store = (string) file_get_contents($root . '/src/Repository/Redis/RedisFullCapabilityStore.php');
+    preg_match_all("/\\bkey\\('([a-z][a-z0-9-]*)'/", $store, $m);
+    $families = array_values(array_unique($m[1]));
+    sort($families);
+    $adm = (string) file_get_contents($root . '/src/Repository/Redis/RedisAdmissionOperations.php');
+    $codes = [];
+    if (preg_match('/private const KIND_CODE = \\[(.*?)\\];/s', $adm, $k)) {
+        preg_match_all("/=> '(\\w+)'/", $k[1], $kc);
+        $codes = $kc[1];
+    }
+    preg_match_all("/base\\(\\) \\. ':([a-z]+):'/", $adm, $lits);
+    $admission = array_values(array_unique(array_merge($codes, $lits[1])));
+    sort($admission);
+    $cache = ['store' => $families, 'admission' => $admission, 'store_counts' => array_count_values($m[1])];
+
+    return $cache;
 }
 
 function jlog(string $tag, array $data = []): void
@@ -534,6 +566,14 @@ foreach ($origin as $cls => $o) {
         exit(3);
     }
 }
+$shapes = v2Shapes();
+jlog('v2_shapes_from_source', ['store_families' => $shapes['store'], 'store_key_call_counts' => $shapes['store_counts'], 'admission_shapes' => $shapes['admission']]);
+$shapesOk = $shapes['store'] === EXPECTED_STORE_FAMILIES && $shapes['admission'] === EXPECTED_ADMISSION_SHAPES;
+if (! $shapesOk) {
+    fwrite(STDERR, "V2 KEY SHAPES OF THE PINNED SOURCE DIFFER FROM THE REVIEWED LISTS\n");
+    jlog('v2_shapes_mismatch', ['derived_store' => $shapes['store'], 'derived_admission' => $shapes['admission']]);
+    exit(4);
+}
 jlog('source_origin', ['root' => $rootReal, 'classes' => array_map(static fn($o) => ['file' => $o['file'], 'sha256' => $o['sha256']], $origin)]);
 
 function setupRedis(RespRedisCommandExecutor $c): void
@@ -747,9 +787,15 @@ function gate(RespRedisCommandExecutor $ctl, array $base, array $namespaces, ?ar
     $nsChecks = [];
     foreach ($namespaces as $ns) {
         $nsHash = hash('sha256', (string) $ns);
-        $keys = scanAll($ctl, PREFIX . ':' . $nsHash . ':*');
-        foreach (V2_FAMILIES as $f) {
+        // existing keys of BOTH shapes (the admission operations tag the namespace hash with braces) ...
+        $keys = array_merge(scanAll($ctl, PREFIX . ':' . $nsHash . ':*'), scanAll($ctl, PREFIX . ':{' . $nsHash . '}:*'));
+        // ... plus one synthetic key for EVERY shape the pinned source can write, whether or not such a key exists now
+        $shapes = v2Shapes();
+        foreach ($shapes['store'] as $f) {
             $keys[] = PREFIX . ':' . $nsHash . ':' . $f . ':' . hash('sha256', 'gate-probe-' . $f);
+        }
+        foreach ($shapes['admission'] as $a) {
+            $keys[] = PREFIX . ':{' . $nsHash . '}:adm:' . $a . ':' . hash('sha256', 'gate-probe-' . $a);
         }
         $keys = array_values(array_unique($keys));
         $checks = 0;
@@ -768,7 +814,7 @@ function gate(RespRedisCommandExecutor $ctl, array $base, array $namespaces, ?ar
                 }
             }
         }
-        $nsChecks[(string) $ns] = ['keys_checked' => count($keys), 'dryrun_checks' => $checks, 'holes' => array_slice($nsHoles, 0, 6), 'holes_total' => count($nsHoles)];
+        $nsChecks[(string) $ns] = ['store_families' => count($shapes['store']), 'admission_shapes' => count($shapes['admission']), 'keys_checked' => count($keys), 'dryrun_checks' => $checks, 'holes' => array_slice($nsHoles, 0, 6), 'holes_total' => count($nsHoles)];
         if ($nsHoles !== []) {
             $holes[] = 'ns:' . $ns . ':' . count($nsHoles) . ' write permissions (e.g. ' . $nsHoles[0] . ')';
         }
@@ -1280,33 +1326,63 @@ $reopen = static function (Scenario $s, array $policyNs, callable $expect, strin
 };
 
 /**
- * The ONLY path that may write the experimental activation signal. It re-proves everything (barrier, drain, continuity, blocks, ledger, events AND the monitoring
- * itself) after a hold, writes the signal, and verifies again right after: if anything fails at that instant the signal is deleted. The signal therefore never
- * exists unless the evidence was valid up to the moment of the signal.
+ * The ONLY path that may write the experimental activation signal. The signal key stays ABSENT until every required verification has finished:
+ * evaluation 1, a 3 s hold, evaluation 2 (fresh monitoring proof), and the FINAL verification immediately before the write. Any failure or exception in any
+ * of them returns with the signal never written. After the write a post-write audit runs; if it fails or throws, the signal is deleted (fail closed).
+ * `$hooks['before_final']` / `$hooks['after_write']` are fault-injection points used only by the negative controls.
  * @return array<string,mixed>
  */
-$issueSignal = static function (Scenario $s, array $namespaces, array $first, array $ledger, string $since): array {
-    $out = ['permitted' => false, 'revoked' => false];
-    $m1 = $s->monitoringProof();
-    $g1 = gate($s->ctl, $s->base, $namespaces, $first, $ledger, $s->eventViolations($first, $since), $m1);
-    $out['first_evaluation'] = ['ok' => $g1['ok'], 'reasons' => $g1['reasons'], 'monitoring' => $m1];
-    if (! $g1['ok']) {
-        return $out;
-    }
-    sleep(3);
-    $m2 = $s->monitoringProof();
-    $g2 = gate($s->ctl, $s->base, $namespaces, $first, $ledger, $s->eventViolations($first, $since), $m2);
-    $out['recheck_after_hold'] = ['ok' => $g2['ok'], 'reasons' => $g2['reasons'], 'monitoring' => $m2];
-    if (! $g2['ok']) {
-        return $out;
+$issueSignal = static function (Scenario $s, array $namespaces, array $first, array $ledger, string $since, array $hooks = []): array {
+    $out = ['permitted' => false, 'revoked' => false, 'signal_written' => false];
+    $evaluate = static function () use ($s, $namespaces, $first, $ledger, $since): array {
+        $m = $s->monitoringProof();
+        $g = gate($s->ctl, $s->base, $namespaces, $first, $ledger, $s->eventViolations($first, $since), $m);
+
+        return ['ok' => $g['ok'], 'reasons' => $g['reasons'], 'monitoring' => $m];
+    };
+    try {
+        $out['first_evaluation'] = $evaluate();
+        if (! $out['first_evaluation']['ok']) {
+            return $out;
+        }
+        sleep(3);
+        $out['recheck_after_hold'] = $evaluate();
+        if (! $out['recheck_after_hold']['ok']) {
+            return $out;
+        }
+        if (isset($hooks['before_final'])) {
+            $hooks['before_final']($s);
+        }
+        $out['final_verification'] = $evaluate();
+        if (! $out['final_verification']['ok']) {
+            return $out;
+        }
+    } catch (\Throwable $e) {
+        $out['exception_before_signal'] = substr($e->getMessage(), 0, 160);
+
+        return $out; // the signal was never written
     }
     $s->ctl->execute(['SET', 'rehearsal:activation:allowed', redisMs($s->ctl)]);
+    $out['signal_written'] = true;
     $s->mark('activation_signal_set');
-    $m3 = $s->monitoringProof();
-    $g3 = gate($s->ctl, $s->base, $namespaces, $first, $ledger, $s->eventViolations($first, $since), $m3);
-    $out['verification_right_after_signal'] = ['ok' => $g3['ok'], 'reasons' => $g3['reasons'], 'monitoring' => $m3];
-    if (! $g3['ok']) {
-        $s->ctl->execute(['DEL', 'rehearsal:activation:allowed']);
+    try {
+        if (isset($hooks['after_write'])) {
+            $hooks['after_write']($s);
+        }
+        $out['audit_after_write'] = $evaluate();
+        if (! $out['audit_after_write']['ok']) {
+            $s->ctl->execute(['DEL', 'rehearsal:activation:allowed']);
+            $out['revoked'] = true;
+
+            return $out;
+        }
+    } catch (\Throwable $e) {
+        $out['exception_after_write'] = substr($e->getMessage(), 0, 160);
+        try {
+            $s->ctl->execute(['DEL', 'rehearsal:activation:allowed']);
+        } catch (\Throwable) {
+            // the control connection itself is gone: the next evaluation (any caller) must treat an unverifiable signal as revoked
+        }
         $out['revoked'] = true;
 
         return $out;
@@ -1439,7 +1515,7 @@ $fullRun = static function (string $name, array $policyNs, int $syntheticBlockSe
     if ($final['ok']) {
         $signal = $issueSignal($s, $namespaces, $first, $ledger, $since);
         $permitted = $signal['permitted'];
-        $expect($name . ':signal_issued_only_after_revalidation_and_verified_right_after', $permitted && ! $signal['revoked'], ['signal' => $signal]);
+        $expect($name . ':signal_issued_only_after_final_verification_and_audited_after', $permitted && ! $signal['revoked'] && isset($signal['final_verification']) && $signal['signal_written'], ['signal' => $signal]);
     }
     $legacyLive = array_values(array_filter($liveBeforeKill, static fn($w) => ($w['role'] ?? '') === 'legacy'));
     $postBarrierOk = 0;
@@ -1661,6 +1737,94 @@ $neg('N9b_replaced_watcher_connection_blocks_the_signal', static function (Scena
     $expect('N9b:signal_denied_and_absent', $out['permitted'] === false && $signalKey === null && in_array('MONITORING_CONTINUITY_NOT_PROVEN', $out['first_evaluation']['reasons'], true), ['first_evaluation' => $out['first_evaluation']]);
 
     return ['out' => $out];
+});
+
+// helper: the clean state N9..N10 share (barrier applied, a short block expired naturally, watcher healthy): everything passes EXCEPT what each control breaks
+$prepareClean = static function (Scenario $s): array {
+    $s->startWatcher();
+    $store = new RedisFullCapabilityStore($s->ctl, 'rl-login');
+    $store->blockAt(k4Hmac('login_protection', 'acct-clean-' . random_int(1000, 9999)), 3, 5, time());
+    $s->closeIntake();
+    $s->applyBarrier();
+    $first = [];
+    $maxExp = '0';
+    foreach (scanAll($s->ctl, nsKeyPattern('rl-login')) as $k) {
+        $pe = (string) $s->ctl->execute(['PEXPIRETIME', $k]);
+        $first[$k] = $pe;
+        if (dcmp($pe, $maxExp) > 0) {
+            $maxExp = $pe;
+        }
+    }
+    $since = redisMs($s->ctl);
+    $ledger = $s->waitForExpiryWithLedger($first, $maxExp);
+
+    return [$first, $ledger, $since];
+};
+
+// N10 (F291-03): the FINAL verification fails (watcher lost AFTER the post-hold evaluation passed): the signal key is never written
+$neg('N10_final_verification_fails_signal_never_written', static function (Scenario $s) use ($expect, $issueSignal, $prepareClean): array {
+    [$first, $ledger, $since] = $prepareClean($s);
+    $out = $issueSignal($s, ['rl-login'], $first, $ledger, $since, ['before_final' => static fn(Scenario $x) => $x->killWatcher()]);
+    $expect('N10:first_two_evaluations_passed', ($out['first_evaluation']['ok'] ?? false) && ($out['recheck_after_hold']['ok'] ?? false), ['first' => $out['first_evaluation']['ok'] ?? null, 'recheck' => $out['recheck_after_hold']['ok'] ?? null]);
+    $expect('N10:final_verification_failed_and_signal_never_written', ! ($out['final_verification']['ok'] ?? true) && $out['signal_written'] === false && $s->ctl->execute(['GET', 'rehearsal:activation:allowed']) === null, ['final' => $out['final_verification'] ?? null]);
+
+    return ['out' => $out];
+});
+
+// N10b: the final verification THROWS: the signal key is never written
+$neg('N10b_final_verification_throws_signal_never_written', static function (Scenario $s) use ($expect, $issueSignal, $prepareClean): array {
+    [$first, $ledger, $since] = $prepareClean($s);
+    $out = $issueSignal($s, ['rl-login'], $first, $ledger, $since, ['before_final' => static function (): void {
+        throw new \RuntimeException('injected failure in the last verification');
+    }]);
+    $expect('N10b:exception_caught_and_signal_never_written', isset($out['exception_before_signal']) && $out['signal_written'] === false && $out['permitted'] === false && $s->ctl->execute(['GET', 'rehearsal:activation:allowed']) === null, ['out' => $out]);
+
+    return ['out' => $out];
+});
+
+// N10c: the post-write audit FAILS: the signal is deleted
+$neg('N10c_post_write_audit_fails_signal_deleted', static function (Scenario $s) use ($expect, $issueSignal, $prepareClean): array {
+    [$first, $ledger, $since] = $prepareClean($s);
+    $out = $issueSignal($s, ['rl-login'], $first, $ledger, $since, ['after_write' => static fn(Scenario $x) => $x->killWatcher()]);
+    $expect('N10c:signal_was_written_then_deleted_after_a_failed_audit', $out['signal_written'] === true && $out['revoked'] === true && $out['permitted'] === false && $s->ctl->execute(['GET', 'rehearsal:activation:allowed']) === null, ['audit' => $out['audit_after_write'] ?? null]);
+
+    return ['out' => $out];
+});
+
+// N10d: the post-write audit THROWS: the signal is deleted
+$neg('N10d_post_write_audit_throws_signal_deleted', static function (Scenario $s) use ($expect, $issueSignal, $prepareClean): array {
+    [$first, $ledger, $since] = $prepareClean($s);
+    $out = $issueSignal($s, ['rl-login'], $first, $ledger, $since, ['after_write' => static function (): void {
+        throw new \RuntimeException('injected failure in the audit');
+    }]);
+    $expect('N10d:signal_deleted_when_the_audit_throws', $out['signal_written'] === true && $out['revoked'] === true && isset($out['exception_after_write']) && $s->ctl->execute(['GET', 'rehearsal:activation:allowed']) === null, ['out' => $out]);
+
+    return ['out' => $out];
+});
+
+// N3d (F291-01): write permission on a family that has NO key at scan time (reentry-claim): found because the families come from the pinned source, not from the scan
+$neg('N3d_absent_family_reentry_claim_hole', static function (Scenario $s) use ($expect): array {
+    $s->closeIntake();
+    $s->applyBarrier();
+    $s->ctl->execute(['ACL', 'SETUSER', 'w_retry', 'resetkeys', '%R~' . PREFIX . ':*', '~rehearsal:*', '~' . PREFIX . ':' . hash('sha256', 'rl-login') . ':reentry-claim:*']);
+    $exists = scanAll($s->ctl, PREFIX . ':' . hash('sha256', 'rl-login') . ':reentry-claim:*');
+    $g = gate($s->ctl, $s->base, ['rl-login']);
+    $found = array_filter($g['detail']['v2_namespace_write_checks']['rl-login']['holes'] ?? [], static fn($h) => str_contains($h, ':reentry-claim:'));
+    $expect('N3d:no_reentry_claim_key_exists_yet_the_hole_is_found', $exists === [] && ! $g['ok'] && $found !== [], ['existing_keys' => count($exists), 'holes' => $g['detail']['v2_namespace_write_checks']['rl-login']['holes'] ?? []]);
+
+    return ['reasons' => $g['reasons']];
+});
+
+// N3e: the admission-operations key shape (`PREFIX:{sha(ns)}:adm:permit:…`, braces around the namespace hash) is covered as well
+$neg('N3e_admission_shape_permit_hole', static function (Scenario $s) use ($expect): array {
+    $s->closeIntake();
+    $s->applyBarrier();
+    $s->ctl->execute(['ACL', 'SETUSER', 'w_deferred', 'resetkeys', '%R~' . PREFIX . ':*', '~rehearsal:*', '~' . PREFIX . ':{' . hash('sha256', 'rl-login') . '}:adm:permit:*']);
+    $g = gate($s->ctl, $s->base, ['rl-login']);
+    $found = array_filter($g['detail']['v2_namespace_write_checks']['rl-login']['holes'] ?? [], static fn($h) => str_contains($h, ':permit:'));
+    $expect('N3e:admission_permit_shape_hole_found', ! $g['ok'] && $found !== [], ['holes' => $g['detail']['v2_namespace_write_checks']['rl-login']['holes'] ?? []]);
+
+    return ['reasons' => $g['reasons']];
 });
 
 // N4: unknown expiry
@@ -1911,7 +2075,7 @@ $neg('N7_redis_restart_breaks_continuity_and_barrier', static function (Scenario
 
 $expectedIds = ['A_login_protection_own_ns', 'B_otp_protection_own_ns', 'C_api_heavy_protection_own_ns', 'D_login_and_otp_shared_ns',
     'N1_hung_request_blocks_gate', 'N1b_request_between_pull_and_inflight_registration', 'N2_pending_retry_and_delayed_jobs_block_gate', 'N3_unrevoked_writer_and_off_user_with_open_connection',
-    'N3c_partial_family_hole_missed_by_a_single_key_check', 'N9_lost_watcher_blocks_the_signal', 'N9b_replaced_watcher_connection_blocks_the_signal', 'N4_unknown_expiry', 'N4b_early_delete_is_unexplained_absence',
+    'N3c_partial_family_hole_missed_by_a_single_key_check', 'N3d_absent_family_reentry_claim_hole', 'N3e_admission_shape_permit_hole', 'N10_final_verification_fails_signal_never_written', 'N10b_final_verification_throws_signal_never_written', 'N10c_post_write_audit_fails_signal_deleted', 'N10d_post_write_audit_throws_signal_deleted', 'N9_lost_watcher_blocks_the_signal', 'N9b_replaced_watcher_connection_blocks_the_signal', 'N4_unknown_expiry', 'N4b_early_delete_is_unexplained_absence',
     'N4cd_ledger_and_events_catch_early_delete_and_truncation', 'N4e_last_moment_delete_caught_by_events', 'N5_data_continuity_break_sentinel_lost', 'N6_late_writer_after_barrier_denied_and_gate_holds',
     'N8_request_at_commit_when_barrier_lands', 'N8b_connection_cut_while_commit_pending', 'N5b_eviction_breaks_continuity', 'N7_redis_restart_breaks_continuity_and_barrier'];
 $executedIds = array_merge(array_keys($results['scenarios']), array_keys($results['negative'] ?? []));
