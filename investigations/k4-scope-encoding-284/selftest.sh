@@ -14,7 +14,7 @@ echo "$*" >> "$FAKE_LOG"
 case "$1" in
   network) exit 0 ;;
   rm) exit 0 ;;
-  exec) if [[ "$3" == redis-cli ]]; then sleep "${FAKE_PONG_DELAY:-0}"; [[ "${FAKE_REDIS_READY:-1}" == 1 ]] && echo PONG; exit 0; fi; echo "Redis server v=7.0.15"; exit 0 ;;
+  exec) if [[ "$3" == redis-cli ]]; then [[ "${FAKE_IGNORE_TERM:-0}" == 1 ]] && trap '' TERM; sleep "${FAKE_PONG_DELAY:-0}"; [[ "${FAKE_REDIS_READY:-1}" == 1 ]] && echo PONG; exit "${FAKE_PROBE_RC:-0}"; fi; echo "Redis server v=7.0.15"; exit 0 ;;
   run)
     for a in "$@"; do
       [[ "$a" == bash ]] && { echo "FAKE-HARNESS-RAN"; exit "${FAKE_HARNESS_RC:-0}"; }
@@ -100,6 +100,14 @@ reset; start=$SECONDS; FAKE_INT_SIZE=8 FAKE_PONG_DELAY=30 S284_REDIS_READY_TIMEO
 check T10_bounded "$([[ "$elapsed" -le 10 ]] && echo yes || echo no)" "hung probe cut after ${elapsed}s (timeout 2s)"
 # T10b a PONG within the deadline still passes (control for T9/T10)
 reset; FAKE_INT_SIZE=8 FAKE_PONG_DELAY=1 S284_REDIS_READY_TIMEOUT=5 run 64 "$work/o10b"; expect T10b_timely_pong 0 "$rc"
+
+# T17 PONG printed but the probe exits 19 -> not ready (5), never a pass
+reset; FAKE_INT_SIZE=8 FAKE_PROBE_RC=19 S284_REDIS_READY_TIMEOUT=2 run 64 "$work/o17"; expect T17_pong_with_exit_19 5 "$rc"
+check T17_no_controls "$(grep -q 'FAKE-HARNESS-RAN' "$work/stdout.log" && echo no || echo yes)" "no control ran when the readiness command exited non-zero"
+# T18 a probe that ignores TERM (30s) with a 1s timeout is cut by KILL: total bounded (<= 4s incl. startup), exit 5
+reset; start=$SECONDS; FAKE_INT_SIZE=8 FAKE_PONG_DELAY=30 FAKE_IGNORE_TERM=1 S284_REDIS_READY_TIMEOUT=1 run 64 "$work/o18"; elapsed=$((SECONDS - start)); expect T18_term_ignoring_probe 5 "$rc"
+check T18_bounded "$([[ "$elapsed" -le 3 ]] && echo yes || echo no)" "TERM-ignoring probe cut after ${elapsed}s (timeout 1s; the previous runner took 4s)"
+check T18_cleanup "$(names_cleaned)" "cleanup by name"
 
 # T11..T14 container_check.sh with a fake git/php/sha256sum on PATH (the in-container source verification)
 mkdir -p "$work/bin" "$work/study"; cp "$here/container_check.sh" "$work/study/"; echo "<?php" > "$work/study/k4_contract_controls.php"

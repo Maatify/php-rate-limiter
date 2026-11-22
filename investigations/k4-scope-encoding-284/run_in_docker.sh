@@ -55,17 +55,21 @@ body() {
   # 2. Isolated Redis, bounded readiness wait.
   "$docker_bin" network create "$net" >/dev/null || return 5
   "$docker_bin" run -d --name "$redis" --network "$net" redis:7.0.15-alpine redis-server --save "" --appendonly no >/dev/null || return 5
-  # Readiness is bounded as a whole: a PONG that arrives after the deadline is a timeout (5), and a hung probe is killed at the deadline.
+  # Readiness is bounded as a whole: a PONG after the deadline, or with a non-zero probe exit status, is not ready (5); a hung probe gets TERM then KILL at the deadline.
   ready=no; deadline=$((SECONDS + ready_timeout)); probe_out="${TMPDIR:-/tmp}/s284-probe-out-$suffix"
   while :; do
     "$docker_bin" exec "$redis" redis-cli ping >"$probe_out" 2>/dev/null &
     probe_pid=$!
     while kill -0 "$probe_pid" 2>/dev/null; do
-      if (( SECONDS >= deadline )); then kill "$probe_pid" 2>/dev/null; break; fi
+      if (( SECONDS >= deadline )); then
+        # TERM first, then KILL after a short grace: a probe that ignores TERM must not extend the bound.
+        kill -TERM "$probe_pid" 2>/dev/null; sleep 0.3; kill -KILL "$probe_pid" 2>/dev/null; break
+      fi
       sleep 0.2
     done
-    wait "$probe_pid" 2>/dev/null
-    if (( SECONDS <= deadline )) && [[ "$(cat "$probe_out" 2>/dev/null)" == PONG ]]; then ready=yes; break; fi
+    wait "$probe_pid" 2>/dev/null; probe_rc=$?
+    # Ready ONLY if the probe exited 0 (not killed, not a non-zero status) AND printed PONG AND finished within the deadline.
+    if (( probe_rc == 0 && SECONDS <= deadline )) && [[ "$(cat "$probe_out" 2>/dev/null)" == PONG ]]; then ready=yes; break; fi
     if (( SECONDS >= deadline )); then break; fi
     sleep 0.5
   done
