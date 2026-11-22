@@ -113,19 +113,44 @@ fi
 if [[ "$body_rc" -ne 0 ]]; then
   reject "$body_rc" "the run did not hold (exit $body_rc)"
 fi
-results_name=""
+# A partial run (a scenario filter) is a debugging aid: it is NEVER promoted to accepted evidence, whatever its exit code.
+if [[ -n "${S284_SCENARIOS:-}" ]]; then
+  reject 7 "partial run (S284_SCENARIOS=${S284_SCENARIOS}) is never promoted"
+fi
+files=("run-${width}bit.log")
 if [[ "$width" == 64 ]]; then
-  # The results file must exist, be non-empty, be reported as saved-and-verified by the harness, and match the sha256 the harness logged.
+  # The results file must exist, be non-empty, be reported as saved-and-verified AND complete (every expected scenario ran), and match the sha256 the harness logged.
   results="$stage/rehearsal-results.json"
   [[ -s "$results" ]] || reject 7 "results file missing or empty"
   logged_sha="$(grep -o '"results_sha256":"[0-9a-f]\{64\}"' "$log" | tail -1 | cut -d'"' -f4)"
   grep -q '"saved_and_verified":true' "$log" || reject 7 "the harness did not report the results file as saved and verified"
+  grep -q '"complete":true' "$log" || reject 7 "the harness did not report a complete run (not every expected scenario ran)"
+  grep -q '"complete": true' "$results" || reject 7 "the results file does not record a complete run"
   [[ -n "$logged_sha" && "$(sha256_of "$results")" == "$logged_sha" ]] || reject 7 "results file sha256 differs from the one the harness logged"
-  results_name="rehearsal-results.json"
+  files+=("rehearsal-results.json")
 fi
-# promote the verified run: accepted evidence is replaced only now
-mv -f "$log" "$out/run-${width}bit.log" || reject 7 "cannot promote the log"
-if [[ -n "$results_name" ]]; then mv -f "$stage/$results_name" "$out/$results_name" || reject 7 "cannot promote the results"; fi
-printf '%s\n' "$body_rc" > "$exit_file" || { echo "EVIDENCE WRITE FAILED: $exit_file" >&2; exit 7; }
-rmdir "$stage" 2>/dev/null || true
-exit "$body_rc"
+printf '%s\n' "$body_rc" > "$stage/exit-${width}bit.txt" || reject 7 "cannot write the exit file"
+files+=("exit-${width}bit.txt")
+
+# PROMOTION AS ONE UNIT. The complete run (log, results, exit file, manifest) is assembled inside the staging directory, moved into $out/runs/ with ONE rename,
+# re-verified against its own manifest, and only then does the pointer ACCEPTED-<width>bit.json flip, again by ONE rename. Accepted evidence is whatever the pointer
+# names; earlier runs are never overwritten, so a failure at any step leaves the previously accepted run exactly as it was (never a mix of two runs).
+: > "$stage/MANIFEST.sha256" || reject 7 "cannot write the manifest"
+for f in "${files[@]}"; do printf '%s  %s\n' "$(sha256_of "$stage/$f")" "$f" >> "$stage/MANIFEST.sha256"; done
+run_name="$(date -u +%Y%m%dT%H%M%SZ)-${width}bit"
+mkdir -p "$out/runs" || reject 7 "cannot create $out/runs"
+mv "$stage" "$out/runs/$run_name" || reject 7 "cannot move the staged run into place"
+unit="$out/runs/$run_name"
+unreject() { # the unit was moved but cannot be accepted: park it, the pointer is untouched
+  mkdir -p "$out/rejected" && mv "$unit" "$out/rejected/${run_name}-rc7" 2>/dev/null
+  echo "EVIDENCE REJECTED: $1 (exit 7); the pointer and the previously accepted run are untouched" >&2
+  exit 7
+}
+while read -r sum name; do
+  [[ "$(sha256_of "$unit/$name")" == "$sum" ]] || unreject "manifest verification failed for $name"
+done < "$unit/MANIFEST.sha256"
+manifest_sha="$(sha256_of "$unit/MANIFEST.sha256")"
+printf '{"width":%s,"run":"runs/%s","manifest_sha256":"%s","base_sha":"%s","base_tree":"%s"}\n' "$width" "$run_name" "$manifest_sha" "$base_sha" "$base_tree" > "$out/.ACCEPTED-${width}bit.tmp" || unreject "cannot write the pointer"
+mv -f "$out/.ACCEPTED-${width}bit.tmp" "$out/ACCEPTED-${width}bit.json" || unreject "cannot flip the pointer"
+echo "ACCEPTED: $out/ACCEPTED-${width}bit.json -> runs/$run_name"
+exit 0

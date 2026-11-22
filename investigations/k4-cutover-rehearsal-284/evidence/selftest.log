@@ -1,5 +1,5 @@
 PASS T1_happy_64 (exit 0)
-PASS T1_evidence: log non-empty and exit file is 0
+PASS T1_evidence: the pointer names a run dir with a non-empty log, exit file 0 and a manifest
 PASS T1_cleanup: every container and the network removed by its own name
 PASS T2_tee_23 (exit 7)
 PASS T2_cleanup: cleanup by name after a tee failure
@@ -15,7 +15,7 @@ PASS T5_rejected_kept: a failing run is kept under rejected/ and writes no accep
 PASS T6_unwritable_out (exit 7)
 PASS T7_bad_width (exit 2)
 PASS T7_missing_deps (exit 2)
-PASS T8_distinct_names: run A 's284r-redis-64-965-9046-85337' vs run B 's284r-redis-64-5024-23019-85381'
+PASS T8_distinct_names: run A 's284r-redis-64-4933-29043-90940' vs run B 's284r-redis-64-3058-9380-91008'
 PASS T9_late_pong (exit 5)
 PASS T9_no_controls: no control ran after a late PONG
 PASS T9_cleanup: cleanup by name after a late PONG
@@ -48,4 +48,12 @@ PASS T28_old_evidence_intact: old evidence intact when a control failed
 PASS T29_good_run_promotes (exit 0)
 PASS T29_promoted: log, results and exit file promoted; nothing rejected
 PASS T30_32bit_needs_no_results (exit 0)
+PASS T31_partial_run_never_promoted (exit 7)
+PASS T31_old_evidence_intact: a partial run leaves accepted evidence untouched (and the pointer unchanged)
+PASS T32_incomplete_run_rejected (exit 7)
+PASS T32_old_evidence_intact: an incomplete run (not every expected scenario) leaves accepted evidence untouched
+PASS T33_pointer_flip_failure (exit 7)
+PASS T33_pointer_and_old_run_intact: the pointer was not flipped and the old run is intact
+PASS T33_new_unit_parked: the moved unit was parked under rejected/, not left half-accepted in runs/
+PASS T34_second_good_run_is_a_separate_unit: the first accepted run stays intact; the pointer names the second
 selftest_failures=0

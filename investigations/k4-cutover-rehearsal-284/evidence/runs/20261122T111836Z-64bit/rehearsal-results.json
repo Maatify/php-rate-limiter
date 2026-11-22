@@ -3,7 +3,7 @@
         "php": "8.4.27",
         "php_int_size": 8,
         "ext_redis": "6.3.0",
-        "harness_sha256": "d778363bfe633ec563de83c630b8e2f3d1c1c2124bc986fbc063eb5c1236709b"
+        "harness_sha256": "d781904951a179a0b8b18b4b41e12c5720afcae173343d30d79c73becdcf520d"
     },
     "source_origin": {
         "Maatify\\RateLimiter\\Builder\\RateLimiterBuilder": {
@@ -49,69 +49,69 @@
                 "login_protection": "rl-login"
             },
             "intake_close": {
-                "accepted_at_close": "130",
+                "accepted_at_close": "137",
                 "rejected_at_close": "0",
-                "accepted_later": "130",
-                "rejected_later": "32"
+                "accepted_later": "137",
+                "rejected_later": "36"
             },
             "k4_representability": {
                 "login_protection": {
                     "census": {
                         "families": {
-                            "score": 7,
-                            "block": 0,
-                            "budget": 7,
-                            "cycle": 0,
+                            "score": 6,
+                            "block": 1,
+                            "budget": 6,
+                            "cycle": 1,
                             "pause": 0,
                             "watch": 0,
                             "distinct": 0
                         },
-                        "k4_block_max_expiry_ms": "0"
+                        "k4_block_max_expiry_ms": "1795345515975"
                     },
-                    "reader_k4_score_hot_account": 3,
-                    "block_keys_in_ns_all_scopes": 17
+                    "reader_k4_score_hot_account": 6,
+                    "block_keys_in_ns_all_scopes": 18
                 }
             },
             "synthetic_blocks": {
                 "rl-login": {
                     "key": "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0",
                     "duration_s": 20,
-                    "pexpiretime_raw": "1795342417362",
-                    "redis_now_ms": "1795342397363"
+                    "pexpiretime_raw": "1795345476408",
+                    "redis_now_ms": "1795345456408"
                 }
             },
             "synthetic_previous_generation_block": {
                 "key": "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514",
-                "pexpiretime_raw": "1795342422390"
+                "pexpiretime_raw": "1795345481421"
             },
             "timeline_redis_ms": {
-                "load_end": "1795342402364",
-                "intake_closed": "1795342402391",
-                "drained": "1795342404663",
-                "barrier_start": "1795342404663",
-                "barrier_applied": "1795342404665",
-                "connections_killed": "1795342405655",
-                "probes_done": "1795342405657",
-                "gate_while_block_active": "1795342406173",
-                "first_scan_done": "1795342406175",
-                "max_block_expiry_ms": "1795342458403",
-                "natural_expiry_passed": "1795342459614",
-                "final_scan_done": "1795342460142",
-                "activation_signal_set": "1795342463644",
-                "reopen_requested": "1795342466532",
-                "first_success_after_reopen": "1795342466743"
+                "load_end": "1795345461408",
+                "intake_closed": "1795345461421",
+                "drained": "1795345463074",
+                "barrier_start": "1795345463074",
+                "barrier_applied": "1795345463075",
+                "connections_killed": "1795345464062",
+                "probes_done": "1795345464064",
+                "gate_while_block_active": "1795345465004",
+                "first_scan_done": "1795345465005",
+                "max_block_expiry_ms": "1795345517042",
+                "natural_expiry_passed": "1795345518437",
+                "final_scan_done": "1795345519381",
+                "activation_signal_set": "1795345524293",
+                "reopen_requested": "1795345528163",
+                "first_success_after_reopen": "1795345528368"
             },
             "measured": {
-                "drain_ms": "2272",
-                "barrier_and_probes_ms": "994",
-                "first_scan_ms": "518",
-                "wait_for_natural_expiry_ms": "53439",
-                "final_scan_and_gate_ms": "528",
-                "validity_hold_to_signal_ms": "3502",
-                "reopen_to_all_policies_verified_ms": "211",
-                "total_stop_to_all_policies_verified_ms": "64352",
+                "drain_ms": "1653",
+                "barrier_and_probes_ms": "990",
+                "first_scan_ms": "941",
+                "wait_for_natural_expiry_ms": "53432",
+                "final_scan_and_gate_ms": "944",
+                "validity_hold_to_signal_ms": "4912",
+                "reopen_to_all_policies_verified_ms": "205",
+                "total_stop_to_all_policies_verified_ms": "66947",
                 "per_policy_reopen_to_verified_result_ms": {
-                    "login_protection": "46"
+                    "login_protection": "39"
                 }
             },
             "probes": {
@@ -207,8 +207,8 @@
                         "ACL_DELUSER_ctl": "DENIED"
                     }
                 },
-                "digest_before": "900e201aa47e5eb939accdea872e888f1faea825:175",
-                "digest_after": "900e201aa47e5eb939accdea872e888f1faea825:175",
+                "digest_before": "9291e2fd7acadbbec545bb559e9b0185c2ec9e6a:175",
+                "digest_after": "9291e2fd7acadbbec545bb559e9b0185c2ec9e6a:175",
                 "ctl_user_still_exists": true,
                 "acl_log_entries_new": 56
             },
@@ -284,12 +284,12 @@
                 "detail": {
                     "intake": "closed",
                     "accepted": [
-                        "130",
-                        "130"
+                        "137",
+                        "137"
                     ],
                     "rejected": [
-                        "71",
-                        "78"
+                        "63",
+                        "70"
                     ],
                     "drain_snapshots": [
                         [
@@ -305,6 +305,14 @@
                     ],
                     "queues_nonempty": [],
                     "inflight_workers": [],
+                    "v2_namespace_write_checks": {
+                        "rl-login": {
+                            "keys_checked": 184,
+                            "dryrun_checks": 7728,
+                            "holes": [],
+                            "holes_total": 0
+                        }
+                    },
                     "barrier_holes": [],
                     "open_connections_of_unsafe_users": [],
                     "user_profiles": {
@@ -372,28 +380,29 @@
                         "sentinel_intact": true,
                         "policy_noeviction": true
                     },
-                    "redis_now_ms": "1795342406171",
-                    "block_keys_present": 18,
+                    "redis_now_ms": "1795345465003",
+                    "block_keys_present": 19,
                     "block_keys_seen_then_gone": 0,
                     "active_remaining_ms": {
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:0843d9c86cb8cadc88b4b305b8b3d6607ae291addcb74c78e5dc60bf20c4c548": "51977",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:8bf5ad06ba2249e8275f088f7c4e5c5b5676eb873466dbd29110b75a66653c48": "50942",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "11191",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "16219",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:4ed739bbea82b6d24055d94c9f52264e0a3a778bfc5112692537584034b2da12": "51214",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:85fe03e89870b24a5abc8d69646ddf43439dfa9e40fe49f613e8e85b21c46718": "50739",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:0b2ee38b154b5557131a2c0d51893224e3ae7d13a188b9d87bc59b210ae39d2a": "50667",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:b51800ddc2b8eca08a5562eccc18f35ea0e8f5ed4e6ec3fedc634acaa14c30aa": "51292",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:d34b14db185770c6e46d325cbb98a8d57900f7fbff107e9125d80e5a27b8ad4e": "50667",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:39fd96914910c5cc6dfcc2e355001d3f85321adac4cb66f088759c7e56547313": "50810",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:bba0fb06eb0903c44d9831a793d36101435f0eff08436a2674f205a15a927d67": "50878",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:aad26d88ce63ee98861573b9ac2f30a3924aa254f27b6c82c528e7d394ebaaab": "52232",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:ee2e757ccdebb5fe47f3f7f4ee547b40e1039d48c34dac99f0029c93b9e19096": "51628",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:d1e72600dba4dcf56ef2f884a3979c8c43f9489832baf58a79946a08b4827867": "51258",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:51d68dd16c94ce045f46d2d6a0b9f406c2379454f3a9e906d3d59f5b3cca1a28": "51490",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:6e254cc752eaf710fe8b0d0e76228ffdc5a0be6a578f7461aa87afadeabefebe": "50644",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:3af420d471508bbf925960a44f4d8dd3baf565717c84a334f499754cd4a0f659": "51059",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:c6154e8da71e9047339f7dc53f7063bf5dbbacb3142746a05d9ac3b1996a570e": "51020"
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "16418",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:85fe03e89870b24a5abc8d69646ddf43439dfa9e40fe49f613e8e85b21c46718": "50889",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:6e254cc752eaf710fe8b0d0e76228ffdc5a0be6a578f7461aa87afadeabefebe": "51036",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "11405",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:c6154e8da71e9047339f7dc53f7063bf5dbbacb3142746a05d9ac3b1996a570e": "51303",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:3af420d471508bbf925960a44f4d8dd3baf565717c84a334f499754cd4a0f659": "50939",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:aad26d88ce63ee98861573b9ac2f30a3924aa254f27b6c82c528e7d394ebaaab": "51094",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:39fd96914910c5cc6dfcc2e355001d3f85321adac4cb66f088759c7e56547313": "51697",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:51d68dd16c94ce045f46d2d6a0b9f406c2379454f3a9e906d3d59f5b3cca1a28": "52039",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:0843d9c86cb8cadc88b4b305b8b3d6607ae291addcb74c78e5dc60bf20c4c548": "51151",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:1e1620177d5faebc3e648b2e10504ff14ffa9ed5d5a5e9b982b6d345c67fcfb8": "50972",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:1748a5c755168fe8563552984dbe9bd12e440a0ded062fa469dc8837ca8af751": "50890",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:b51800ddc2b8eca08a5562eccc18f35ea0e8f5ed4e6ec3fedc634acaa14c30aa": "51246",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:bba0fb06eb0903c44d9831a793d36101435f0eff08436a2674f205a15a927d67": "51647",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:ee2e757ccdebb5fe47f3f7f4ee547b40e1039d48c34dac99f0029c93b9e19096": "51058",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:8bf5ad06ba2249e8275f088f7c4e5c5b5676eb873466dbd29110b75a66653c48": "50972",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:4ed739bbea82b6d24055d94c9f52264e0a3a778bfc5112692537584034b2da12": "51410",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:d1e72600dba4dcf56ef2f884a3979c8c43f9489832baf58a79946a08b4827867": "51541",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:d34b14db185770c6e46d325cbb98a8d57900f7fbff107e9125d80e5a27b8ad4e": "50961"
                     },
                     "unknown_expiry": [],
                     "expired_but_present": 0,
@@ -407,12 +416,12 @@
                 "detail": {
                     "intake": "closed",
                     "accepted": [
-                        "130",
-                        "130"
+                        "137",
+                        "137"
                     ],
                     "rejected": [
-                        "1234",
-                        "1241"
+                        "1271",
+                        "1277"
                     ],
                     "drain_snapshots": [
                         [
@@ -428,6 +437,14 @@
                     ],
                     "queues_nonempty": [],
                     "inflight_workers": [],
+                    "v2_namespace_write_checks": {
+                        "rl-login": {
+                            "keys_checked": 165,
+                            "dryrun_checks": 6930,
+                            "holes": [],
+                            "holes_total": 0
+                        }
+                    },
                     "barrier_holes": [],
                     "open_connections_of_unsafe_users": [],
                     "user_profiles": {
@@ -495,7 +512,7 @@
                         "sentinel_intact": true,
                         "policy_noeviction": true
                     },
-                    "redis_now_ms": "1795342460141",
+                    "redis_now_ms": "1795345519381",
                     "block_keys_present": 0,
                     "block_keys_seen_then_gone": 0,
                     "active_remaining_ms": [],
@@ -504,22 +521,58 @@
                     "unexplained_absence": [],
                     "new_since_first_scan": [],
                     "ledger_violations": [],
-                    "event_violations": []
+                    "event_violations": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
                 }
             },
             "activation_permitted": true,
+            "signal": {
+                "permitted": true,
+                "revoked": false,
+                "first_evaluation": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "recheck_after_hold": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "verification_right_after_signal": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                }
+            },
             "reopen_per_policy": {
                 "login_protection": {
                     "result": {
                         "policy": "login_protection",
                         "ok": true,
-                        "ms": "1795342466578",
+                        "ms": "1795345528202",
                         "allowed": false,
                         "blocked": true,
                         "class": "Maatify\\RateLimiter\\DTO\\RateLimitResultDTO"
                     },
-                    "ns_keys_before": 157,
-                    "ns_keys_after": 168,
+                    "ns_keys_before": 156,
+                    "ns_keys_after": 167,
                     "k4_census_for_the_account": {
                         "score": 1,
                         "block": 0,
@@ -529,7 +582,7 @@
                         "watch": 0,
                         "distinct": 0
                     },
-                    "return_ms": "46",
+                    "return_ms": "39",
                     "verified": true
                 }
             },
@@ -537,90 +590,46 @@
                 "rehearsal:wstats:direct-97": {
                     "role": "direct",
                     "user": "w_direct",
-                    "done": "1",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795342466578",
-                    "first_noperm_ms": "0",
-                    "ts": "1795342466726"
-                },
-                "rehearsal:wstats:retry-94": {
-                    "role": "retry",
-                    "user": "w_retry",
-                    "done": "17",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795342404133",
-                    "first_noperm_ms": "0",
-                    "ts": "1795342405634"
-                },
-                "rehearsal:wstats:deferred-99": {
-                    "role": "deferred",
-                    "user": "w_deferred",
                     "done": "0",
                     "errors": "0",
                     "noperm": "0",
                     "conn_lost": "0",
                     "last_ok_ms": "0",
                     "first_noperm_ms": "0",
-                    "ts": "1795342466742"
-                },
-                "rehearsal:wstats:deferred-93": {
-                    "role": "deferred",
-                    "user": "w_deferred",
-                    "done": "17",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795342404402",
-                    "first_noperm_ms": "0",
-                    "ts": "1795342405650"
-                },
-                "rehearsal:wstats:legacy-95": {
-                    "role": "legacy",
-                    "user": "w_legacy",
-                    "done": "121",
-                    "errors": "15",
-                    "noperm": "15",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795342404644",
-                    "first_noperm_ms": "1795342404712",
-                    "ts": "1795342405597"
+                    "ts": "1795345528356"
                 },
                 "rehearsal:wstats:direct-91": {
                     "role": "direct",
                     "user": "w_direct",
-                    "done": "57",
+                    "done": "71",
                     "errors": "0",
                     "noperm": "0",
                     "conn_lost": "0",
-                    "last_ok_ms": "1795342402347",
+                    "last_ok_ms": "1795345461414",
                     "first_noperm_ms": "0",
-                    "ts": "1795342405646"
+                    "ts": "1795345464042"
                 },
                 "rehearsal:wstats:direct-92": {
                     "role": "direct",
                     "user": "w_direct",
-                    "done": "52",
+                    "done": "56",
                     "errors": "0",
                     "noperm": "0",
                     "conn_lost": "0",
-                    "last_ok_ms": "1795342402260",
+                    "last_ok_ms": "1795345461386",
                     "first_noperm_ms": "0",
-                    "ts": "1795342405630"
+                    "ts": "1795345464053"
                 },
-                "rehearsal:wstats:direct-98": {
-                    "role": "direct",
-                    "user": "w_direct",
-                    "done": "0",
+                "rehearsal:wstats:retry-94": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "10",
                     "errors": "0",
                     "noperm": "0",
                     "conn_lost": "0",
-                    "last_ok_ms": "0",
+                    "last_ok_ms": "1795345462885",
                     "first_noperm_ms": "0",
-                    "ts": "1795342466742"
+                    "ts": "1795345464036"
                 },
                 "rehearsal:wstats:retry-100": {
                     "role": "retry",
@@ -631,7 +640,51 @@
                     "conn_lost": "0",
                     "last_ok_ms": "0",
                     "first_noperm_ms": "0",
-                    "ts": "1795342466720"
+                    "ts": "1795345528357"
+                },
+                "rehearsal:wstats:direct-98": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "1",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795345528202",
+                    "first_noperm_ms": "0",
+                    "ts": "1795345528356"
+                },
+                "rehearsal:wstats:deferred-99": {
+                    "role": "deferred",
+                    "user": "w_deferred",
+                    "done": "0",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "0",
+                    "first_noperm_ms": "0",
+                    "ts": "1795345528364"
+                },
+                "rehearsal:wstats:deferred-93": {
+                    "role": "deferred",
+                    "user": "w_deferred",
+                    "done": "10",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795345462180",
+                    "first_noperm_ms": "0",
+                    "ts": "1795345464060"
+                },
+                "rehearsal:wstats:legacy-95": {
+                    "role": "legacy",
+                    "user": "w_legacy",
+                    "done": "112",
+                    "errors": "16",
+                    "noperm": "16",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795345463047",
+                    "first_noperm_ms": "1795345463117",
+                    "ts": "1795345464042"
                 }
             }
         },
@@ -641,69 +694,69 @@
                 "otp_protection": "rl-otp"
             },
             "intake_close": {
-                "accepted_at_close": "135",
+                "accepted_at_close": "129",
                 "rejected_at_close": "0",
-                "accepted_later": "135",
-                "rejected_later": "34"
+                "accepted_later": "129",
+                "rejected_later": "33"
             },
             "k4_representability": {
                 "otp_protection": {
                     "census": {
                         "families": {
-                            "score": 7,
+                            "score": 10,
                             "block": 4,
-                            "budget": 7,
+                            "budget": 10,
                             "cycle": 2,
                             "pause": 0,
                             "watch": 0,
                             "distinct": 0
                         },
-                        "k4_block_max_expiry_ms": "1795342767719"
+                        "k4_block_max_expiry_ms": "1795345828891"
                     },
                     "reader_k4_score_hot_account": 10,
-                    "block_keys_in_ns_all_scopes": 22
+                    "block_keys_in_ns_all_scopes": 20
                 }
             },
             "synthetic_blocks": {
                 "rl-otp": {
                     "key": "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0",
                     "duration_s": 20,
-                    "pexpiretime_raw": "1795342487767",
-                    "redis_now_ms": "1795342467767"
+                    "pexpiretime_raw": "1795345549395",
+                    "redis_now_ms": "1795345529395"
                 }
             },
             "synthetic_previous_generation_block": {
                 "key": "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514",
-                "pexpiretime_raw": "1795342492784"
+                "pexpiretime_raw": "1795345554415"
             },
             "timeline_redis_ms": {
-                "load_end": "1795342472768",
-                "intake_closed": "1795342472785",
-                "drained": "1795342474441",
-                "barrier_start": "1795342474441",
-                "barrier_applied": "1795342474443",
-                "connections_killed": "1795342475451",
-                "probes_done": "1795342475453",
-                "gate_while_block_active": "1795342475955",
-                "first_scan_done": "1795342475959",
-                "max_block_expiry_ms": "1795342767719",
-                "natural_expiry_passed": "1795342768944",
-                "final_scan_done": "1795342769464",
-                "activation_signal_set": "1795342772964",
-                "reopen_requested": "1795342775835",
-                "first_success_after_reopen": "1795342776043"
+                "load_end": "1795345534398",
+                "intake_closed": "1795345534416",
+                "drained": "1795345537621",
+                "barrier_start": "1795345537621",
+                "barrier_applied": "1795345537623",
+                "connections_killed": "1795345538614",
+                "probes_done": "1795345538616",
+                "gate_while_block_active": "1795345539572",
+                "first_scan_done": "1795345539574",
+                "max_block_expiry_ms": "1795345828891",
+                "natural_expiry_passed": "1795345830095",
+                "final_scan_done": "1795345831040",
+                "activation_signal_set": "1795345835942",
+                "reopen_requested": "1795345839814",
+                "first_success_after_reopen": "1795345840024"
             },
             "measured": {
-                "drain_ms": "1656",
-                "barrier_and_probes_ms": "1012",
-                "first_scan_ms": "506",
-                "wait_for_natural_expiry_ms": "292985",
-                "final_scan_and_gate_ms": "520",
-                "validity_hold_to_signal_ms": "3500",
-                "reopen_to_all_policies_verified_ms": "208",
-                "total_stop_to_all_policies_verified_ms": "303258",
+                "drain_ms": "3205",
+                "barrier_and_probes_ms": "995",
+                "first_scan_ms": "958",
+                "wait_for_natural_expiry_ms": "290521",
+                "final_scan_and_gate_ms": "945",
+                "validity_hold_to_signal_ms": "4902",
+                "reopen_to_all_policies_verified_ms": "210",
+                "total_stop_to_all_policies_verified_ms": "305608",
                 "per_policy_reopen_to_verified_result_ms": {
-                    "otp_protection": "15"
+                    "otp_protection": "48"
                 }
             },
             "probes": {
@@ -799,10 +852,10 @@
                         "ACL_DELUSER_ctl": "DENIED"
                     }
                 },
-                "digest_before": "a791b83a8bdeb07eddb689a17ee74784f4924f30:198",
-                "digest_after": "a791b83a8bdeb07eddb689a17ee74784f4924f30:198",
+                "digest_before": "09c195bc0f0154206935b57edfe29fef84cca9d3:178",
+                "digest_after": "09c195bc0f0154206935b57edfe29fef84cca9d3:178",
                 "ctl_user_still_exists": true,
-                "acl_log_entries_new": 56
+                "acl_log_entries_new": 57
             },
             "user_profiles_after_barrier": {
                 "ctl": {
@@ -876,12 +929,12 @@
                 "detail": {
                     "intake": "closed",
                     "accepted": [
-                        "135",
-                        "135"
+                        "129",
+                        "129"
                     ],
                     "rejected": [
-                        "61",
-                        "68"
+                        "95",
+                        "102"
                     ],
                     "drain_snapshots": [
                         [
@@ -897,6 +950,14 @@
                     ],
                     "queues_nonempty": [],
                     "inflight_workers": [],
+                    "v2_namespace_write_checks": {
+                        "rl-otp": {
+                            "keys_checked": 187,
+                            "dryrun_checks": 7854,
+                            "holes": [],
+                            "holes_total": 0
+                        }
+                    },
                     "barrier_holes": [],
                     "open_connections_of_unsafe_users": [],
                     "user_profiles": {
@@ -964,33 +1025,31 @@
                         "sentinel_intact": true,
                         "policy_noeviction": true
                     },
-                    "redis_now_ms": "1795342475952",
-                    "block_keys_present": 23,
+                    "redis_now_ms": "1795345539571",
+                    "block_keys_present": 21,
                     "block_keys_seen_then_gone": 0,
                     "active_remaining_ms": {
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:f4300a134bb8684167890fa7c6535dca8c8fea06be5fe5d09d4679c62eb723e9": "291512",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:5167288a046e60fa081449195a02ca8392707dd1eef7488b6befb5be3747f696": "51939",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:500906416fde75e3336b2fd7cea9c81ed92397bfe7e47d634e117f65fdc7051b": "53145",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:d4f7f363bf03461d9883ca9373f7c57f796602098a8e3baa4da1a3e84284d6b6": "291498",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:3ad4deb3a2b6ebf6c31fde6647df5c5591e1a9981b1a85f2c6da81b85a508986": "51498",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:2b9deb21a4f34e868dc558a65ce9964c896516f7660fc76a043e9c4a233c06fe": "51512",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:4a515e386cbac19e0cd5943a4d886a5f793b62cc0ef3c572cf7efe3a4a77e321": "52003",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "11815",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:ea1051a4fb71d14d9ace6e9e7c08cb6b90b3ca68ead8e42e8d0cc16f2c492ecc": "291767",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:1cfdcdeb78aec573fe2416708db337e7ef2bc78275eb1310198adf9fef12046a": "51535",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:5e65df1ccb48635b6868d20fde702aea35add130a0df93d5125375d5f954e33a": "51785",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:8102d3ada5e7610d298ad10adbab401f29092218d39b990c8d8ef42539ae02b4": "51370",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:2afd9023d17e8f4bf6051332ed96dae157b5dd88bea23ac787b57d0a9a78e62a": "6259",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:731f9034e85acd314b5db3df9177554f84d90f31cddaa39aa76ef8757f45eeac": "51300",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:c1c293c45515b01cc30293d5e8e381c0475b6e9ae96913c8b5a451307833ad64": "6288",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:ef6a761c1b2edeec5d4155a047f3473f38c205203bb07121e39f1514727b8e89": "51882",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:4be2f258add60ca5e1446159c5f264a4e1a5123d6d38346dacd71651b37c81a3": "51376",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:587a1c4ab70c7ff0afb49de8e810f88f4ac601dd79ce3bf62f43c6fbcd4b4929": "51319",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:94ca7e37bd8edd733a63d73b727837604abb1f534f71a1b7a6d2fe260c089895": "51767",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "16832",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:02bc27226a4bfadd60f801d92dd022a40ce6dbbe8d4db6836d1579b86d11f345": "51613",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:6cea39243ad9da79f3a68f3036d772311e9acf88426b48a60c114597e1a89b54": "51467",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:477fbbce9f903649fe30e818a706449b793be987dc4b88a6fc0922a149fb434e": "291158"
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:94ca7e37bd8edd733a63d73b727837604abb1f534f71a1b7a6d2fe260c089895": "49320",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:4be2f258add60ca5e1446159c5f264a4e1a5123d6d38346dacd71651b37c81a3": "49513",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:2b9deb21a4f34e868dc558a65ce9964c896516f7660fc76a043e9c4a233c06fe": "49227",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:1cfdcdeb78aec573fe2416708db337e7ef2bc78275eb1310198adf9fef12046a": "51140",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:d4f7f363bf03461d9883ca9373f7c57f796602098a8e3baa4da1a3e84284d6b6": "289282",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:500906416fde75e3336b2fd7cea9c81ed92397bfe7e47d634e117f65fdc7051b": "49303",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:13c51e6a17ebd16140d38475c22569c4f6fab50f56702e9e22a2aaaa4bdd51c1": "289150",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:ea1051a4fb71d14d9ace6e9e7c08cb6b90b3ca68ead8e42e8d0cc16f2c492ecc": "289320",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:731f9034e85acd314b5db3df9177554f84d90f31cddaa39aa76ef8757f45eeac": "50194",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:02bc27226a4bfadd60f801d92dd022a40ce6dbbe8d4db6836d1579b86d11f345": "49393",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "9824",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:6cea39243ad9da79f3a68f3036d772311e9acf88426b48a60c114597e1a89b54": "49931",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:5167288a046e60fa081449195a02ca8392707dd1eef7488b6befb5be3747f696": "50293",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:ef6a761c1b2edeec5d4155a047f3473f38c205203bb07121e39f1514727b8e89": "49716",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:3ad4deb3a2b6ebf6c31fde6647df5c5591e1a9981b1a85f2c6da81b85a508986": "49281",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:8102d3ada5e7610d298ad10adbab401f29092218d39b990c8d8ef42539ae02b4": "49504",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:4a515e386cbac19e0cd5943a4d886a5f793b62cc0ef3c572cf7efe3a4a77e321": "49420",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:4d2ee5af50fd44af4e9991adbd23557ddd8125b544e2a0f5ef0da4b054cb5fb4": "4095",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "14844",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:587a1c4ab70c7ff0afb49de8e810f88f4ac601dd79ce3bf62f43c6fbcd4b4929": "50123",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:2afd9023d17e8f4bf6051332ed96dae157b5dd88bea23ac787b57d0a9a78e62a": "4068"
                     },
                     "unknown_expiry": [],
                     "expired_but_present": 0,
@@ -1004,12 +1063,12 @@
                 "detail": {
                     "intake": "closed",
                     "accepted": [
-                        "135",
-                        "135"
+                        "129",
+                        "129"
                     ],
                     "rejected": [
-                        "6796",
-                        "6803"
+                        "6322",
+                        "6328"
                     ],
                     "drain_snapshots": [
                         [
@@ -1025,6 +1084,14 @@
                     ],
                     "queues_nonempty": [],
                     "inflight_workers": [],
+                    "v2_namespace_write_checks": {
+                        "rl-otp": {
+                            "keys_checked": 166,
+                            "dryrun_checks": 6972,
+                            "holes": [],
+                            "holes_total": 0
+                        }
+                    },
                     "barrier_holes": [],
                     "open_connections_of_unsafe_users": [],
                     "user_profiles": {
@@ -1092,7 +1159,7 @@
                         "sentinel_intact": true,
                         "policy_noeviction": true
                     },
-                    "redis_now_ms": "1795342769463",
+                    "redis_now_ms": "1795345831040",
                     "block_keys_present": 0,
                     "block_keys_seen_then_gone": 0,
                     "active_remaining_ms": [],
@@ -1101,22 +1168,58 @@
                     "unexplained_absence": [],
                     "new_since_first_scan": [],
                     "ledger_violations": [],
-                    "event_violations": []
+                    "event_violations": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
                 }
             },
             "activation_permitted": true,
+            "signal": {
+                "permitted": true,
+                "revoked": false,
+                "first_evaluation": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "recheck_after_hold": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "verification_right_after_signal": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                }
+            },
             "reopen_per_policy": {
                 "otp_protection": {
                     "result": {
                         "policy": "otp_protection",
                         "ok": true,
-                        "ms": "1795342775850",
+                        "ms": "1795345839862",
                         "allowed": false,
                         "blocked": true,
                         "class": "Maatify\\RateLimiter\\DTO\\RateLimitResultDTO"
                     },
-                    "ns_keys_before": 175,
-                    "ns_keys_after": 185,
+                    "ns_keys_before": 157,
+                    "ns_keys_after": 167,
                     "k4_census_for_the_account": {
                         "score": 1,
                         "block": 0,
@@ -1126,7 +1229,7 @@
                         "watch": 0,
                         "distinct": 0
                     },
-                    "return_ms": "15",
+                    "return_ms": "48",
                     "verified": true
                 }
             },
@@ -1134,13 +1237,24 @@
                 "rehearsal:wstats:direct-109": {
                     "role": "direct",
                     "user": "w_direct",
-                    "done": "0",
+                    "done": "1",
                     "errors": "0",
                     "noperm": "0",
                     "conn_lost": "0",
-                    "last_ok_ms": "0",
+                    "last_ok_ms": "1795345839862",
                     "first_noperm_ms": "0",
-                    "ts": "1795342776024"
+                    "ts": "1795345840005"
+                },
+                "rehearsal:wstats:direct-103": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "65",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795345534393",
+                    "first_noperm_ms": "0",
+                    "ts": "1795345538600"
                 },
                 "rehearsal:wstats:retry-111": {
                     "role": "retry",
@@ -1151,73 +1265,51 @@
                     "conn_lost": "0",
                     "last_ok_ms": "0",
                     "first_noperm_ms": "0",
-                    "ts": "1795342776030"
-                },
-                "rehearsal:wstats:direct-102": {
-                    "role": "direct",
-                    "user": "w_direct",
-                    "done": "63",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795342472775",
-                    "first_noperm_ms": "0",
-                    "ts": "1795342475443"
-                },
-                "rehearsal:wstats:direct-103": {
-                    "role": "direct",
-                    "user": "w_direct",
-                    "done": "63",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795342472747",
-                    "first_noperm_ms": "0",
-                    "ts": "1795342475440"
-                },
-                "rehearsal:wstats:legacy-106": {
-                    "role": "legacy",
-                    "user": "w_legacy",
-                    "done": "113",
-                    "errors": "15",
-                    "noperm": "15",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795342474441",
-                    "first_noperm_ms": "1795342474510",
-                    "ts": "1795342475406"
+                    "ts": "1795345839998"
                 },
                 "rehearsal:wstats:direct-108": {
                     "role": "direct",
                     "user": "w_direct",
-                    "done": "1",
+                    "done": "0",
                     "errors": "0",
                     "noperm": "0",
                     "conn_lost": "0",
-                    "last_ok_ms": "1795342775850",
+                    "last_ok_ms": "0",
                     "first_noperm_ms": "0",
-                    "ts": "1795342776021"
+                    "ts": "1795345839998"
                 },
-                "rehearsal:wstats:retry-105": {
-                    "role": "retry",
-                    "user": "w_retry",
-                    "done": "13",
-                    "errors": "0",
-                    "noperm": "0",
+                "rehearsal:wstats:legacy-106": {
+                    "role": "legacy",
+                    "user": "w_legacy",
+                    "done": "131",
+                    "errors": "16",
+                    "noperm": "16",
                     "conn_lost": "0",
-                    "last_ok_ms": "1795342474278",
-                    "first_noperm_ms": "0",
-                    "ts": "1795342475444"
+                    "last_ok_ms": "1795345537586",
+                    "first_noperm_ms": "1795345537662",
+                    "ts": "1795345538610"
                 },
                 "rehearsal:wstats:deferred-104": {
                     "role": "deferred",
                     "user": "w_deferred",
-                    "done": "8",
+                    "done": "14",
                     "errors": "0",
                     "noperm": "0",
                     "conn_lost": "0",
-                    "last_ok_ms": "1795342473994",
+                    "last_ok_ms": "1795345536341",
                     "first_noperm_ms": "0",
-                    "ts": "1795342475444"
+                    "ts": "1795345538588"
+                },
+                "rehearsal:wstats:direct-102": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "50",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795345534153",
+                    "first_noperm_ms": "0",
+                    "ts": "1795345538604"
                 },
                 "rehearsal:wstats:deferred-110": {
                     "role": "deferred",
@@ -1228,7 +1320,18 @@
                     "conn_lost": "0",
                     "last_ok_ms": "0",
                     "first_noperm_ms": "0",
-                    "ts": "1795342776030"
+                    "ts": "1795345840025"
+                },
+                "rehearsal:wstats:retry-105": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "14",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795345537385",
+                    "first_noperm_ms": "0",
+                    "ts": "1795345538598"
                 }
             }
         },
@@ -1238,10 +1341,10 @@
                 "api_heavy_protection": "rl-api"
             },
             "intake_close": {
-                "accepted_at_close": "138",
+                "accepted_at_close": "133",
                 "rejected_at_close": "0",
-                "accepted_later": "138",
-                "rejected_later": "36"
+                "accepted_later": "133",
+                "rejected_later": "33"
             },
             "k4_representability": {
                 "api_heavy_protection": {
@@ -1265,40 +1368,40 @@
                 "rl-api": {
                     "key": "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0",
                     "duration_s": 20,
-                    "pexpiretime_raw": "1795342797073",
-                    "redis_now_ms": "1795342777073"
+                    "pexpiretime_raw": "1795345861056",
+                    "redis_now_ms": "1795345841057"
                 }
             },
             "synthetic_previous_generation_block": {
                 "key": "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514",
-                "pexpiretime_raw": "1795342802087"
+                "pexpiretime_raw": "1795345866075"
             },
             "timeline_redis_ms": {
-                "load_end": "1795342782075",
-                "intake_closed": "1795342782087",
-                "drained": "1795342783740",
-                "barrier_start": "1795342783740",
-                "barrier_applied": "1795342783742",
-                "connections_killed": "1795342784725",
-                "probes_done": "1795342784727",
-                "gate_while_block_active": "1795342785212",
-                "first_scan_done": "1795342785213",
-                "max_block_expiry_ms": "1795342838334",
-                "natural_expiry_passed": "1795342839743",
-                "final_scan_done": "1795342840271",
-                "activation_signal_set": "1795342843777",
-                "reopen_requested": "1795342846636",
-                "first_success_after_reopen": "1795342846846"
+                "load_end": "1795345846059",
+                "intake_closed": "1795345846076",
+                "drained": "1795345847746",
+                "barrier_start": "1795345847747",
+                "barrier_applied": "1795345847748",
+                "connections_killed": "1795345848734",
+                "probes_done": "1795345848735",
+                "gate_while_block_active": "1795345849662",
+                "first_scan_done": "1795345849663",
+                "max_block_expiry_ms": "1795345901573",
+                "natural_expiry_passed": "1795345902853",
+                "final_scan_done": "1795345903789",
+                "activation_signal_set": "1795345908688",
+                "reopen_requested": "1795345912537",
+                "first_success_after_reopen": "1795345912742"
             },
             "measured": {
-                "drain_ms": "1653",
-                "barrier_and_probes_ms": "987",
-                "first_scan_ms": "486",
-                "wait_for_natural_expiry_ms": "54530",
-                "final_scan_and_gate_ms": "528",
-                "validity_hold_to_signal_ms": "3506",
-                "reopen_to_all_policies_verified_ms": "210",
-                "total_stop_to_all_policies_verified_ms": "64759",
+                "drain_ms": "1670",
+                "barrier_and_probes_ms": "989",
+                "first_scan_ms": "928",
+                "wait_for_natural_expiry_ms": "53190",
+                "final_scan_and_gate_ms": "936",
+                "validity_hold_to_signal_ms": "4899",
+                "reopen_to_all_policies_verified_ms": "205",
+                "total_stop_to_all_policies_verified_ms": "66666",
                 "per_policy_reopen_to_verified_result_ms": {
                     "api_heavy_protection": "21"
                 }
@@ -1396,8 +1499,8 @@
                         "ACL_DELUSER_ctl": "DENIED"
                     }
                 },
-                "digest_before": "a938463bcb4cc8a6cde67e6b7f10aac2bfce8896:171",
-                "digest_after": "a938463bcb4cc8a6cde67e6b7f10aac2bfce8896:171",
+                "digest_before": "8a6ee92342bd4c95075ba06bbb4deee4f5f442b5:167",
+                "digest_after": "8a6ee92342bd4c95075ba06bbb4deee4f5f442b5:167",
                 "ctl_user_still_exists": true,
                 "acl_log_entries_new": 56
             },
@@ -1473,12 +1576,12 @@
                 "detail": {
                     "intake": "closed",
                     "accepted": [
-                        "138",
-                        "138"
+                        "133",
+                        "133"
                     ],
                     "rejected": [
-                        "64",
-                        "71"
+                        "59",
+                        "65"
                     ],
                     "drain_snapshots": [
                         [
@@ -1494,6 +1597,14 @@
                     ],
                     "queues_nonempty": [],
                     "inflight_workers": [],
+                    "v2_namespace_write_checks": {
+                        "rl-api": {
+                            "keys_checked": 176,
+                            "dryrun_checks": 7392,
+                            "holes": [],
+                            "holes_total": 0
+                        }
+                    },
                     "barrier_holes": [],
                     "open_connections_of_unsafe_users": [],
                     "user_profiles": {
@@ -1561,27 +1672,27 @@
                         "sentinel_intact": true,
                         "policy_noeviction": true
                     },
-                    "redis_now_ms": "1795342785211",
+                    "redis_now_ms": "1795345849661",
                     "block_keys_present": 17,
                     "block_keys_seen_then_gone": 0,
                     "active_remaining_ms": {
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:e88ae599582e273efaa8abe645f57024dd4e9cc1ab4baffdf2c42911c4c76b94": "52066",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:251f145087a67f4aa0c1c5abc037fe01a1a9147603d3a356b6d16d8b8a4ab6c7": "51253",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:a99faa33b24a70c1524ca16289ac7f195bc7c355ee71885f66a3ab200cd3e371": "52107",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:3e2f97e45389eb0ba2f6f1343ec2369f72b1d629a1272e98c63f27f2066d23f6": "51425",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:4501e5d44165de4b71cbf5d3eb2780e112f3cdbb9556fa5c35fc832652e55596": "53123",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:52f9b5416e622b10fc9c580d01e56200b47cc4259c3eca99a49a698a340b1a35": "51598",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:9c871126198a5be0fe298ba1f9174e352d6e6e16398f5e96d06079596fd1c8da": "51480",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "16876",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:0c0f4ff82c9919b6730797c6b2235d86a7e3e8ab252e1af54412c986cd95be06": "51323",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:4d838394d38a7ab1d43931c4aab4ad61bb559aec9722eaefc93eaac8469fe642": "51458",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:99e9da1a72a478781c1c335a7ca2359090b2fa43757196fc4e665035f04a14af": "51851",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:625811478460d8549782d4718ecb19f652ff90022c980d6da71cea261d4ca64a": "52028",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:9ecb64677fcb77bcca90fce3a0464698418ddd6057fb26f8680e685c4c59c104": "52251",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:b7e36762f34da43770679358d9e9826760805b9c0db2a007efb0c608d1c08e23": "51356",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:c90644deaef70f4215370cce984661b85d1f5bc0c67a453ec6c66c07a2955deb": "51738",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "11862",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:cf7fa51d31528da339ba17b88925dc490025d16ae10ee65f6515b857c093334e": "51263"
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:251f145087a67f4aa0c1c5abc037fe01a1a9147603d3a356b6d16d8b8a4ab6c7": "50836",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:0c0f4ff82c9919b6730797c6b2235d86a7e3e8ab252e1af54412c986cd95be06": "50980",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:625811478460d8549782d4718ecb19f652ff90022c980d6da71cea261d4ca64a": "51912",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:a99faa33b24a70c1524ca16289ac7f195bc7c355ee71885f66a3ab200cd3e371": "50743",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:4d838394d38a7ab1d43931c4aab4ad61bb559aec9722eaefc93eaac8469fe642": "50909",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:c90644deaef70f4215370cce984661b85d1f5bc0c67a453ec6c66c07a2955deb": "51057",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:9c871126198a5be0fe298ba1f9174e352d6e6e16398f5e96d06079596fd1c8da": "51761",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:cf7fa51d31528da339ba17b88925dc490025d16ae10ee65f6515b857c093334e": "50804",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:b7e36762f34da43770679358d9e9826760805b9c0db2a007efb0c608d1c08e23": "51155",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:3e2f97e45389eb0ba2f6f1343ec2369f72b1d629a1272e98c63f27f2066d23f6": "50870",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "16414",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "11395",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:52f9b5416e622b10fc9c580d01e56200b47cc4259c3eca99a49a698a340b1a35": "50765",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:9ecb64677fcb77bcca90fce3a0464698418ddd6057fb26f8680e685c4c59c104": "51236",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:99e9da1a72a478781c1c335a7ca2359090b2fa43757196fc4e665035f04a14af": "50912",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:e88ae599582e273efaa8abe645f57024dd4e9cc1ab4baffdf2c42911c4c76b94": "51185",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:4501e5d44165de4b71cbf5d3eb2780e112f3cdbb9556fa5c35fc832652e55596": "51062"
                     },
                     "unknown_expiry": [],
                     "expired_but_present": 0,
@@ -1595,12 +1706,12 @@
                 "detail": {
                     "intake": "closed",
                     "accepted": [
-                        "138",
-                        "138"
+                        "133",
+                        "133"
                     ],
                     "rejected": [
-                        "1352",
-                        "1359"
+                        "1218",
+                        "1225"
                     ],
                     "drain_snapshots": [
                         [
@@ -1616,6 +1727,14 @@
                     ],
                     "queues_nonempty": [],
                     "inflight_workers": [],
+                    "v2_namespace_write_checks": {
+                        "rl-api": {
+                            "keys_checked": 159,
+                            "dryrun_checks": 6678,
+                            "holes": [],
+                            "holes_total": 0
+                        }
+                    },
                     "barrier_holes": [],
                     "open_connections_of_unsafe_users": [],
                     "user_profiles": {
@@ -1683,7 +1802,7 @@
                         "sentinel_intact": true,
                         "policy_noeviction": true
                     },
-                    "redis_now_ms": "1795342840271",
+                    "redis_now_ms": "1795345903789",
                     "block_keys_present": 0,
                     "block_keys_seen_then_gone": 0,
                     "active_remaining_ms": [],
@@ -1692,22 +1811,58 @@
                     "unexplained_absence": [],
                     "new_since_first_scan": [],
                     "ledger_violations": [],
-                    "event_violations": []
+                    "event_violations": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
                 }
             },
             "activation_permitted": true,
+            "signal": {
+                "permitted": true,
+                "revoked": false,
+                "first_evaluation": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "recheck_after_hold": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "verification_right_after_signal": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                }
+            },
             "reopen_per_policy": {
                 "api_heavy_protection": {
                     "result": {
                         "policy": "api_heavy_protection",
                         "ok": true,
-                        "ms": "1795342846657",
+                        "ms": "1795345912558",
                         "allowed": false,
                         "blocked": true,
                         "class": "Maatify\\RateLimiter\\DTO\\RateLimitResultDTO"
                     },
-                    "ns_keys_before": 154,
-                    "ns_keys_after": 165,
+                    "ns_keys_before": 150,
+                    "ns_keys_after": 161,
                     "k4_census_for_the_account": {
                         "score": 0,
                         "block": 0,
@@ -1722,71 +1877,60 @@
                 }
             },
             "worker_stats": {
-                "rehearsal:wstats:retry-122": {
-                    "role": "retry",
-                    "user": "w_retry",
-                    "done": "0",
+                "rehearsal:wstats:deferred-115": {
+                    "role": "deferred",
+                    "user": "w_deferred",
+                    "done": "9",
                     "errors": "0",
                     "noperm": "0",
                     "conn_lost": "0",
-                    "last_ok_ms": "0",
+                    "last_ok_ms": "1795345847052",
                     "first_noperm_ms": "0",
-                    "ts": "1795342846833"
+                    "ts": "1795345848712"
                 },
                 "rehearsal:wstats:direct-114": {
                     "role": "direct",
                     "user": "w_direct",
-                    "done": "59",
+                    "done": "63",
                     "errors": "0",
                     "noperm": "0",
                     "conn_lost": "0",
-                    "last_ok_ms": "1795342781967",
+                    "last_ok_ms": "1795345845986",
                     "first_noperm_ms": "0",
-                    "ts": "1795342784719"
-                },
-                "rehearsal:wstats:direct-113": {
-                    "role": "direct",
-                    "user": "w_direct",
-                    "done": "59",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795342782055",
-                    "first_noperm_ms": "0",
-                    "ts": "1795342784719"
-                },
-                "rehearsal:wstats:direct-120": {
-                    "role": "direct",
-                    "user": "w_direct",
-                    "done": "0",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "0",
-                    "first_noperm_ms": "0",
-                    "ts": "1795342846827"
-                },
-                "rehearsal:wstats:deferred-115": {
-                    "role": "deferred",
-                    "user": "w_deferred",
-                    "done": "18",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795342783383",
-                    "first_noperm_ms": "0",
-                    "ts": "1795342784709"
+                    "ts": "1795345848725"
                 },
                 "rehearsal:wstats:legacy-117": {
                     "role": "legacy",
                     "user": "w_legacy",
-                    "done": "115",
-                    "errors": "16",
-                    "noperm": "16",
+                    "done": "110",
+                    "errors": "15",
+                    "noperm": "15",
                     "conn_lost": "0",
-                    "last_ok_ms": "1795342783684",
-                    "first_noperm_ms": "1795342783751",
-                    "ts": "1795342784680"
+                    "last_ok_ms": "1795345847734",
+                    "first_noperm_ms": "1795345847803",
+                    "ts": "1795345848688"
+                },
+                "rehearsal:wstats:retry-116": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "13",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795345847406",
+                    "first_noperm_ms": "0",
+                    "ts": "1795345848714"
+                },
+                "rehearsal:wstats:direct-120": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "1",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795345912558",
+                    "first_noperm_ms": "0",
+                    "ts": "1795345912728"
                 },
                 "rehearsal:wstats:deferred-121": {
                     "role": "deferred",
@@ -1797,29 +1941,40 @@
                     "conn_lost": "0",
                     "last_ok_ms": "0",
                     "first_noperm_ms": "0",
-                    "ts": "1795342846841"
+                    "ts": "1795345912741"
+                },
+                "rehearsal:wstats:direct-113": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "58",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795345846074",
+                    "first_noperm_ms": "0",
+                    "ts": "1795345848710"
+                },
+                "rehearsal:wstats:retry-122": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "0",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "0",
+                    "first_noperm_ms": "0",
+                    "ts": "1795345912728"
                 },
                 "rehearsal:wstats:direct-119": {
                     "role": "direct",
                     "user": "w_direct",
-                    "done": "1",
+                    "done": "0",
                     "errors": "0",
                     "noperm": "0",
                     "conn_lost": "0",
-                    "last_ok_ms": "1795342846657",
+                    "last_ok_ms": "0",
                     "first_noperm_ms": "0",
-                    "ts": "1795342846829"
-                },
-                "rehearsal:wstats:retry-116": {
-                    "role": "retry",
-                    "user": "w_retry",
-                    "done": "17",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795342783497",
-                    "first_noperm_ms": "0",
-                    "ts": "1795342784719"
+                    "ts": "1795345912721"
                 }
             }
         },
@@ -1830,18 +1985,18 @@
                 "otp_protection": "rl-shared"
             },
             "intake_close": {
-                "accepted_at_close": "268",
+                "accepted_at_close": "260",
                 "rejected_at_close": "0",
-                "accepted_later": "268",
-                "rejected_later": "70"
+                "accepted_later": "260",
+                "rejected_later": "66"
             },
             "k4_representability": {
                 "login_protection": {
                     "census": {
                         "families": {
-                            "score": 7,
+                            "score": 6,
                             "block": 0,
-                            "budget": 7,
+                            "budget": 6,
                             "cycle": 0,
                             "pause": 0,
                             "watch": 0,
@@ -1850,66 +2005,66 @@
                         "k4_block_max_expiry_ms": "0"
                     },
                     "reader_k4_score_hot_account": 3,
-                    "block_keys_in_ns_all_scopes": 34
+                    "block_keys_in_ns_all_scopes": 32
                 },
                 "otp_protection": {
                     "census": {
                         "families": {
-                            "score": 9,
+                            "score": 5,
                             "block": 2,
-                            "budget": 9,
-                            "cycle": 1,
+                            "budget": 5,
+                            "cycle": 2,
                             "pause": 0,
                             "watch": 0,
                             "distinct": 0
                         },
-                        "k4_block_max_expiry_ms": "1795343147204"
+                        "k4_block_max_expiry_ms": "1795346213386"
                     },
-                    "reader_k4_score_hot_account": 5,
-                    "block_keys_in_ns_all_scopes": 34
+                    "reader_k4_score_hot_account": 10,
+                    "block_keys_in_ns_all_scopes": 32
                 }
             },
             "synthetic_blocks": {
                 "rl-shared": {
                     "key": "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0",
                     "duration_s": 40,
-                    "pexpiretime_raw": "1795342887871",
-                    "redis_now_ms": "1795342847871"
+                    "pexpiretime_raw": "1795345953783",
+                    "redis_now_ms": "1795345913783"
                 }
             },
             "synthetic_previous_generation_block": {
                 "key": "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514",
-                "pexpiretime_raw": "1795342892902"
+                "pexpiretime_raw": "1795345958826"
             },
             "timeline_redis_ms": {
-                "load_end": "1795342852873",
-                "intake_closed": "1795342852903",
-                "drained": "1795342855330",
-                "barrier_start": "1795342855331",
-                "barrier_applied": "1795342855332",
-                "connections_killed": "1795342856359",
-                "probes_done": "1795342856361",
-                "gate_while_block_active": "1795342856884",
-                "first_scan_done": "1795342856890",
-                "max_block_expiry_ms": "1795343147551",
-                "natural_expiry_passed": "1795343148899",
-                "final_scan_done": "1795343149448",
-                "activation_signal_set": "1795343153001",
-                "reopen_requested": "1795343155850",
-                "first_success_after_reopen": "1795343156068"
+                "load_end": "1795345918793",
+                "intake_closed": "1795345918827",
+                "drained": "1795345921244",
+                "barrier_start": "1795345921244",
+                "barrier_applied": "1795345921248",
+                "connections_killed": "1795345922272",
+                "probes_done": "1795345922274",
+                "gate_while_block_active": "1795345923611",
+                "first_scan_done": "1795345923613",
+                "max_block_expiry_ms": "1795346213677",
+                "natural_expiry_passed": "1795346214914",
+                "final_scan_done": "1795346216184",
+                "activation_signal_set": "1795346221779",
+                "reopen_requested": "1795346225986",
+                "first_success_after_reopen": "1795346226203"
             },
             "measured": {
-                "drain_ms": "2427",
-                "barrier_and_probes_ms": "1031",
-                "first_scan_ms": "529",
-                "wait_for_natural_expiry_ms": "292009",
-                "final_scan_and_gate_ms": "549",
-                "validity_hold_to_signal_ms": "3553",
-                "reopen_to_all_policies_verified_ms": "218",
-                "total_stop_to_all_policies_verified_ms": "303165",
+                "drain_ms": "2417",
+                "barrier_and_probes_ms": "1030",
+                "first_scan_ms": "1339",
+                "wait_for_natural_expiry_ms": "291301",
+                "final_scan_and_gate_ms": "1270",
+                "validity_hold_to_signal_ms": "5595",
+                "reopen_to_all_policies_verified_ms": "217",
+                "total_stop_to_all_policies_verified_ms": "307376",
                 "per_policy_reopen_to_verified_result_ms": {
-                    "login_protection": "18",
-                    "otp_protection": "17"
+                    "login_protection": "19",
+                    "otp_protection": "29"
                 }
             },
             "probes": {
@@ -2005,10 +2160,10 @@
                         "ACL_DELUSER_ctl": "DENIED"
                     }
                 },
-                "digest_before": "e59b46497197e441ae76339db6995721ea5e088e:343",
-                "digest_after": "e59b46497197e441ae76339db6995721ea5e088e:343",
+                "digest_before": "9c587cec29bd9d5352d46bb0378fc466e8c8c5d2:337",
+                "digest_after": "9c587cec29bd9d5352d46bb0378fc466e8c8c5d2:337",
                 "ctl_user_still_exists": true,
-                "acl_log_entries_new": 57
+                "acl_log_entries_new": 56
             },
             "user_profiles_after_barrier": {
                 "ctl": {
@@ -2082,12 +2237,12 @@
                 "detail": {
                     "intake": "closed",
                     "accepted": [
-                        "268",
-                        "268"
+                        "260",
+                        "260"
                     ],
                     "rejected": [
-                        "164",
-                        "176"
+                        "152",
+                        "164"
                     ],
                     "drain_snapshots": [
                         [
@@ -2103,6 +2258,14 @@
                     ],
                     "queues_nonempty": [],
                     "inflight_workers": [],
+                    "v2_namespace_write_checks": {
+                        "rl-shared": {
+                            "keys_checked": 346,
+                            "dryrun_checks": 14532,
+                            "holes": [],
+                            "holes_total": 0
+                        }
+                    },
                     "barrier_holes": [],
                     "open_connections_of_unsafe_users": [],
                     "user_profiles": {
@@ -2170,45 +2333,43 @@
                         "sentinel_intact": true,
                         "policy_noeviction": true
                     },
-                    "redis_now_ms": "1795342856880",
-                    "block_keys_present": 35,
+                    "redis_now_ms": "1795345923609",
+                    "block_keys_present": 33,
                     "block_keys_seen_then_gone": 0,
                     "active_remaining_ms": {
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:5e65df1ccb48635b6868d20fde702aea35add130a0df93d5125375d5f954e33a": "50599",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:39fd96914910c5cc6dfcc2e355001d3f85321adac4cb66f088759c7e56547313": "53490",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:4a515e386cbac19e0cd5943a4d886a5f793b62cc0ef3c572cf7efe3a4a77e321": "51035",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:2b9deb21a4f34e868dc558a65ce9964c896516f7660fc76a043e9c4a233c06fe": "50671",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:13c51e6a17ebd16140d38475c22569c4f6fab50f56702e9e22a2aaaa4bdd51c1": "290599",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:02bc27226a4bfadd60f801d92dd022a40ce6dbbe8d4db6836d1579b86d11f345": "50482",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:aad26d88ce63ee98861573b9ac2f30a3924aa254f27b6c82c528e7d394ebaaab": "53807",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:51d68dd16c94ce045f46d2d6a0b9f406c2379454f3a9e906d3d59f5b3cca1a28": "51556",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:1cfdcdeb78aec573fe2416708db337e7ef2bc78275eb1310198adf9fef12046a": "50682",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "30991",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:f4300a134bb8684167890fa7c6535dca8c8fea06be5fe5d09d4679c62eb723e9": "290671",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:3af420d471508bbf925960a44f4d8dd3baf565717c84a334f499754cd4a0f659": "51390",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:6e254cc752eaf710fe8b0d0e76228ffdc5a0be6a578f7461aa87afadeabefebe": "50458",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:3ad4deb3a2b6ebf6c31fde6647df5c5591e1a9981b1a85f2c6da81b85a508986": "50445",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:8102d3ada5e7610d298ad10adbab401f29092218d39b990c8d8ef42539ae02b4": "51479",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:587a1c4ab70c7ff0afb49de8e810f88f4ac601dd79ce3bf62f43c6fbcd4b4929": "50881",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:4be2f258add60ca5e1446159c5f264a4e1a5123d6d38346dacd71651b37c81a3": "50744",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:ee2e757ccdebb5fe47f3f7f4ee547b40e1039d48c34dac99f0029c93b9e19096": "50644",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:8bf5ad06ba2249e8275f088f7c4e5c5b5676eb873466dbd29110b75a66653c48": "51070",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:0843d9c86cb8cadc88b4b305b8b3d6607ae291addcb74c78e5dc60bf20c4c548": "51134",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:731f9034e85acd314b5db3df9177554f84d90f31cddaa39aa76ef8757f45eeac": "51561",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "36022",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:4ed739bbea82b6d24055d94c9f52264e0a3a778bfc5112692537584034b2da12": "50436",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:5167288a046e60fa081449195a02ca8392707dd1eef7488b6befb5be3747f696": "50634",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:c6154e8da71e9047339f7dc53f7063bf5dbbacb3142746a05d9ac3b1996a570e": "51019",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:85fe03e89870b24a5abc8d69646ddf43439dfa9e40fe49f613e8e85b21c46718": "53576",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:d1e72600dba4dcf56ef2f884a3979c8c43f9489832baf58a79946a08b4827867": "50773",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:ef6a761c1b2edeec5d4155a047f3473f38c205203bb07121e39f1514727b8e89": "55916",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:500906416fde75e3336b2fd7cea9c81ed92397bfe7e47d634e117f65fdc7051b": "50527",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:6cea39243ad9da79f3a68f3036d772311e9acf88426b48a60c114597e1a89b54": "51564",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:074a979639e697c783fb5573365a87a6bb257670c6529aafdddc63ad3852f0fe": "5396",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:b51800ddc2b8eca08a5562eccc18f35ea0e8f5ed4e6ec3fedc634acaa14c30aa": "51351",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:bba0fb06eb0903c44d9831a793d36101435f0eff08436a2674f205a15a927d67": "51962",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:ea1051a4fb71d14d9ace6e9e7c08cb6b90b3ca68ead8e42e8d0cc16f2c492ecc": "290324",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:d34b14db185770c6e46d325cbb98a8d57900f7fbff107e9125d80e5a27b8ad4e": "50878"
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "30174",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:889e86161a63263cae284e964cd01ce6c9a42a190a6965035632ed165938f490": "289777",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:aad26d88ce63ee98861573b9ac2f30a3924aa254f27b6c82c528e7d394ebaaab": "49684",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:6cea39243ad9da79f3a68f3036d772311e9acf88426b48a60c114597e1a89b54": "50283",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:4be2f258add60ca5e1446159c5f264a4e1a5123d6d38346dacd71651b37c81a3": "50013",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:3af420d471508bbf925960a44f4d8dd3baf565717c84a334f499754cd4a0f659": "51080",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:500906416fde75e3336b2fd7cea9c81ed92397bfe7e47d634e117f65fdc7051b": "50890",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:587a1c4ab70c7ff0afb49de8e810f88f4ac601dd79ce3bf62f43c6fbcd4b4929": "49949",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:4ed739bbea82b6d24055d94c9f52264e0a3a778bfc5112692537584034b2da12": "49738",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:c6154e8da71e9047339f7dc53f7063bf5dbbacb3142746a05d9ac3b1996a570e": "49573",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:85fe03e89870b24a5abc8d69646ddf43439dfa9e40fe49f613e8e85b21c46718": "49995",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:6e254cc752eaf710fe8b0d0e76228ffdc5a0be6a578f7461aa87afadeabefebe": "49716",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:39fd96914910c5cc6dfcc2e355001d3f85321adac4cb66f088759c7e56547313": "49646",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:94ca7e37bd8edd733a63d73b727837604abb1f534f71a1b7a6d2fe260c089895": "49872",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:1cfdcdeb78aec573fe2416708db337e7ef2bc78275eb1310198adf9fef12046a": "50517",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "35217",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:2b9deb21a4f34e868dc558a65ce9964c896516f7660fc76a043e9c4a233c06fe": "50140",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:5e65df1ccb48635b6868d20fde702aea35add130a0df93d5125375d5f954e33a": "49925",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:0843d9c86cb8cadc88b4b305b8b3d6607ae291addcb74c78e5dc60bf20c4c548": "49607",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:d4f7f363bf03461d9883ca9373f7c57f796602098a8e3baa4da1a3e84284d6b6": "289505",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:ee2e757ccdebb5fe47f3f7f4ee547b40e1039d48c34dac99f0029c93b9e19096": "49525",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:5167288a046e60fa081449195a02ca8392707dd1eef7488b6befb5be3747f696": "53243",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:731f9034e85acd314b5db3df9177554f84d90f31cddaa39aa76ef8757f45eeac": "50745",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:d1e72600dba4dcf56ef2f884a3979c8c43f9489832baf58a79946a08b4827867": "49559",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:dde8e4f5e2767bd6261af5ec0c4e1f23cb3618c6940e6b6953b576dcfef45b9f": "290068",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:ef6a761c1b2edeec5d4155a047f3473f38c205203bb07121e39f1514727b8e89": "50546",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:bba0fb06eb0903c44d9831a793d36101435f0eff08436a2674f205a15a927d67": "49855",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:02bc27226a4bfadd60f801d92dd022a40ce6dbbe8d4db6836d1579b86d11f345": "49819",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:8bf5ad06ba2249e8275f088f7c4e5c5b5676eb873466dbd29110b75a66653c48": "50584",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:51d68dd16c94ce045f46d2d6a0b9f406c2379454f3a9e906d3d59f5b3cca1a28": "49949",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:b51800ddc2b8eca08a5562eccc18f35ea0e8f5ed4e6ec3fedc634acaa14c30aa": "49771",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:8102d3ada5e7610d298ad10adbab401f29092218d39b990c8d8ef42539ae02b4": "50068",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:d34b14db185770c6e46d325cbb98a8d57900f7fbff107e9125d80e5a27b8ad4e": "49644"
                     },
                     "unknown_expiry": [],
                     "expired_but_present": 0,
@@ -2222,12 +2383,12 @@
                 "detail": {
                     "intake": "closed",
                     "accepted": [
-                        "268",
-                        "268"
+                        "260",
+                        "260"
                     ],
                     "rejected": [
-                        "13300",
-                        "13312"
+                        "12612",
+                        "12626"
                     ],
                     "drain_snapshots": [
                         [
@@ -2243,6 +2404,14 @@
                     ],
                     "queues_nonempty": [],
                     "inflight_workers": [],
+                    "v2_namespace_write_checks": {
+                        "rl-shared": {
+                            "keys_checked": 313,
+                            "dryrun_checks": 13146,
+                            "holes": [],
+                            "holes_total": 0
+                        }
+                    },
                     "barrier_holes": [],
                     "open_connections_of_unsafe_users": [],
                     "user_profiles": {
@@ -2310,7 +2479,7 @@
                         "sentinel_intact": true,
                         "policy_noeviction": true
                     },
-                    "redis_now_ms": "1795343149447",
+                    "redis_now_ms": "1795346216184",
                     "block_keys_present": 0,
                     "block_keys_seen_then_gone": 0,
                     "active_remaining_ms": [],
@@ -2319,22 +2488,58 @@
                     "unexplained_absence": [],
                     "new_since_first_scan": [],
                     "ledger_violations": [],
-                    "event_violations": []
+                    "event_violations": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
                 }
             },
             "activation_permitted": true,
+            "signal": {
+                "permitted": true,
+                "revoked": false,
+                "first_evaluation": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "recheck_after_hold": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "verification_right_after_signal": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                }
+            },
             "reopen_per_policy": {
                 "login_protection": {
                     "result": {
                         "policy": "login_protection",
                         "ok": true,
-                        "ms": "1795343155868",
+                        "ms": "1795346226005",
                         "allowed": false,
                         "blocked": true,
                         "class": "Maatify\\RateLimiter\\DTO\\RateLimitResultDTO"
                     },
-                    "ns_keys_before": 308,
-                    "ns_keys_after": 329,
+                    "ns_keys_before": 304,
+                    "ns_keys_after": 325,
                     "k4_census_for_the_account": {
                         "score": 1,
                         "block": 0,
@@ -2344,20 +2549,20 @@
                         "watch": 0,
                         "distinct": 0
                     },
-                    "return_ms": "18",
+                    "return_ms": "19",
                     "verified": true
                 },
                 "otp_protection": {
                     "result": {
                         "policy": "otp_protection",
                         "ok": true,
-                        "ms": "1795343155867",
+                        "ms": "1795346226015",
                         "allowed": false,
                         "blocked": true,
                         "class": "Maatify\\RateLimiter\\DTO\\RateLimitResultDTO"
                     },
-                    "ns_keys_before": 308,
-                    "ns_keys_after": 329,
+                    "ns_keys_before": 304,
+                    "ns_keys_after": 325,
                     "k4_census_for_the_account": {
                         "score": 1,
                         "block": 0,
@@ -2367,21 +2572,32 @@
                         "watch": 0,
                         "distinct": 0
                     },
-                    "return_ms": "17",
+                    "return_ms": "29",
                     "verified": true
                 }
             },
             "worker_stats": {
-                "rehearsal:wstats:direct-125": {
-                    "role": "direct",
-                    "user": "w_direct",
-                    "done": "114",
+                "rehearsal:wstats:retry-133": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "0",
                     "errors": "0",
                     "noperm": "0",
                     "conn_lost": "0",
-                    "last_ok_ms": "1795342852909",
+                    "last_ok_ms": "0",
                     "first_noperm_ms": "0",
-                    "ts": "1795342856354"
+                    "ts": "1795346226189"
+                },
+                "rehearsal:wstats:direct-125": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "119",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795345918829",
+                    "first_noperm_ms": "0",
+                    "ts": "1795345922268"
                 },
                 "rehearsal:wstats:deferred-132": {
                     "role": "deferred",
@@ -2392,40 +2608,7 @@
                     "conn_lost": "0",
                     "last_ok_ms": "0",
                     "first_noperm_ms": "0",
-                    "ts": "1795343156053"
-                },
-                "rehearsal:wstats:legacy-128": {
-                    "role": "legacy",
-                    "user": "w_legacy",
-                    "done": "124",
-                    "errors": "16",
-                    "noperm": "16",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795342855319",
-                    "first_noperm_ms": "1795342855388",
-                    "ts": "1795342856316"
-                },
-                "rehearsal:wstats:retry-127": {
-                    "role": "retry",
-                    "user": "w_retry",
-                    "done": "24",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795342855025",
-                    "first_noperm_ms": "0",
-                    "ts": "1795342856354"
-                },
-                "rehearsal:wstats:direct-124": {
-                    "role": "direct",
-                    "user": "w_direct",
-                    "done": "121",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795342852909",
-                    "first_noperm_ms": "0",
-                    "ts": "1795342856336"
+                    "ts": "1795346226195"
                 },
                 "rehearsal:wstats:direct-130": {
                     "role": "direct",
@@ -2434,31 +2617,31 @@
                     "errors": "0",
                     "noperm": "0",
                     "conn_lost": "0",
-                    "last_ok_ms": "1795343155867",
+                    "last_ok_ms": "1795346226005",
                     "first_noperm_ms": "0",
-                    "ts": "1795343156053"
+                    "ts": "1795346226196"
                 },
-                "rehearsal:wstats:deferred-126": {
-                    "role": "deferred",
-                    "user": "w_deferred",
-                    "done": "28",
+                "rehearsal:wstats:legacy-128": {
+                    "role": "legacy",
+                    "user": "w_legacy",
+                    "done": "123",
+                    "errors": "16",
+                    "noperm": "16",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795345921217",
+                    "first_noperm_ms": "1795345921284",
+                    "ts": "1795345922219"
+                },
+                "rehearsal:wstats:direct-124": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "104",
                     "errors": "0",
                     "noperm": "0",
                     "conn_lost": "0",
-                    "last_ok_ms": "1795342854890",
+                    "last_ok_ms": "1795345918830",
                     "first_noperm_ms": "0",
-                    "ts": "1795342856334"
-                },
-                "rehearsal:wstats:retry-133": {
-                    "role": "retry",
-                    "user": "w_retry",
-                    "done": "0",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "0",
-                    "first_noperm_ms": "0",
-                    "ts": "1795343156065"
+                    "ts": "1795345922265"
                 },
                 "rehearsal:wstats:direct-131": {
                     "role": "direct",
@@ -2467,9 +2650,31 @@
                     "errors": "0",
                     "noperm": "0",
                     "conn_lost": "0",
-                    "last_ok_ms": "1795343155868",
+                    "last_ok_ms": "1795346226015",
                     "first_noperm_ms": "0",
-                    "ts": "1795343156057"
+                    "ts": "1795346226187"
+                },
+                "rehearsal:wstats:retry-127": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "32",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795345921087",
+                    "first_noperm_ms": "0",
+                    "ts": "1795345922243"
+                },
+                "rehearsal:wstats:deferred-126": {
+                    "role": "deferred",
+                    "user": "w_deferred",
+                    "done": "32",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795345920734",
+                    "first_noperm_ms": "0",
+                    "ts": "1795345922246"
                 }
             }
         }
@@ -2508,12 +2713,63 @@
                 "w_legacy:EXPIRE",
                 "w_legacy:PEXPIREAT",
                 "w_legacy:INCRBY",
-                "w_legacy:ZADD"
+                "w_legacy:ZADD",
+                "ns:rl-login:63 write permissions (e.g. w_legacy:SET:score:3aaf44fac345caaf3a1db07ed644d2148555db528b3c504880d067fa2e88a065)"
             ],
             "after_off": [
                 "OPEN_CONNECTION_OF_UNSAFE_USER"
             ],
             "after_kill": []
+        },
+        "N3c_partial_family_hole_missed_by_a_single_key_check": {
+            "ns_checks": {
+                "keys_checked": 9,
+                "dryrun_checks": 378,
+                "holes": [
+                    "w_deferred:SET:score:3aaf44fac345caaf3a1db07ed644d2148555db528b3c504880d067fa2e88a065",
+                    "w_deferred:DEL:score:3aaf44fac345caaf3a1db07ed644d2148555db528b3c504880d067fa2e88a065",
+                    "w_deferred:HSET:score:3aaf44fac345caaf3a1db07ed644d2148555db528b3c504880d067fa2e88a065",
+                    "w_deferred:EXPIRE:score:3aaf44fac345caaf3a1db07ed644d2148555db528b3c504880d067fa2e88a065",
+                    "w_deferred:PEXPIREAT:score:3aaf44fac345caaf3a1db07ed644d2148555db528b3c504880d067fa2e88a065",
+                    "w_deferred:INCRBY:score:3aaf44fac345caaf3a1db07ed644d2148555db528b3c504880d067fa2e88a065"
+                ],
+                "holes_total": 7
+            },
+            "after_fix": []
+        },
+        "N9_lost_watcher_blocks_the_signal": {
+            "out": {
+                "permitted": false,
+                "revoked": false,
+                "first_evaluation": {
+                    "ok": false,
+                    "reasons": [
+                        "MONITORING_CONTINUITY_NOT_PROVEN"
+                    ],
+                    "monitoring": {
+                        "synced": false,
+                        "same_connection": false,
+                        "connections": 0
+                    }
+                }
+            }
+        },
+        "N9b_replaced_watcher_connection_blocks_the_signal": {
+            "out": {
+                "permitted": false,
+                "revoked": false,
+                "first_evaluation": {
+                    "ok": false,
+                    "reasons": [
+                        "MONITORING_CONTINUITY_NOT_PROVEN"
+                    ],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": false,
+                        "connections": 1
+                    }
+                }
+            }
         },
         "N4_unknown_expiry": {
             "reasons": [
@@ -2532,29 +2788,28 @@
             ],
             "ledger": [
                 {
-                    "key": "bb8604049276",
-                    "recorded": "1795343190803",
-                    "observed": "-2",
-                    "redis_ms_after_observation": "1795343177017"
+                    "key": "b5fdd9a74b98",
+                    "recorded": "1795346283917",
+                    "observed": "1795346268920",
+                    "redis_ms_after_observation": "1795346268131"
                 },
                 {
-                    "key": "b5fdd9a74b98",
-                    "recorded": "1795343192803",
-                    "observed": "1795343177806",
-                    "redis_ms_after_observation": "1795343177017"
+                    "key": "bb8604049276",
+                    "recorded": "1795346281916",
+                    "observed": "-2",
+                    "redis_ms_after_observation": "1795346268132"
                 }
             ],
             "events": [
-                "expire@1795343176805 key=65cf7d90bb47 recorded_expiry=1795343194804",
-                "del@1795343176806 key=bb8604049276 recorded_expiry=1795343190803",
-                "expire@1795343176807 key=b5fdd9a74b98 recorded_expiry=1795343192803",
-                "expired@1795343177895 key=b5fdd9a74b98 recorded_expiry=1795343192803"
+                "del@1795346267920 key=bb8604049276 recorded_expiry=1795346281916",
+                "expire@1795346267920 key=b5fdd9a74b98 recorded_expiry=1795346283917",
+                "expired@1795346268944 key=b5fdd9a74b98 recorded_expiry=1795346283917"
             ]
         },
         "N4e_last_moment_delete_caught_by_events": {
-            "left_ms_at_delete": "110",
+            "left_ms_at_delete": "118",
             "events": [
-                "del@1795343205046 key=fcee24a4a6c6 recorded_expiry=1795343205156"
+                "del@1795346296045 key=fcee24a4a6c6 recorded_expiry=1795346296163"
             ],
             "reasons": [
                 "BLOCK_EVENT_VIOLATION"
@@ -2566,8 +2821,8 @@
             ]
         },
         "N6_late_writer_after_barrier_denied_and_gate_holds": {
-            "legacy_noperm": 25,
-            "acl_log_legacy": 1,
+            "legacy_noperm": 26,
+            "acl_log_legacy": 3,
             "gate": [
                 "BLOCK_ACTIVE"
             ]
@@ -2618,5 +2873,53 @@
             ]
         }
     },
+    "complete": true,
+    "scenario_filter": "",
+    "expected_ids": [
+        "A_login_protection_own_ns",
+        "B_otp_protection_own_ns",
+        "C_api_heavy_protection_own_ns",
+        "D_login_and_otp_shared_ns",
+        "N1_hung_request_blocks_gate",
+        "N1b_request_between_pull_and_inflight_registration",
+        "N2_pending_retry_and_delayed_jobs_block_gate",
+        "N3_unrevoked_writer_and_off_user_with_open_connection",
+        "N3c_partial_family_hole_missed_by_a_single_key_check",
+        "N9_lost_watcher_blocks_the_signal",
+        "N9b_replaced_watcher_connection_blocks_the_signal",
+        "N4_unknown_expiry",
+        "N4b_early_delete_is_unexplained_absence",
+        "N4cd_ledger_and_events_catch_early_delete_and_truncation",
+        "N4e_last_moment_delete_caught_by_events",
+        "N5_data_continuity_break_sentinel_lost",
+        "N6_late_writer_after_barrier_denied_and_gate_holds",
+        "N8_request_at_commit_when_barrier_lands",
+        "N8b_connection_cut_while_commit_pending",
+        "N5b_eviction_breaks_continuity",
+        "N7_redis_restart_breaks_continuity_and_barrier"
+    ],
+    "executed_ids": [
+        "A_login_protection_own_ns",
+        "B_otp_protection_own_ns",
+        "C_api_heavy_protection_own_ns",
+        "D_login_and_otp_shared_ns",
+        "N1_hung_request_blocks_gate",
+        "N1b_request_between_pull_and_inflight_registration",
+        "N2_pending_retry_and_delayed_jobs_block_gate",
+        "N3_unrevoked_writer_and_off_user_with_open_connection",
+        "N3c_partial_family_hole_missed_by_a_single_key_check",
+        "N9_lost_watcher_blocks_the_signal",
+        "N9b_replaced_watcher_connection_blocks_the_signal",
+        "N4_unknown_expiry",
+        "N4b_early_delete_is_unexplained_absence",
+        "N4cd_ledger_and_events_catch_early_delete_and_truncation",
+        "N4e_last_moment_delete_caught_by_events",
+        "N5_data_continuity_break_sentinel_lost",
+        "N6_late_writer_after_barrier_denied_and_gate_holds",
+        "N8_request_at_commit_when_barrier_lands",
+        "N8b_connection_cut_while_commit_pending",
+        "N5b_eviction_breaks_continuity",
+        "N7_redis_restart_breaks_continuity_and_barrier"
+    ],
     "control_failures": 0
 }

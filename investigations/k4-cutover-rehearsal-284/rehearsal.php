@@ -51,6 +51,8 @@ const APP_USERS = ['w_direct', 'w_deferred', 'w_retry', 'w_legacy'];
 /** Least privilege for every non-control credential: no ACL management, no CONFIG, no FLUSH*, no DEBUG, no SHUTDOWN (@admin/@dangerous; Redis folds -@admin into -@dangerous when it prints the rule) and no FUNCTION commands (FUNCTION FLUSH is NOT @dangerous in 7.0.15, measured). */
 const WRITER_PROFILE = ['+@all', '-@admin', '-@dangerous', '-function'];
 const ADMIN_PROBES = [['ACL', 'SETUSER', 'x', 'on'], ['CONFIG', 'SET', 'maxmemory', '0'], ['FLUSHALL'], ['FLUSHDB'], ['SWAPDB', '0', '1'], ['DEBUG', 'SLEEP', '0'], ['SHUTDOWN', 'NOSAVE'], ['FUNCTION', 'FLUSH']];
+/** every key family the store writes (physical key `PREFIX:sha256(ns):<family>:sha256(logical)`) */
+const V2_FAMILIES = ['score', 'block', 'budget', 'cycle', 'distinct', 'pause', 'watch', 'circuit', 'probe'];
 const WRITE_PROBES = [['SET', PREFIX . ':gate-probe:block:x', 'v'], ['DEL', PREFIX . ':gate-probe:block:x'], ['HSET', PREFIX . ':gate-probe:block:x', 'f', 'v'],
     ['EXPIRE', PREFIX . ':gate-probe:block:x', '9'], ['PEXPIREAT', PREFIX . ':gate-probe:block:x', '9'], ['INCRBY', PREFIX . ':gate-probe:block:x', '1'], ['ZADD', PREFIX . ':gate-probe:block:x', '1', 'm']];
 
@@ -294,6 +296,11 @@ final class RawRedis
         return $this->read();
     }
 
+    public function eof(): bool
+    {
+        return feof($this->s);
+    }
+
     public function read(): mixed
     {
         $line = fgets($this->s);
@@ -348,6 +355,9 @@ if ($mode === 'watcher') {
     while (true) {
         $m = $sub->read();
         if (! is_array($m)) {
+            if ($sub->eof()) {
+                exit(1); // the subscription connection is gone: events may have been lost, so this watcher must not keep pretending to watch
+            }
             if ((string) $out->execute(['GET', 'rehearsal:stop']) === '1') {
                 break;
             }
@@ -675,8 +685,9 @@ function clientList(RespRedisCommandExecutor $ctl): array
 /** The activation gate. Reads Redis only.
  * @param list<array<string,mixed>> $ledgerViolations continuity ledger entries recorded DURING the wait
  * @param list<string> $eventViolations keyspace-event violations for first-scan block keys
+ * @param ?array{synced:bool,same_connection:bool,connections:int} $monitoring proof that the keyspace-event watcher kept watching (null = not part of this evaluation)
  * @return array{ok: bool, reasons: list<string>, detail: array<string,mixed>} */
-function gate(RespRedisCommandExecutor $ctl, array $base, array $namespaces, ?array $firstScan = null, array $ledgerViolations = [], array $eventViolations = []): array
+function gate(RespRedisCommandExecutor $ctl, array $base, array $namespaces, ?array $firstScan = null, array $ledgerViolations = [], array $eventViolations = [], ?array $monitoring = null): array
 {
     $reasons = [];
     $d = [];
@@ -730,6 +741,39 @@ function gate(RespRedisCommandExecutor $ctl, array $base, array $namespaces, ?ar
             $unsafe[$u] = true;
         }
     }
+    // G3b the ACTUAL permissions on the V2 namespaces in scope: every existing key of each namespace (all families) plus one synthetic key per family,
+    // for every non-control user and every write command (not one synthetic key for everybody)
+    $writeFor = static fn(string $k): array => [['SET', $k, 'v'], ['DEL', $k], ['HSET', $k, 'f', 'v'], ['EXPIRE', $k, '9'], ['PEXPIREAT', $k, '9'], ['INCRBY', $k, '1'], ['ZADD', $k, '1', 'm']];
+    $nsChecks = [];
+    foreach ($namespaces as $ns) {
+        $nsHash = hash('sha256', (string) $ns);
+        $keys = scanAll($ctl, PREFIX . ':' . $nsHash . ':*');
+        foreach (V2_FAMILIES as $f) {
+            $keys[] = PREFIX . ':' . $nsHash . ':' . $f . ':' . hash('sha256', 'gate-probe-' . $f);
+        }
+        $keys = array_values(array_unique($keys));
+        $checks = 0;
+        $nsHoles = [];
+        foreach ($users as $u) {
+            if ($u === 'ctl') {
+                continue;
+            }
+            foreach ($keys as $k) {
+                foreach ($writeFor($k) as $cmd) {
+                    $checks++;
+                    if ($ctl->execute(['ACL', 'DRYRUN', $u, ...$cmd]) === 'OK') {
+                        $nsHoles[] = $u . ':' . $cmd[0] . ':' . substr($k, strlen(PREFIX) + 66);
+                        $unsafe[$u] = true;
+                    }
+                }
+            }
+        }
+        $nsChecks[(string) $ns] = ['keys_checked' => count($keys), 'dryrun_checks' => $checks, 'holes' => array_slice($nsHoles, 0, 6), 'holes_total' => count($nsHoles)];
+        if ($nsHoles !== []) {
+            $holes[] = 'ns:' . $ns . ':' . count($nsHoles) . ' write permissions (e.g. ' . $nsHoles[0] . ')';
+        }
+    }
+    $d['v2_namespace_write_checks'] = $nsChecks;
     $openBad = [];
     foreach (clientList($ctl) as $row) {
         $u = $row['user'] ?? '';
@@ -828,6 +872,13 @@ function gate(RespRedisCommandExecutor $ctl, array $base, array $namespaces, ?ar
     if ($eventViolations !== []) {
         $reasons[] = 'BLOCK_EVENT_VIOLATION';
     }
+    // G7 the monitoring itself: Pub/Sub is at-most-once, so the events only count if the SAME subscription connection kept watching and a sync token round-tripped
+    if ($monitoring !== null) {
+        $d['monitoring'] = $monitoring;
+        if (! $monitoring['synced'] || ! $monitoring['same_connection'] || $monitoring['connections'] !== 1) {
+            $reasons[] = 'MONITORING_CONTINUITY_NOT_PROVEN';
+        }
+    }
 
     return ['ok' => $reasons === [], 'reasons' => $reasons, 'detail' => $d];
 }
@@ -877,13 +928,51 @@ final class Scenario
         $this->procs[$label] = $p;
     }
 
-    public function startWatcher(): void
+    public string $watcherId = '';
+
+    /** @return list<string> ids of every pub/sub connection the server reports */
+    public function subscriberIds(): array
     {
-        $this->ctl->execute(['DEL', 'rehearsal:watcher_ready', 'rehearsal:events']);
-        $this->spawn('watcher', 'watcher');
+        $ids = [];
+        foreach (clientList($this->ctl) as $row) {
+            if ((int) ($row['psub'] ?? 0) > 0) {
+                $ids[] = $row['id'] ?? '?';
+            }
+        }
+
+        return $ids;
+    }
+
+    public function startWatcher(bool $keepEvents = false): void
+    {
+        $this->ctl->execute($keepEvents ? ['DEL', 'rehearsal:watcher_ready'] : ['DEL', 'rehearsal:watcher_ready', 'rehearsal:events']);
+        $this->spawn('watcher' . ($keepEvents ? '2' : ''), 'watcher');
         for ($i = 0; $i < 50 && (string) $this->ctl->execute(['GET', 'rehearsal:watcher_ready']) !== '1'; $i++) {
             usleep(100000);
         }
+        $ids = $this->subscriberIds();
+        $this->watcherId = count($ids) === 1 ? $ids[0] : '';
+    }
+
+    public function killWatcher(): void
+    {
+        foreach (array_keys($this->procs) as $label) {
+            if (str_starts_with($label, 'watcher')) {
+                proc_terminate($this->procs[$label], 9);
+                proc_close($this->procs[$label]);
+                unset($this->procs[$label]);
+            }
+        }
+        usleep(400000);
+    }
+
+    /** @return array{synced:bool,same_connection:bool,connections:int} */
+    public function monitoringProof(): array
+    {
+        $synced = $this->syncWatcher();
+        $ids = $this->subscriberIds();
+
+        return ['synced' => $synced, 'same_connection' => $this->watcherId !== '' && $ids === [$this->watcherId], 'connections' => count($ids)];
     }
 
     public function startWorkers(bool $withLegacy = true, bool $withFeeder = false): void
@@ -1191,10 +1280,47 @@ $reopen = static function (Scenario $s, array $policyNs, callable $expect, strin
 };
 
 /**
+ * The ONLY path that may write the experimental activation signal. It re-proves everything (barrier, drain, continuity, blocks, ledger, events AND the monitoring
+ * itself) after a hold, writes the signal, and verifies again right after: if anything fails at that instant the signal is deleted. The signal therefore never
+ * exists unless the evidence was valid up to the moment of the signal.
+ * @return array<string,mixed>
+ */
+$issueSignal = static function (Scenario $s, array $namespaces, array $first, array $ledger, string $since): array {
+    $out = ['permitted' => false, 'revoked' => false];
+    $m1 = $s->monitoringProof();
+    $g1 = gate($s->ctl, $s->base, $namespaces, $first, $ledger, $s->eventViolations($first, $since), $m1);
+    $out['first_evaluation'] = ['ok' => $g1['ok'], 'reasons' => $g1['reasons'], 'monitoring' => $m1];
+    if (! $g1['ok']) {
+        return $out;
+    }
+    sleep(3);
+    $m2 = $s->monitoringProof();
+    $g2 = gate($s->ctl, $s->base, $namespaces, $first, $ledger, $s->eventViolations($first, $since), $m2);
+    $out['recheck_after_hold'] = ['ok' => $g2['ok'], 'reasons' => $g2['reasons'], 'monitoring' => $m2];
+    if (! $g2['ok']) {
+        return $out;
+    }
+    $s->ctl->execute(['SET', 'rehearsal:activation:allowed', redisMs($s->ctl)]);
+    $s->mark('activation_signal_set');
+    $m3 = $s->monitoringProof();
+    $g3 = gate($s->ctl, $s->base, $namespaces, $first, $ledger, $s->eventViolations($first, $since), $m3);
+    $out['verification_right_after_signal'] = ['ok' => $g3['ok'], 'reasons' => $g3['reasons'], 'monitoring' => $m3];
+    if (! $g3['ok']) {
+        $s->ctl->execute(['DEL', 'rehearsal:activation:allowed']);
+        $out['revoked'] = true;
+
+        return $out;
+    }
+    $out['permitted'] = true;
+
+    return $out;
+};
+
+/**
  * One full rehearsal: generator ALIVE throughout -> close intake (generator rejected) -> drain -> barrier (restrict) -> probes (every source, admin ops) ->
  * kill connections -> gate while a block is active (DENY) -> first scan -> ledger during the wait -> final scan + gate (PASS) -> hold -> signal -> reopen per policy.
  */
-$fullRun = static function (string $name, array $policyNs, int $syntheticBlockSeconds) use ($bootstrap, &$results, $expect, $reopen): array {
+$fullRun = static function (string $name, array $policyNs, int $syntheticBlockSeconds) use ($bootstrap, &$results, $expect, $reopen, $issueSignal): array {
     $s = new Scenario($name, $policyNs);
     $s->setup($bootstrap);
     $namespaces = array_values(array_unique($policyNs));
@@ -1290,12 +1416,12 @@ $fullRun = static function (string $name, array $policyNs, int $syntheticBlockSe
     $ledger = $s->waitForExpiryWithLedger($first, $maxExp);
     usleep(1200000);
     $s->mark('natural_expiry_passed');
-    $synced = $s->syncWatcher();
+    $monitoring = $s->monitoringProof();
     $since = $s->timeline['first_scan_done'];
     $events = $s->eventViolations($first, $since);
-    $final = gate($s->ctl, $s->base, $namespaces, $first, $ledger, $events);
+    $final = gate($s->ctl, $s->base, $namespaces, $first, $ledger, $events, $monitoring);
     $s->mark('final_scan_done');
-    $expect($name . ':watcher_synced_before_final_gate', $synced);
+    $expect($name . ':watcher_synced_and_same_connection_before_final_gate', $monitoring['synced'] && $monitoring['same_connection'] && $monitoring['connections'] === 1, ['monitoring' => $monitoring]);
     $mapFinal = v2Map($s->ctl);
     $modified = [];
     foreach ($mapFinal as $k => $v) {
@@ -1309,15 +1435,11 @@ $fullRun = static function (string $name, array $policyNs, int $syntheticBlockSe
     $expect($name . ':only_natural_expiry_events_for_tracked_keys', $events === [], ['violations' => $events]);
     $expect($name . ':gate_passes_after_natural_expiry', $final['ok'], ['reasons' => $final['reasons']]);
     $permitted = false;
+    $signal = ['permitted' => false];
     if ($final['ok']) {
-        sleep(3);
-        $recheck = gate($s->ctl, $s->base, $namespaces, $first, $ledger, $s->eventViolations($first, $since));
-        if ($recheck['ok']) {
-            $s->ctl->execute(['SET', 'rehearsal:activation:allowed', redisMs($s->ctl)]);
-            $permitted = true;
-            $s->mark('activation_signal_set');
-        }
-        $expect($name . ':validity_recheck_before_signal', $recheck['ok'], ['reasons' => $recheck['reasons']]);
+        $signal = $issueSignal($s, $namespaces, $first, $ledger, $since);
+        $permitted = $signal['permitted'];
+        $expect($name . ':signal_issued_only_after_revalidation_and_verified_right_after', $permitted && ! $signal['revoked'], ['signal' => $signal]);
     }
     $legacyLive = array_values(array_filter($liveBeforeKill, static fn($w) => ($w['role'] ?? '') === 'legacy'));
     $postBarrierOk = 0;
@@ -1345,7 +1467,7 @@ $fullRun = static function (string $name, array $policyNs, int $syntheticBlockSe
     ];
     $res = ['name' => $name, 'policy_ns' => $policyNs, 'intake_close' => $close + ['accepted_later' => $acceptedLater, 'rejected_later' => $rejectedLater], 'k4_representability' => $k4,
         'synthetic_blocks' => $synth, 'synthetic_previous_generation_block' => $synthPrev, 'timeline_redis_ms' => $t, 'measured' => $measured, 'probes' => $probes,
-        'user_profiles_after_barrier' => $profilesAfter, 'killed_connections' => $killed, 'gate_while_block_active' => $g1, 'gate_final' => $final, 'activation_permitted' => $permitted,
+        'user_profiles_after_barrier' => $profilesAfter, 'killed_connections' => $killed, 'gate_while_block_active' => $g1, 'gate_final' => $final, 'activation_permitted' => $permitted, 'signal' => $signal,
         'reopen_per_policy' => $perPolicy, 'worker_stats' => $ws];
     $results['scenarios'][$name] = $res;
     jlog('scenario_result', ['scenario' => $name, 'measured' => $measured, 'activation_permitted' => $permitted, 'k4' => $k4]);
@@ -1459,6 +1581,86 @@ $neg('N3_unrevoked_writer_and_off_user_with_open_connection', static function (S
     $expect('N3:gate_passes_after_connection_cut', ! in_array('OPEN_CONNECTION_OF_UNSAFE_USER', $g3['reasons'], true), ['reasons' => $g3['reasons']]);
 
     return ['holes' => $g['detail']['barrier_holes'], 'after_off' => $g2['reasons'], 'after_kill' => $g3['reasons']];
+});
+
+
+// N3c (F291-01): a PARTIAL hole (write permission on ONE family of ONE in-scope namespace). A check on one synthetic key misses it; the per-namespace/per-family check finds it.
+$neg('N3c_partial_family_hole_missed_by_a_single_key_check', static function (Scenario $s) use ($expect): array {
+    $s->closeIntake();
+    $s->applyBarrier();
+    $scoreFamily = PREFIX . ':' . hash('sha256', 'rl-login') . ':score:*';
+    $s->ctl->execute(['ACL', 'SETUSER', 'w_deferred', 'resetkeys', '%R~' . PREFIX . ':*', '~rehearsal:*', '~' . $scoreFamily]);
+    $single = $s->ctl->execute(['ACL', 'DRYRUN', 'w_deferred', 'SET', PREFIX . ':gate-probe:block:x', 'v']);
+    $expect('N3c:the_old_single_synthetic_key_check_would_see_no_hole', $single !== 'OK', ['dryrun_on_the_single_synthetic_key' => $single]);
+    $g = gate($s->ctl, $s->base, ['rl-login']);
+    $nsHoles = $g['detail']['v2_namespace_write_checks']['rl-login'] ?? [];
+    $expect('N3c:per_namespace_family_check_finds_the_partial_hole', ! $g['ok'] && in_array('WRITE_BARRIER_HOLE', $g['reasons'], true) && ($nsHoles['holes_total'] ?? 0) > 0, ['reasons' => $g['reasons'], 'ns_checks' => $nsHoles]);
+    $s->applyBarrier();
+    $g2 = gate($s->ctl, $s->base, ['rl-login']);
+    $expect('N3c:clean_after_restoring_the_barrier', ! in_array('WRITE_BARRIER_HOLE', $g2['reasons'], true), ['reasons' => $g2['reasons'], 'checks' => $g2['detail']['v2_namespace_write_checks']['rl-login']['dryrun_checks'] ?? 0]);
+
+    return ['ns_checks' => $nsHoles, 'after_fix' => $g2['reasons']];
+});
+
+// N9 (F291-03): the keyspace watcher is LOST before the final evaluation: the gate must deny with MONITORING_CONTINUITY_NOT_PROVEN and NO signal may exist
+$neg('N9_lost_watcher_blocks_the_signal', static function (Scenario $s) use ($expect, $issueSignal): array {
+    $s->startWatcher();
+    $store = new RedisFullCapabilityStore($s->ctl, 'rl-login');
+    $store->blockAt(k4Hmac('login_protection', 'acct-n9'), 3, 6, time());
+    $s->closeIntake();
+    $s->applyBarrier();
+    $first = [];
+    $maxExp = '0';
+    foreach (scanAll($s->ctl, nsKeyPattern('rl-login')) as $k) {
+        $pe = (string) $s->ctl->execute(['PEXPIRETIME', $k]);
+        $first[$k] = $pe;
+        if (dcmp($pe, $maxExp) > 0) {
+            $maxExp = $pe;
+        }
+    }
+    $since = redisMs($s->ctl);
+    $ledger = $s->waitForExpiryWithLedger($first, $maxExp);
+    $okBefore = $s->monitoringProof();
+    $s->killWatcher();
+    $out = $issueSignal($s, ['rl-login'], $first, $ledger, $since);
+    $signalKey = $s->ctl->execute(['GET', 'rehearsal:activation:allowed']);
+    $expect('N9:monitoring_was_fine_before_the_loss', $okBefore['synced'] && $okBefore['same_connection'], ['monitoring_before' => $okBefore]);
+    $expect('N9:signal_denied_when_monitoring_cannot_be_proven', $out['permitted'] === false && in_array('MONITORING_CONTINUITY_NOT_PROVEN', $out['first_evaluation']['reasons'], true), ['first_evaluation' => $out['first_evaluation']]);
+    $expect('N9:no_activation_signal_exists', $signalKey === null, ['signal_key' => $signalKey]);
+
+    return ['out' => $out];
+});
+
+// N9b: the watcher is REPLACED (a new subscription): events emitted in the gap are lost, a sync token alone would pass, the connection identity must not
+$neg('N9b_replaced_watcher_connection_blocks_the_signal', static function (Scenario $s) use ($expect, $issueSignal): array {
+    $s->startWatcher();
+    $store = new RedisFullCapabilityStore($s->ctl, 'rl-login');
+    $store->blockAt(k4Hmac('login_protection', 'acct-n9b'), 3, 6, time());
+    $s->closeIntake();
+    $s->applyBarrier();
+    $first = [];
+    $maxExp = '0';
+    foreach (scanAll($s->ctl, nsKeyPattern('rl-login')) as $k) {
+        $pe = (string) $s->ctl->execute(['PEXPIRETIME', $k]);
+        $first[$k] = $pe;
+        if (dcmp($pe, $maxExp) > 0) {
+            $maxExp = $pe;
+        }
+    }
+    $since = redisMs($s->ctl);
+    $idBefore = $s->watcherId;
+    $s->killWatcher();
+    $s->startWatcher(true); // a fresh subscription: a new connection id
+    $ledger = $s->waitForExpiryWithLedger($first, $maxExp);
+    $proof = $s->monitoringProof();
+    $s->watcherId = $idBefore; // the proof is judged against the connection that watched from the first scan
+    $proof = $s->monitoringProof();
+    $out = $issueSignal($s, ['rl-login'], $first, $ledger, $since);
+    $signalKey = $s->ctl->execute(['GET', 'rehearsal:activation:allowed']);
+    $expect('N9b:sync_token_alone_would_have_passed_but_identity_differs', $proof['synced'] === true && $proof['same_connection'] === false, ['proof' => $proof, 'id_from_first_scan' => $idBefore]);
+    $expect('N9b:signal_denied_and_absent', $out['permitted'] === false && $signalKey === null && in_array('MONITORING_CONTINUITY_NOT_PROVEN', $out['first_evaluation']['reasons'], true), ['first_evaluation' => $out['first_evaluation']]);
+
+    return ['out' => $out];
 });
 
 // N4: unknown expiry
@@ -1707,14 +1909,26 @@ $neg('N7_redis_restart_breaks_continuity_and_barrier', static function (Scenario
     return ['reasons' => $g['reasons']];
 });
 
-jlog('summary', ['control_failures' => $failedControls]);
+$expectedIds = ['A_login_protection_own_ns', 'B_otp_protection_own_ns', 'C_api_heavy_protection_own_ns', 'D_login_and_otp_shared_ns',
+    'N1_hung_request_blocks_gate', 'N1b_request_between_pull_and_inflight_registration', 'N2_pending_retry_and_delayed_jobs_block_gate', 'N3_unrevoked_writer_and_off_user_with_open_connection',
+    'N3c_partial_family_hole_missed_by_a_single_key_check', 'N9_lost_watcher_blocks_the_signal', 'N9b_replaced_watcher_connection_blocks_the_signal', 'N4_unknown_expiry', 'N4b_early_delete_is_unexplained_absence',
+    'N4cd_ledger_and_events_catch_early_delete_and_truncation', 'N4e_last_moment_delete_caught_by_events', 'N5_data_continuity_break_sentinel_lost', 'N6_late_writer_after_barrier_denied_and_gate_holds',
+    'N8_request_at_commit_when_barrier_lands', 'N8b_connection_cut_while_commit_pending', 'N5b_eviction_breaks_continuity', 'N7_redis_restart_breaks_continuity_and_barrier'];
+$executedIds = array_merge(array_keys($results['scenarios']), array_keys($results['negative'] ?? []));
+$filter = getenv('S284_SCENARIOS');
+$complete = ($filter === false || $filter === '') && array_diff($expectedIds, $executedIds) === [];
+$results['complete'] = $complete;
+$results['scenario_filter'] = $filter === false ? '' : $filter;
+$results['expected_ids'] = $expectedIds;
+$results['executed_ids'] = $executedIds;
+jlog('summary', ['control_failures' => $failedControls, 'complete' => $complete]);
 $payload = json_encode($results + ['control_failures' => $failedControls], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 $file = $outDir . '/rehearsal-results.json';
 $written = $payload !== false && file_put_contents($file, $payload) === strlen($payload);
 $readBack = $written ? file_get_contents($file) : false;
 $decoded = is_string($readBack) ? json_decode($readBack, true) : null;
-$savedOk = $written && is_array($decoded) && ($decoded['control_failures'] ?? null) === $failedControls && (getenv('S284_SCENARIOS') !== false && getenv('S284_SCENARIOS') !== '' || isset($decoded['scenarios']['A_login_protection_own_ns']));
-jlog('results_file', ['path' => $file, 'saved_and_verified' => $savedOk, 'bytes' => is_string($readBack) ? strlen($readBack) : 0, 'results_sha256' => is_string($readBack) ? hash('sha256', $readBack) : '']);
+$savedOk = $written && is_array($decoded) && ($decoded['control_failures'] ?? null) === $failedControls && ($decoded['complete'] ?? null) === $complete;
+jlog('results_file', ['path' => $file, 'saved_and_verified' => $savedOk, 'complete' => $complete, 'bytes' => is_string($readBack) ? strlen($readBack) : 0, 'results_sha256' => is_string($readBack) ? hash('sha256', $readBack) : '']);
 if (! $savedOk) {
     fwrite(STDERR, "RESULTS FILE COULD NOT BE SAVED OR VERIFIED\n");
     exit(5);

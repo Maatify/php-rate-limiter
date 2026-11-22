@@ -22,11 +22,12 @@ case "$1" in
         mnt=""; for b in "$@"; do [[ "$b" == *:/out ]] && mnt="${b%%:/out}"; done
         mode="${FAKE_RESULTS:-ok}"
         if [[ -n "$mnt" && "$mode" != missing ]]; then
-          printf '{"control_failures":0,"scenarios":{"A_login_protection_own_ns":{}}}' > "$mnt/rehearsal-results.json"
+          comp=true; [[ "$mode" == incomplete ]] && comp=false
+          printf '{\n    "control_failures": 0,\n    "complete": %s,\n    "scenarios": {"A_login_protection_own_ns": {}}\n}' "$comp" > "$mnt/rehearsal-results.json"
           sha="$( (command -v sha256sum >/dev/null && sha256sum "$mnt/rehearsal-results.json" || shasum -a 256 "$mnt/rehearsal-results.json") | cut -d' ' -f1)"
           [[ "$mode" == badsha ]] && sha="$(printf '%064d' 0)"
           ver=true; [[ "$mode" == unverified ]] && ver=false
-          echo "{\"tag\":\"results_file\",\"saved_and_verified\":$ver,\"results_sha256\":\"$sha\"}"
+          echo "{\"tag\":\"results_file\",\"saved_and_verified\":$ver,\"complete\":$comp,\"results_sha256\":\"$sha\"}"
         fi
         exit "${FAKE_HARNESS_RC:-0}"
       fi
@@ -50,6 +51,10 @@ expect() { # name expected_rc actual_rc
 check() { # name condition-result description
   if [[ "$2" == yes ]]; then echo "PASS $1: $3"; else echo "FAIL $1: $3"; failures=$((failures + 1)); fi
 }
+acc_dir() { # the run directory the accepted pointer names
+  local ptr="$1/ACCEPTED-${2:-64}bit.json"; [[ -s "$ptr" ]] || { echo ""; return; }
+  echo "$1/$(grep -o '"run":"[^"]*"' "$ptr" | cut -d'"' -f4)"
+}
 run() { # width out -> sets rc; FAKE_* and S284_* come from the caller's environment
   FAKE_LOG="$work/calls.log" S284_DOCKER_BIN="$work/docker" "$runner" "$1" "$work/deps" "$2" >"$work/stdout.log" 2>&1
   rc=$?
@@ -69,7 +74,7 @@ names_cleaned() { # every name the run created is removed by that exact name
 
 # T1 happy path
 reset; FAKE_INT_SIZE=8 run 64 "$work/o1"; expect T1_happy_64 0 "$rc"
-check T1_evidence "$([[ -s "$work/o1/run-64bit.log" && "$(cat "$work/o1/exit-64bit.txt")" == 0 ]] && echo yes || echo no)" "log non-empty and exit file is 0"
+u1="$(acc_dir "$work/o1")"; check T1_evidence "$([[ -n "$u1" && -s "$u1/run-64bit.log" && "$(cat "$u1/exit-64bit.txt")" == 0 && -s "$u1/MANIFEST.sha256" ]] && echo yes || echo no)" "the pointer names a run dir with a non-empty log, exit file 0 and a manifest"
 check T1_cleanup "$(names_cleaned)" "every container and the network removed by its own name"
 
 # T2 tee returns 23 -> evidence failure (7), never a pass
@@ -89,7 +94,7 @@ check T4_cleanup "$(names_cleaned)" "cleanup by name after a readiness timeout"
 
 # T5 a failing control passes its own exit code through
 reset; FAKE_INT_SIZE=8 FAKE_HARNESS_RC=1 run 64 "$work/o5"; expect T5_harness_failure 1 "$rc"
-check T5_rejected_kept "$([[ -n "$(ls "$work/o5/rejected" 2>/dev/null)" && ! -e "$work/o5/exit-64bit.txt" ]] && echo yes || echo no)" "a failing run is kept under rejected/ and writes no accepted exit file"
+check T5_rejected_kept "$([[ -n "$(ls "$work/o5/rejected" 2>/dev/null)" && ! -e "$work/o5/ACCEPTED-64bit.json" ]] && echo yes || echo no)" "a failing run is kept under rejected/ and writes no accepted exit file"
 
 # T6 evidence directory cannot be created -> 7
 : > "$work/notadir"; reset; FAKE_INT_SIZE=8 run 64 "$work/notadir/sub"; expect T6_unwritable_out 7 "$rc"
@@ -159,8 +164,8 @@ FAKE_GIT_MODE= FAKE_HEAD=deadbeef cc; expect T15_wrong_head 4 "$rc"
 FAKE_GIT_MODE= FAKE_HARNESS_RC=1 cc; expect T16_controls_rc_passthrough 1 "$rc"
 
 # T24..T30 evidence integrity: accepted evidence is never replaced by a rejected run
-seed_old() { mkdir -p "$1"; echo OLD > "$1/run-64bit.log"; echo 0 > "$1/exit-64bit.txt"; echo OLD > "$1/rehearsal-results.json"; }
-old_intact() { [[ "$(cat "$1/run-64bit.log")" == OLD && "$(cat "$1/exit-64bit.txt")" == 0 && "$(cat "$1/rehearsal-results.json")" == OLD ]] && echo yes || echo no; }
+seed_old() { mkdir -p "$1/runs/OLD-64bit"; echo OLD > "$1/runs/OLD-64bit/run-64bit.log"; echo 0 > "$1/runs/OLD-64bit/exit-64bit.txt"; echo OLD > "$1/runs/OLD-64bit/rehearsal-results.json"; echo '{"width":64,"run":"runs/OLD-64bit"}' > "$1/ACCEPTED-64bit.json"; }
+old_intact() { [[ "$(cat "$1/runs/OLD-64bit/run-64bit.log")" == OLD && "$(cat "$1/runs/OLD-64bit/exit-64bit.txt")" == 0 && "$(cat "$1/runs/OLD-64bit/rehearsal-results.json")" == OLD && "$(cat "$1/ACCEPTED-64bit.json")" == '{"width":64,"run":"runs/OLD-64bit"}' && "$(ls "$1/runs" | wc -l | tr -d ' ')" == 1 ]] && echo yes || echo no; }
 seed_old "$work/o17"; reset; FAKE_INT_SIZE=4 run 64 "$work/o17"; expect T24_width_mismatch_rejected 6 "$rc"
 check T24_old_evidence_intact "$(old_intact "$work/o17")" "previous accepted evidence untouched after a rejected run"
 check T24_rejected_run_kept "$([[ -n "$(ls "$work/o17/rejected" 2>/dev/null)" ]] && echo yes || echo no)" "the rejected run is kept under rejected/"
@@ -173,8 +178,19 @@ check T27_old_evidence_intact "$(old_intact "$work/o20")" "old evidence intact w
 seed_old "$work/o21"; reset; FAKE_INT_SIZE=8 FAKE_HARNESS_RC=1 run 64 "$work/o21"; expect T28_control_failure_rejected 1 "$rc"
 check T28_old_evidence_intact "$(old_intact "$work/o21")" "old evidence intact when a control failed"
 reset; FAKE_INT_SIZE=8 run 64 "$work/o22"; expect T29_good_run_promotes 0 "$rc"
-check T29_promoted "$([[ -s "$work/o22/run-64bit.log" && -s "$work/o22/rehearsal-results.json" && "$(cat "$work/o22/exit-64bit.txt")" == 0 && ! -d "$work/o22/rejected" ]] && echo yes || echo no)" "log, results and exit file promoted; nothing rejected"
+u22="$(acc_dir "$work/o22")"; check T29_promoted "$([[ -n "$u22" && -s "$u22/run-64bit.log" && -s "$u22/rehearsal-results.json" && "$(cat "$u22/exit-64bit.txt")" == 0 && ! -d "$work/o22/rejected" && ! -e "$work/o22/run-64bit.log" ]] && echo yes || echo no)" "log, results and exit file promoted; nothing rejected"
 reset; FAKE_INT_SIZE=4 run 32 "$work/o23"; expect T30_32bit_needs_no_results 0 "$rc"
+
+# T31..T35 (F291-05): a partial run, an incomplete run, a failed pointer flip and a second good run never mix evidence
+seed_old "$work/o31"; reset; FAKE_INT_SIZE=8 S284_SCENARIOS=A run 64 "$work/o31"; expect T31_partial_run_never_promoted 7 "$rc"
+check T31_old_evidence_intact "$(old_intact "$work/o31")" "a partial run leaves accepted evidence untouched (and the pointer unchanged)"
+seed_old "$work/o32"; reset; FAKE_INT_SIZE=8 FAKE_RESULTS=incomplete run 64 "$work/o32"; expect T32_incomplete_run_rejected 7 "$rc"
+check T32_old_evidence_intact "$(old_intact "$work/o32")" "an incomplete run (not every expected scenario) leaves accepted evidence untouched"
+seed_old "$work/o33"; mkdir -p "$work/o33/.ACCEPTED-64bit.tmp"; reset; FAKE_INT_SIZE=8 run 64 "$work/o33"; expect T33_pointer_flip_failure 7 "$rc"
+check T33_pointer_and_old_run_intact "$([[ "$(cat "$work/o33/ACCEPTED-64bit.json")" == '{"width":64,"run":"runs/OLD-64bit"}' && "$(cat "$work/o33/runs/OLD-64bit/run-64bit.log")" == OLD ]] && echo yes || echo no)" "the pointer was not flipped and the old run is intact"
+check T33_new_unit_parked "$([[ -n "$(ls "$work/o33/rejected" 2>/dev/null | grep -- '-rc7')" && "$(ls "$work/o33/runs" | wc -l | tr -d ' ')" == 1 ]] && echo yes || echo no)" "the moved unit was parked under rejected/, not left half-accepted in runs/"
+reset; FAKE_INT_SIZE=8 run 64 "$work/o34"; u34a="$(acc_dir "$work/o34")"; sleep 1; reset; FAKE_INT_SIZE=8 run 64 "$work/o34"; u34b="$(acc_dir "$work/o34")"
+check T34_second_good_run_is_a_separate_unit "$([[ -n "$u34a" && -n "$u34b" && "$u34a" != "$u34b" && -s "$u34a/run-64bit.log" && -s "$u34b/run-64bit.log" ]] && echo yes || echo no)" "the first accepted run stays intact; the pointer names the second"
 
 echo "selftest_failures=$failures"
 exit $((failures == 0 ? 0 : 1))
