@@ -1368,7 +1368,7 @@ $issueSignal = static function (Scenario $s, array $namespaces, array $first, ar
             return ['reachable' => false];
         }
         try {
-            return ['reachable' => true, 'allowed_present' => $c->execute(['GET', $allowed]) !== null, 'pending_present' => $c->execute(['GET', $pending]) !== null, 'pttl_ms' => (int) $c->execute(['PTTL', $allowed])];
+            return ['reachable' => true, 'allowed_present' => $c->execute(['GET', $allowed]) !== null, 'pending_present' => $c->execute(['GET', $pending]) !== null, 'pttl_ms' => (int) $c->execute(['PTTL', $allowed]), 'redis_ms' => redisMs($c)];
         } catch (\Throwable) {
             return ['reachable' => false];
         }
@@ -1410,6 +1410,7 @@ $issueSignal = static function (Scenario $s, array $namespaces, array $first, ar
     try {
         $s->ctl->execute(['SET', $pending, redisMs($s->ctl), 'PX', $lease]);
         $out['pending_written'] = true;
+        $out['pending_written_ms'] = redisMs($s->ctl);
         $hook('after_pending');
         $out['audit_before_exposure'] = $evaluate();
         if (! $out['audit_before_exposure']['ok']) {
@@ -1430,19 +1431,43 @@ $issueSignal = static function (Scenario $s, array $namespaces, array $first, ar
     // ---- 4. the single atomic exposure
     try {
         $hook('before_rename');
+        if (($hooks['lose_request'] ?? false) === true) {
+            throw new \RuntimeException('simulated: the RENAME never reached Redis (its reply is, of course, never seen)');
+        }
+        if (($hooks['lose_reply'] ?? false) === true) {
+            // the command IS sent and Redis executes it, but its reply is never read: the connection is dropped right after the write
+            $raw = new RawRedis((string) getenv('REDIS_INTEGRATION_HOST'), (int) getenv('REDIS_INTEGRATION_PORT'), 'ctl', pwOf('ctl'));
+            $raw->send(['RENAME', $pending, $allowed]);
+            usleep(150000);
+            unset($raw);
+            throw new \RuntimeException('simulated: the RENAME reply was lost');
+        }
         $s->ctl->execute(['RENAME', $pending, $allowed]);
     } catch (\Throwable $e) {
+        // The reply is gone: whether RENAME applied can only be told from DECISIVE evidence read through an independent connection:
+        //   allowed present                       -> the exposure happened                         -> ISSUED
+        //   allowed absent, pending still present -> RENAME did not apply (pending intact)         -> NOT_ISSUED
+        //   BOTH absent                           -> RENAME may have applied and the lease expired before the read, or it never applied and the
+        //                                            pending key expired: not decidable                -> UNCONFIRMED (never NOT_ISSUED just because the keys are gone)
         $out['exception_at_exposure'] = substr($e->getMessage(), 0, 160);
+        $hook('before_independent');
         $ind = $independent();
         $out['independent_after_failure'] = $ind;
-        if (! $ind['reachable']) {
-            $out['state'] = 'UNCONFIRMED'; // the RENAME may or may not have applied and nothing can say: recorded as such, bounded by the lease
-
-            return $out;
-        }
-        $out['state'] = ($ind['allowed_present'] ?? false) ? 'ISSUED' : 'NOT_ISSUED';
-        $out['permitted'] = $out['state'] === 'ISSUED';
         $out['confirmed_by'] = 'fresh_connection';
+        if (! $ind['reachable']) {
+            $out['state'] = 'UNCONFIRMED';
+            $out['why_unconfirmed'] = 'no independent connection';
+        } elseif ($ind['allowed_present'] ?? false) {
+            $out['state'] = 'ISSUED';
+        } elseif ($ind['pending_present'] ?? false) {
+            $out['state'] = 'NOT_ISSUED';
+            $out['decisive_evidence'] = 'pending key intact: the RENAME did not apply';
+        } else {
+            $out['state'] = 'UNCONFIRMED';
+            $out['why_unconfirmed'] = 'both keys absent after a lost reply: the exposure may have happened and expired';
+            $out['lease_elapsed_at_independent_read'] = isset($out['pending_written_ms'], $ind['redis_ms']) && dcmp((string) $ind['redis_ms'], (string) ((int) $out['pending_written_ms'] + (int) $lease)) >= 0;
+        }
+        $out['permitted'] = $out['state'] === 'ISSUED';
 
         return $out;
     }
@@ -1949,6 +1974,45 @@ $neg('N11e_control_lost_after_exposure_without_fallback_is_unconfirmed_and_expir
     return ['out' => $out, 'observer' => [$o1, $o2]];
 });
 
+
+// N11f (F291-03): the RENAME REPLY is lost although Redis EXECUTED it, and the lease expires before the independent read: both keys are gone. Recording NOT_ISSUED would be false
+// (the signal existed): the result must be UNCONFIRMED. The control's own observer proves the exposure really happened inside the lease.
+$neg('N11f_lost_reply_applied_then_expired_is_unconfirmed', static function (Scenario $s) use ($expect, $issueSignal, $prepareClean, $observe): array {
+    [$first, $ledger, $since] = $prepareClean($s);
+    $seen = ['allowed' => null];
+    $out = $issueSignal($s, ['rl-login'], $first, $ledger, $since, ['lease_ms' => 5000, 'lose_reply' => true, 'before_independent' => static function () use (&$seen, $observe): void {
+        $seen = $observe();   // inside the lease: the exposure is visible to an outside observer ...
+        sleep(6);             // ... and then the lease expires before issueSignal's own independent read
+    }]);
+    $later = $observe();
+    $expect('N11f:the_exposure_really_happened_inside_the_lease', ($seen['allowed'] ?? false) === true, ['observer_inside_lease' => $seen]);
+    $expect('N11f:both_keys_absent_at_the_independent_read', ($out['independent_after_failure']['allowed_present'] ?? true) === false && ($out['independent_after_failure']['pending_present'] ?? true) === false && ($out['lease_elapsed_at_independent_read'] ?? false) === true, ['independent' => $out['independent_after_failure'] ?? null]);
+    $expect('N11f:recorded_unconfirmed_not_not_issued', $out['state'] === 'UNCONFIRMED' && $out['permitted'] === false, ['state' => $out['state'], 'why' => $out['why_unconfirmed'] ?? null]);
+    $expect('N11f:nothing_remains_afterwards', $later['allowed'] === false && $later['pending'] === false, ['observer_after' => $later]);
+
+    return ['out' => $out, 'observer_inside' => $seen, 'observer_after' => $later];
+});
+
+// N11g: the request is lost (Redis never saw the RENAME) while the lease is still valid: the pending key is intact: decisive: NOT_ISSUED
+$neg('N11g_lost_request_pending_intact_is_not_issued', static function (Scenario $s) use ($expect, $issueSignal, $prepareClean, $observe): array {
+    [$first, $ledger, $since] = $prepareClean($s);
+    $out = $issueSignal($s, ['rl-login'], $first, $ledger, $since, ['lease_ms' => 20000, 'lose_request' => true]);
+    $o = $observe();
+    $expect('N11g:pending_intact_so_the_rename_did_not_apply', $out['state'] === 'NOT_ISSUED' && ($out['independent_after_failure']['pending_present'] ?? false) === true && isset($out['decisive_evidence']) && $o['allowed'] === false, ['state' => $out['state'], 'independent' => $out['independent_after_failure'] ?? null]);
+
+    return ['out' => $out, 'observer' => $o];
+});
+
+// N11h: the reply is lost, Redis executed the RENAME, the independent read happens inside the lease: allowed present: decisive: ISSUED
+$neg('N11h_lost_reply_applied_seen_inside_lease_is_issued', static function (Scenario $s) use ($expect, $issueSignal, $prepareClean, $observe): array {
+    [$first, $ledger, $since] = $prepareClean($s);
+    $out = $issueSignal($s, ['rl-login'], $first, $ledger, $since, ['lease_ms' => 20000, 'lose_reply' => true]);
+    $o = $observe();
+    $expect('N11h:allowed_present_is_decisive', $out['state'] === 'ISSUED' && $out['permitted'] === true && ($out['independent_after_failure']['allowed_present'] ?? false) === true && $o['allowed'] === true, ['state' => $out['state'], 'independent' => $out['independent_after_failure'] ?? null]);
+
+    return ['out' => $out, 'observer' => $o];
+});
+
 // N3d (F291-01): write permission on a family that has NO key at scan time (reentry-claim): found because the families come from the pinned source, not from the scan
 $neg('N3d_absent_family_reentry_claim_hole', static function (Scenario $s) use ($expect): array {
     $s->closeIntake();
@@ -2222,7 +2286,7 @@ $neg('N7_redis_restart_breaks_continuity_and_barrier', static function (Scenario
 
 $expectedIds = ['A_login_protection_own_ns', 'B_otp_protection_own_ns', 'C_api_heavy_protection_own_ns', 'D_login_and_otp_shared_ns',
     'N1_hung_request_blocks_gate', 'N1b_request_between_pull_and_inflight_registration', 'N2_pending_retry_and_delayed_jobs_block_gate', 'N3_unrevoked_writer_and_off_user_with_open_connection',
-    'N3c_partial_family_hole_missed_by_a_single_key_check', 'N3d_absent_family_reentry_claim_hole', 'N3e_admission_shape_permit_hole', 'N10_final_verification_fails_signal_never_written', 'N10b_final_verification_throws_signal_never_written', 'N10c_audit_before_exposure_fails_signal_never_exposed', 'N10d_audit_before_exposure_throws_signal_never_exposed', 'N11_control_lost_after_pending_before_audit', 'N11b_control_lost_at_exposure_and_no_fallback_is_unconfirmed', 'N11c_control_lost_before_final_verification', 'N11d_control_lost_after_exposure_confirmed_by_fresh_connection', 'N11e_control_lost_after_exposure_without_fallback_is_unconfirmed_and_expires', 'N9_lost_watcher_blocks_the_signal', 'N9b_replaced_watcher_connection_blocks_the_signal', 'N4_unknown_expiry', 'N4b_early_delete_is_unexplained_absence',
+    'N3c_partial_family_hole_missed_by_a_single_key_check', 'N3d_absent_family_reentry_claim_hole', 'N3e_admission_shape_permit_hole', 'N10_final_verification_fails_signal_never_written', 'N10b_final_verification_throws_signal_never_written', 'N10c_audit_before_exposure_fails_signal_never_exposed', 'N10d_audit_before_exposure_throws_signal_never_exposed', 'N11_control_lost_after_pending_before_audit', 'N11b_control_lost_at_exposure_and_no_fallback_is_unconfirmed', 'N11c_control_lost_before_final_verification', 'N11d_control_lost_after_exposure_confirmed_by_fresh_connection', 'N11e_control_lost_after_exposure_without_fallback_is_unconfirmed_and_expires', 'N11f_lost_reply_applied_then_expired_is_unconfirmed', 'N11g_lost_request_pending_intact_is_not_issued', 'N11h_lost_reply_applied_seen_inside_lease_is_issued', 'N9_lost_watcher_blocks_the_signal', 'N9b_replaced_watcher_connection_blocks_the_signal', 'N4_unknown_expiry', 'N4b_early_delete_is_unexplained_absence',
     'N4cd_ledger_and_events_catch_early_delete_and_truncation', 'N4e_last_moment_delete_caught_by_events', 'N5_data_continuity_break_sentinel_lost', 'N6_late_writer_after_barrier_denied_and_gate_holds',
     'N8_request_at_commit_when_barrier_lands', 'N8b_connection_cut_while_commit_pending', 'N5b_eviction_breaks_continuity', 'N7_redis_restart_breaks_continuity_and_barrier'];
 $executedIds = array_merge(array_keys($results['scenarios']), array_keys($results['negative'] ?? []));

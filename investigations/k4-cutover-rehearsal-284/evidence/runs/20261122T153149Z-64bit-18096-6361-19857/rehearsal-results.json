@@ -3,7 +3,7 @@
         "php": "8.4.27",
         "php_int_size": 8,
         "ext_redis": "6.3.0",
-        "harness_sha256": "7b8cf598fbe4f1a7a2e7568a71af2ae6f34c946bc34cb62b32f70885a305a9b1"
+        "harness_sha256": "a231b22f2ea9ca9877570666ddd536230f534286003364fbf256213e591e62ba"
     },
     "source_origin": {
         "Maatify\\RateLimiter\\Builder\\RateLimiterBuilder": {
@@ -49,18 +49,18 @@
                 "login_protection": "rl-login"
             },
             "intake_close": {
-                "accepted_at_close": "138",
+                "accepted_at_close": "136",
                 "rejected_at_close": "0",
-                "accepted_later": "138",
-                "rejected_later": "36"
+                "accepted_later": "136",
+                "rejected_later": "35"
             },
             "k4_representability": {
                 "login_protection": {
                     "census": {
                         "families": {
-                            "score": 7,
+                            "score": 8,
                             "block": 0,
-                            "budget": 7,
+                            "budget": 8,
                             "cycle": 0,
                             "pause": 0,
                             "watch": 0,
@@ -76,42 +76,42 @@
                 "rl-login": {
                     "key": "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0",
                     "duration_s": 20,
-                    "pexpiretime_raw": "1795357429817",
-                    "redis_now_ms": "1795357409817"
+                    "pexpiretime_raw": "1795360487505",
+                    "redis_now_ms": "1795360467506"
                 }
             },
             "synthetic_previous_generation_block": {
                 "key": "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514",
-                "pexpiretime_raw": "1795357434832"
+                "pexpiretime_raw": "1795360492527"
             },
             "timeline_redis_ms": {
-                "load_end": "1795357414818",
-                "intake_closed": "1795357414833",
-                "drained": "1795357416641",
-                "barrier_start": "1795357416642",
-                "barrier_applied": "1795357416644",
-                "connections_killed": "1795357417597",
-                "probes_done": "1795357417599",
-                "gate_while_block_active": "1795357418555",
-                "first_scan_done": "1795357418556",
-                "max_block_expiry_ms": "1795357472300",
-                "natural_expiry_passed": "1795357473514",
-                "final_scan_done": "1795357474451",
-                "activation_signal_set": "1795357481244",
-                "reopen_requested": "1795357484104",
-                "first_success_after_reopen": "1795357484308"
+                "load_end": "1795360472507",
+                "intake_closed": "1795360472528",
+                "drained": "1795360475697",
+                "barrier_start": "1795360475697",
+                "barrier_applied": "1795360475698",
+                "connections_killed": "1795360476681",
+                "probes_done": "1795360476682",
+                "gate_while_block_active": "1795360477638",
+                "first_scan_done": "1795360477639",
+                "max_block_expiry_ms": "1795360528037",
+                "natural_expiry_passed": "1795360529423",
+                "final_scan_done": "1795360530385",
+                "activation_signal_set": "1795360537220",
+                "reopen_requested": "1795360540104",
+                "first_success_after_reopen": "1795360540314"
             },
             "measured": {
-                "drain_ms": "1808",
-                "barrier_and_probes_ms": "958",
+                "drain_ms": "3169",
+                "barrier_and_probes_ms": "985",
                 "first_scan_ms": "957",
-                "wait_for_natural_expiry_ms": "54958",
-                "final_scan_and_gate_ms": "937",
-                "validity_hold_to_signal_ms": "6793",
-                "reopen_to_all_policies_verified_ms": "204",
-                "total_stop_to_all_policies_verified_ms": "69475",
+                "wait_for_natural_expiry_ms": "51784",
+                "final_scan_and_gate_ms": "962",
+                "validity_hold_to_signal_ms": "6835",
+                "reopen_to_all_policies_verified_ms": "210",
+                "total_stop_to_all_policies_verified_ms": "67786",
                 "per_policy_reopen_to_verified_result_ms": {
-                    "login_protection": "36"
+                    "login_protection": "39"
                 }
             },
             "probes": {
@@ -207,10 +207,10 @@
                         "ACL_DELUSER_ctl": "DENIED"
                     }
                 },
-                "digest_before": "b83abe2b7aab961ca458a2a9a1a613c118876cac:167",
-                "digest_after": "b83abe2b7aab961ca458a2a9a1a613c118876cac:167",
+                "digest_before": "8bb2af6182c72c8a9cc477e28a9a1cc900c9b80d:174",
+                "digest_after": "8bb2af6182c72c8a9cc477e28a9a1cc900c9b80d:174",
                 "ctl_user_still_exists": true,
-                "acl_log_entries_new": 57
+                "acl_log_entries_new": 56
             },
             "user_profiles_after_barrier": {
                 "ctl": {
@@ -284,12 +284,12 @@
                 "detail": {
                     "intake": "closed",
                     "accepted": [
-                        "138",
-                        "138"
+                        "136",
+                        "136"
                     ],
                     "rejected": [
-                        "67",
-                        "74"
+                        "96",
+                        "103"
                     ],
                     "drain_snapshots": [
                         [
@@ -307,6 +307,1336 @@
                     "inflight_workers": [],
                     "v2_namespace_write_checks": {
                         "rl-login": {
+                            "store_families": 12,
+                            "admission_shapes": 8,
+                            "keys_checked": 194,
+                            "dryrun_checks": 8148,
+                            "holes": [],
+                            "holes_total": 0
+                        }
+                    },
+                    "barrier_holes": [],
+                    "open_connections_of_unsafe_users": [],
+                    "user_profiles": {
+                        "ctl": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all",
+                            "keys": "~*"
+                        },
+                        "default": {
+                            "flags": [
+                                "off",
+                                "nopass"
+                            ],
+                            "commands": "-@all",
+                            "keys": ""
+                        },
+                        "feeder": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "~rehearsal:*"
+                        },
+                        "w_deferred": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_direct": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_legacy": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_retry": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        }
+                    },
+                    "continuity": {
+                        "run_id_same": true,
+                        "uptime_monotonic": true,
+                        "evicted_same": true,
+                        "sentinel_intact": true,
+                        "policy_noeviction": true
+                    },
+                    "redis_now_ms": "1795360477637",
+                    "block_keys_present": 17,
+                    "block_keys_seen_then_gone": 0,
+                    "active_remaining_ms": {
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:bba0fb06eb0903c44d9831a793d36101435f0eff08436a2674f205a15a927d67": "49611",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:0843d9c86cb8cadc88b4b305b8b3d6607ae291addcb74c78e5dc60bf20c4c548": "50273",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:39fd96914910c5cc6dfcc2e355001d3f85321adac4cb66f088759c7e56547313": "49694",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:6e254cc752eaf710fe8b0d0e76228ffdc5a0be6a578f7461aa87afadeabefebe": "49491",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:51d68dd16c94ce045f46d2d6a0b9f406c2379454f3a9e906d3d59f5b3cca1a28": "49369",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:85fe03e89870b24a5abc8d69646ddf43439dfa9e40fe49f613e8e85b21c46718": "49264",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:ee2e757ccdebb5fe47f3f7f4ee547b40e1039d48c34dac99f0029c93b9e19096": "49407",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "9868",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:d1e72600dba4dcf56ef2f884a3979c8c43f9489832baf58a79946a08b4827867": "49661",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:aad26d88ce63ee98861573b9ac2f30a3924aa254f27b6c82c528e7d394ebaaab": "50400",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:c6154e8da71e9047339f7dc53f7063bf5dbbacb3142746a05d9ac3b1996a570e": "49536",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "14890",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:3af420d471508bbf925960a44f4d8dd3baf565717c84a334f499754cd4a0f659": "49572",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:d34b14db185770c6e46d325cbb98a8d57900f7fbff107e9125d80e5a27b8ad4e": "50399",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:b51800ddc2b8eca08a5562eccc18f35ea0e8f5ed4e6ec3fedc634acaa14c30aa": "49533",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:8bf5ad06ba2249e8275f088f7c4e5c5b5676eb873466dbd29110b75a66653c48": "49449",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:4ed739bbea82b6d24055d94c9f52264e0a3a778bfc5112692537584034b2da12": "49274"
+                    },
+                    "unknown_expiry": [],
+                    "expired_but_present": 0,
+                    "ledger_violations": [],
+                    "event_violations": []
+                }
+            },
+            "gate_final": {
+                "ok": true,
+                "reasons": [],
+                "detail": {
+                    "intake": "closed",
+                    "accepted": [
+                        "136",
+                        "136"
+                    ],
+                    "rejected": [
+                        "1284",
+                        "1291"
+                    ],
+                    "drain_snapshots": [
+                        [
+                            0,
+                            [],
+                            []
+                        ],
+                        [
+                            0,
+                            [],
+                            []
+                        ]
+                    ],
+                    "queues_nonempty": [],
+                    "inflight_workers": [],
+                    "v2_namespace_write_checks": {
+                        "rl-login": {
+                            "store_families": 12,
+                            "admission_shapes": 8,
+                            "keys_checked": 177,
+                            "dryrun_checks": 7434,
+                            "holes": [],
+                            "holes_total": 0
+                        }
+                    },
+                    "barrier_holes": [],
+                    "open_connections_of_unsafe_users": [],
+                    "user_profiles": {
+                        "ctl": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all",
+                            "keys": "~*"
+                        },
+                        "default": {
+                            "flags": [
+                                "off",
+                                "nopass"
+                            ],
+                            "commands": "-@all",
+                            "keys": ""
+                        },
+                        "feeder": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "~rehearsal:*"
+                        },
+                        "w_deferred": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_direct": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_legacy": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_retry": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        }
+                    },
+                    "continuity": {
+                        "run_id_same": true,
+                        "uptime_monotonic": true,
+                        "evicted_same": true,
+                        "sentinel_intact": true,
+                        "policy_noeviction": true
+                    },
+                    "redis_now_ms": "1795360530385",
+                    "block_keys_present": 0,
+                    "block_keys_seen_then_gone": 0,
+                    "active_remaining_ms": [],
+                    "unknown_expiry": [],
+                    "expired_but_present": 0,
+                    "unexplained_absence": [],
+                    "new_since_first_scan": [],
+                    "ledger_violations": [],
+                    "event_violations": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                }
+            },
+            "activation_permitted": true,
+            "signal": {
+                "state": "ISSUED",
+                "permitted": true,
+                "lease_ms": 30000,
+                "first_evaluation": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "recheck_after_hold": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "final_verification": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "pending_written": true,
+                "pending_written_ms": "1795360536271",
+                "audit_before_exposure": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "signal_visible_after_audit": true,
+                "signal_pttl_ms": 29052,
+                "pending_gone": true,
+                "confirmed_by": "control_connection"
+            },
+            "reopen_per_policy": {
+                "login_protection": {
+                    "result": {
+                        "policy": "login_protection",
+                        "ok": true,
+                        "ms": "1795360540143",
+                        "allowed": false,
+                        "blocked": true,
+                        "class": "Maatify\\RateLimiter\\DTO\\RateLimitResultDTO"
+                    },
+                    "ns_keys_before": 157,
+                    "ns_keys_after": 168,
+                    "k4_census_for_the_account": {
+                        "score": 1,
+                        "block": 0,
+                        "budget": 1,
+                        "cycle": 0,
+                        "pause": 0,
+                        "watch": 0,
+                        "distinct": 0
+                    },
+                    "return_ms": "39",
+                    "verified": true
+                }
+            },
+            "worker_stats": {
+                "rehearsal:wstats:deferred-92": {
+                    "role": "deferred",
+                    "user": "w_deferred",
+                    "done": "11",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795360474277",
+                    "first_noperm_ms": "0",
+                    "ts": "1795360476665"
+                },
+                "rehearsal:wstats:deferred-98": {
+                    "role": "deferred",
+                    "user": "w_deferred",
+                    "done": "0",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "0",
+                    "first_noperm_ms": "0",
+                    "ts": "1795360540313"
+                },
+                "rehearsal:wstats:legacy-94": {
+                    "role": "legacy",
+                    "user": "w_legacy",
+                    "done": "136",
+                    "errors": "15",
+                    "noperm": "15",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795360475688",
+                    "first_noperm_ms": "1795360475756",
+                    "ts": "1795360476636"
+                },
+                "rehearsal:wstats:direct-96": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "0",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "0",
+                    "first_noperm_ms": "0",
+                    "ts": "1795360540301"
+                },
+                "rehearsal:wstats:direct-97": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "1",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795360540143",
+                    "first_noperm_ms": "0",
+                    "ts": "1795360540293"
+                },
+                "rehearsal:wstats:retry-93": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "20",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795360475484",
+                    "first_noperm_ms": "0",
+                    "ts": "1795360476668"
+                },
+                "rehearsal:wstats:direct-91": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "54",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795360472506",
+                    "first_noperm_ms": "0",
+                    "ts": "1795360476666"
+                },
+                "rehearsal:wstats:direct-90": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "69",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795360472532",
+                    "first_noperm_ms": "0",
+                    "ts": "1795360476666"
+                },
+                "rehearsal:wstats:retry-99": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "0",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "0",
+                    "first_noperm_ms": "0",
+                    "ts": "1795360540293"
+                }
+            }
+        },
+        "B_otp_protection_own_ns": {
+            "name": "B_otp_protection_own_ns",
+            "policy_ns": {
+                "otp_protection": "rl-otp"
+            },
+            "intake_close": {
+                "accepted_at_close": "135",
+                "rejected_at_close": "0",
+                "accepted_later": "135",
+                "rejected_later": "35"
+            },
+            "k4_representability": {
+                "otp_protection": {
+                    "census": {
+                        "families": {
+                            "score": 7,
+                            "block": 2,
+                            "budget": 7,
+                            "cycle": 1,
+                            "pause": 0,
+                            "watch": 0,
+                            "distinct": 0
+                        },
+                        "k4_block_max_expiry_ms": "1795360840718"
+                    },
+                    "reader_k4_score_hot_account": 5,
+                    "block_keys_in_ns_all_scopes": 20
+                }
+            },
+            "synthetic_blocks": {
+                "rl-otp": {
+                    "key": "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0",
+                    "duration_s": 20,
+                    "pexpiretime_raw": "1795360561340",
+                    "redis_now_ms": "1795360541341"
+                }
+            },
+            "synthetic_previous_generation_block": {
+                "key": "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514",
+                "pexpiretime_raw": "1795360566362"
+            },
+            "timeline_redis_ms": {
+                "load_end": "1795360546345",
+                "intake_closed": "1795360546363",
+                "drained": "1795360548167",
+                "barrier_start": "1795360548167",
+                "barrier_applied": "1795360548168",
+                "connections_killed": "1795360549155",
+                "probes_done": "1795360549157",
+                "gate_while_block_active": "1795360550144",
+                "first_scan_done": "1795360550145",
+                "max_block_expiry_ms": "1795360841162",
+                "natural_expiry_passed": "1795360842515",
+                "final_scan_done": "1795360843487",
+                "activation_signal_set": "1795360850364",
+                "reopen_requested": "1795360853257",
+                "first_success_after_reopen": "1795360853466"
+            },
+            "measured": {
+                "drain_ms": "1804",
+                "barrier_and_probes_ms": "990",
+                "first_scan_ms": "988",
+                "wait_for_natural_expiry_ms": "292370",
+                "final_scan_and_gate_ms": "972",
+                "validity_hold_to_signal_ms": "6877",
+                "reopen_to_all_policies_verified_ms": "209",
+                "total_stop_to_all_policies_verified_ms": "307103",
+                "per_policy_reopen_to_verified_result_ms": {
+                    "otp_protection": "27"
+                }
+            },
+            "probes": {
+                "per_user": {
+                    "w_direct": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_deferred": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_retry": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_legacy": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    }
+                },
+                "admin_per_user": {
+                    "w_direct": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    },
+                    "w_deferred": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    },
+                    "w_retry": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    },
+                    "w_legacy": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    }
+                },
+                "digest_before": "f7a5c173109c96cfe53164252c654dc8f7499f09:185",
+                "digest_after": "f7a5c173109c96cfe53164252c654dc8f7499f09:185",
+                "ctl_user_still_exists": true,
+                "acl_log_entries_new": 56
+            },
+            "user_profiles_after_barrier": {
+                "ctl": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all",
+                    "keys": "~*"
+                },
+                "default": {
+                    "flags": [
+                        "off",
+                        "nopass"
+                    ],
+                    "commands": "-@all",
+                    "keys": ""
+                },
+                "feeder": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "~rehearsal:*"
+                },
+                "w_deferred": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                },
+                "w_direct": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                },
+                "w_legacy": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                },
+                "w_retry": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                }
+            },
+            "killed_connections": {
+                "w_direct": 3,
+                "w_deferred": 2,
+                "w_retry": 2,
+                "w_legacy": 2
+            },
+            "gate_while_block_active": {
+                "ok": false,
+                "reasons": [
+                    "BLOCK_ACTIVE"
+                ],
+                "detail": {
+                    "intake": "closed",
+                    "accepted": [
+                        "135",
+                        "135"
+                    ],
+                    "rejected": [
+                        "66",
+                        "73"
+                    ],
+                    "drain_snapshots": [
+                        [
+                            0,
+                            [],
+                            []
+                        ],
+                        [
+                            0,
+                            [],
+                            []
+                        ]
+                    ],
+                    "queues_nonempty": [],
+                    "inflight_workers": [],
+                    "v2_namespace_write_checks": {
+                        "rl-otp": {
+                            "store_families": 12,
+                            "admission_shapes": 8,
+                            "keys_checked": 205,
+                            "dryrun_checks": 8610,
+                            "holes": [],
+                            "holes_total": 0
+                        }
+                    },
+                    "barrier_holes": [],
+                    "open_connections_of_unsafe_users": [],
+                    "user_profiles": {
+                        "ctl": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all",
+                            "keys": "~*"
+                        },
+                        "default": {
+                            "flags": [
+                                "off",
+                                "nopass"
+                            ],
+                            "commands": "-@all",
+                            "keys": ""
+                        },
+                        "feeder": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "~rehearsal:*"
+                        },
+                        "w_deferred": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_direct": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_legacy": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_retry": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        }
+                    },
+                    "continuity": {
+                        "run_id_same": true,
+                        "uptime_monotonic": true,
+                        "evicted_same": true,
+                        "sentinel_intact": true,
+                        "policy_noeviction": true
+                    },
+                    "redis_now_ms": "1795360550142",
+                    "block_keys_present": 21,
+                    "block_keys_seen_then_gone": 0,
+                    "active_remaining_ms": {
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:ef6a761c1b2edeec5d4155a047f3473f38c205203bb07121e39f1514727b8e89": "52973",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:731f9034e85acd314b5db3df9177554f84d90f31cddaa39aa76ef8757f45eeac": "50738",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:2b9deb21a4f34e868dc558a65ce9964c896516f7660fc76a043e9c4a233c06fe": "51020",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:587a1c4ab70c7ff0afb49de8e810f88f4ac601dd79ce3bf62f43c6fbcd4b4929": "51017",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "16220",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:4d2ee5af50fd44af4e9991adbd23557ddd8125b544e2a0f5ef0da4b054cb5fb4": "290576",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:6cea39243ad9da79f3a68f3036d772311e9acf88426b48a60c114597e1a89b54": "52780",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:8102d3ada5e7610d298ad10adbab401f29092218d39b990c8d8ef42539ae02b4": "51753",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:477fbbce9f903649fe30e818a706449b793be987dc4b88a6fc0922a149fb434e": "290811",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:f3797e129757b32ee7bf65d89ee6a329acbde28663d8eaa53fd3f1c09406f3df": "5513",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:3ad4deb3a2b6ebf6c31fde6647df5c5591e1a9981b1a85f2c6da81b85a508986": "50688",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:02bc27226a4bfadd60f801d92dd022a40ce6dbbe8d4db6836d1579b86d11f345": "51176",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:500906416fde75e3336b2fd7cea9c81ed92397bfe7e47d634e117f65fdc7051b": "50810",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "11198",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:4be2f258add60ca5e1446159c5f264a4e1a5123d6d38346dacd71651b37c81a3": "50749",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:5167288a046e60fa081449195a02ca8392707dd1eef7488b6befb5be3747f696": "50664",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:4a515e386cbac19e0cd5943a4d886a5f793b62cc0ef3c572cf7efe3a4a77e321": "52252",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:f4300a134bb8684167890fa7c6535dca8c8fea06be5fe5d09d4679c62eb723e9": "291020",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:13c51e6a17ebd16140d38475c22569c4f6fab50f56702e9e22a2aaaa4bdd51c1": "290663",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:94ca7e37bd8edd733a63d73b727837604abb1f534f71a1b7a6d2fe260c089895": "51904",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:5e65df1ccb48635b6868d20fde702aea35add130a0df93d5125375d5f954e33a": "50663"
+                    },
+                    "unknown_expiry": [],
+                    "expired_but_present": 0,
+                    "ledger_violations": [],
+                    "event_violations": []
+                }
+            },
+            "gate_final": {
+                "ok": true,
+                "reasons": [],
+                "detail": {
+                    "intake": "closed",
+                    "accepted": [
+                        "135",
+                        "135"
+                    ],
+                    "rejected": [
+                        "6638",
+                        "6645"
+                    ],
+                    "drain_snapshots": [
+                        [
+                            0,
+                            [],
+                            []
+                        ],
+                        [
+                            0,
+                            [],
+                            []
+                        ]
+                    ],
+                    "queues_nonempty": [],
+                    "inflight_workers": [],
+                    "v2_namespace_write_checks": {
+                        "rl-otp": {
+                            "store_families": 12,
+                            "admission_shapes": 8,
+                            "keys_checked": 184,
+                            "dryrun_checks": 7728,
+                            "holes": [],
+                            "holes_total": 0
+                        }
+                    },
+                    "barrier_holes": [],
+                    "open_connections_of_unsafe_users": [],
+                    "user_profiles": {
+                        "ctl": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all",
+                            "keys": "~*"
+                        },
+                        "default": {
+                            "flags": [
+                                "off",
+                                "nopass"
+                            ],
+                            "commands": "-@all",
+                            "keys": ""
+                        },
+                        "feeder": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "~rehearsal:*"
+                        },
+                        "w_deferred": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_direct": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_legacy": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_retry": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        }
+                    },
+                    "continuity": {
+                        "run_id_same": true,
+                        "uptime_monotonic": true,
+                        "evicted_same": true,
+                        "sentinel_intact": true,
+                        "policy_noeviction": true
+                    },
+                    "redis_now_ms": "1795360843487",
+                    "block_keys_present": 0,
+                    "block_keys_seen_then_gone": 0,
+                    "active_remaining_ms": [],
+                    "unknown_expiry": [],
+                    "expired_but_present": 0,
+                    "unexplained_absence": [],
+                    "new_since_first_scan": [],
+                    "ledger_violations": [],
+                    "event_violations": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                }
+            },
+            "activation_permitted": true,
+            "signal": {
+                "state": "ISSUED",
+                "permitted": true,
+                "lease_ms": 30000,
+                "first_evaluation": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "recheck_after_hold": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "final_verification": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "pending_written": true,
+                "pending_written_ms": "1795360849395",
+                "audit_before_exposure": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "signal_visible_after_audit": true,
+                "signal_pttl_ms": 29031,
+                "pending_gone": true,
+                "confirmed_by": "control_connection"
+            },
+            "reopen_per_policy": {
+                "otp_protection": {
+                    "result": {
+                        "policy": "otp_protection",
+                        "ok": true,
+                        "ms": "1795360853284",
+                        "allowed": false,
+                        "blocked": true,
+                        "class": "Maatify\\RateLimiter\\DTO\\RateLimitResultDTO"
+                    },
+                    "ns_keys_before": 164,
+                    "ns_keys_after": 174,
+                    "k4_census_for_the_account": {
+                        "score": 1,
+                        "block": 0,
+                        "budget": 1,
+                        "cycle": 0,
+                        "pause": 0,
+                        "watch": 0,
+                        "distinct": 0
+                    },
+                    "return_ms": "27",
+                    "verified": true
+                }
+            },
+            "worker_stats": {
+                "rehearsal:wstats:direct-108": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "1",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795360853284",
+                    "first_noperm_ms": "0",
+                    "ts": "1795360853463"
+                },
+                "rehearsal:wstats:direct-107": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "0",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "0",
+                    "first_noperm_ms": "0",
+                    "ts": "1795360853447"
+                },
+                "rehearsal:wstats:deferred-109": {
+                    "role": "deferred",
+                    "user": "w_deferred",
+                    "done": "0",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "0",
+                    "first_noperm_ms": "0",
+                    "ts": "1795360853462"
+                },
+                "rehearsal:wstats:retry-110": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "0",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "0",
+                    "first_noperm_ms": "0",
+                    "ts": "1795360853452"
+                },
+                "rehearsal:wstats:direct-101": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "74",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795360546352",
+                    "first_noperm_ms": "0",
+                    "ts": "1795360549139"
+                },
+                "rehearsal:wstats:deferred-103": {
+                    "role": "deferred",
+                    "user": "w_deferred",
+                    "done": "14",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795360547971",
+                    "first_noperm_ms": "0",
+                    "ts": "1795360549127"
+                },
+                "rehearsal:wstats:retry-104": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "19",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795360547859",
+                    "first_noperm_ms": "0",
+                    "ts": "1795360549141"
+                },
+                "rehearsal:wstats:direct-102": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "46",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795360546209",
+                    "first_noperm_ms": "0",
+                    "ts": "1795360549130"
+                },
+                "rehearsal:wstats:legacy-105": {
+                    "role": "legacy",
+                    "user": "w_legacy",
+                    "done": "114",
+                    "errors": "15",
+                    "noperm": "15",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795360548167",
+                    "first_noperm_ms": "1795360548239",
+                    "ts": "1795360549109"
+                }
+            }
+        },
+        "C_api_heavy_protection_own_ns": {
+            "name": "C_api_heavy_protection_own_ns",
+            "policy_ns": {
+                "api_heavy_protection": "rl-api"
+            },
+            "intake_close": {
+                "accepted_at_close": "134",
+                "rejected_at_close": "0",
+                "accepted_later": "134",
+                "rejected_later": "35"
+            },
+            "k4_representability": {
+                "api_heavy_protection": {
+                    "census": {
+                        "families": {
+                            "score": 0,
+                            "block": 0,
+                            "budget": 0,
+                            "cycle": 0,
+                            "pause": 0,
+                            "watch": 0,
+                            "distinct": 0
+                        },
+                        "k4_block_max_expiry_ms": "0"
+                    },
+                    "reader_k4_score_hot_account": 0,
+                    "block_keys_in_ns_all_scopes": 16
+                }
+            },
+            "synthetic_blocks": {
+                "rl-api": {
+                    "key": "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0",
+                    "duration_s": 20,
+                    "pexpiretime_raw": "1795360874501",
+                    "redis_now_ms": "1795360854502"
+                }
+            },
+            "synthetic_previous_generation_block": {
+                "key": "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514",
+                "pexpiretime_raw": "1795360879521"
+            },
+            "timeline_redis_ms": {
+                "load_end": "1795360859505",
+                "intake_closed": "1795360859522",
+                "drained": "1795360862098",
+                "barrier_start": "1795360862098",
+                "barrier_applied": "1795360862100",
+                "connections_killed": "1795360863081",
+                "probes_done": "1795360863083",
+                "gate_while_block_active": "1795360864012",
+                "first_scan_done": "1795360864013",
+                "max_block_expiry_ms": "1795360915879",
+                "natural_expiry_passed": "1795360917110",
+                "final_scan_done": "1795360918052",
+                "activation_signal_set": "1795360924833",
+                "reopen_requested": "1795360927713",
+                "first_success_after_reopen": "1795360927922"
+            },
+            "measured": {
+                "drain_ms": "2576",
+                "barrier_and_probes_ms": "985",
+                "first_scan_ms": "930",
+                "wait_for_natural_expiry_ms": "53097",
+                "final_scan_and_gate_ms": "942",
+                "validity_hold_to_signal_ms": "6781",
+                "reopen_to_all_policies_verified_ms": "209",
+                "total_stop_to_all_policies_verified_ms": "68400",
+                "per_policy_reopen_to_verified_result_ms": {
+                    "api_heavy_protection": "19"
+                }
+            },
+            "probes": {
+                "per_user": {
+                    "w_direct": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_deferred": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_retry": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_legacy": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    }
+                },
+                "admin_per_user": {
+                    "w_direct": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    },
+                    "w_deferred": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    },
+                    "w_retry": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    },
+                    "w_legacy": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    }
+                },
+                "digest_before": "f18a549d4c81fa0cae02d72b21637bb0f061287d:167",
+                "digest_after": "f18a549d4c81fa0cae02d72b21637bb0f061287d:167",
+                "ctl_user_still_exists": true,
+                "acl_log_entries_new": 56
+            },
+            "user_profiles_after_barrier": {
+                "ctl": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all",
+                    "keys": "~*"
+                },
+                "default": {
+                    "flags": [
+                        "off",
+                        "nopass"
+                    ],
+                    "commands": "-@all",
+                    "keys": ""
+                },
+                "feeder": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "~rehearsal:*"
+                },
+                "w_deferred": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                },
+                "w_direct": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                },
+                "w_legacy": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                },
+                "w_retry": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                }
+            },
+            "killed_connections": {
+                "w_direct": 3,
+                "w_deferred": 2,
+                "w_retry": 2,
+                "w_legacy": 2
+            },
+            "gate_while_block_active": {
+                "ok": false,
+                "reasons": [
+                    "BLOCK_ACTIVE"
+                ],
+                "detail": {
+                    "intake": "closed",
+                    "accepted": [
+                        "134",
+                        "134"
+                    ],
+                    "rejected": [
+                        "83",
+                        "90"
+                    ],
+                    "drain_snapshots": [
+                        [
+                            0,
+                            [],
+                            []
+                        ],
+                        [
+                            0,
+                            [],
+                            []
+                        ]
+                    ],
+                    "queues_nonempty": [],
+                    "inflight_workers": [],
+                    "v2_namespace_write_checks": {
+                        "rl-api": {
                             "store_families": 12,
                             "admission_shapes": 8,
                             "keys_checked": 187,
@@ -382,27 +1712,27 @@
                         "sentinel_intact": true,
                         "policy_noeviction": true
                     },
-                    "redis_now_ms": "1795357418553",
+                    "redis_now_ms": "1795360864010",
                     "block_keys_present": 17,
                     "block_keys_seen_then_gone": 0,
                     "active_remaining_ms": {
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:aad26d88ce63ee98861573b9ac2f30a3924aa254f27b6c82c528e7d394ebaaab": "53747",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:c6154e8da71e9047339f7dc53f7063bf5dbbacb3142746a05d9ac3b1996a570e": "50736",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:8bf5ad06ba2249e8275f088f7c4e5c5b5676eb873466dbd29110b75a66653c48": "51697",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:b51800ddc2b8eca08a5562eccc18f35ea0e8f5ed4e6ec3fedc634acaa14c30aa": "50798",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:d1e72600dba4dcf56ef2f884a3979c8c43f9489832baf58a79946a08b4827867": "50974",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "11264",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "16279",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:51d68dd16c94ce045f46d2d6a0b9f406c2379454f3a9e906d3d59f5b3cca1a28": "51062",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:85fe03e89870b24a5abc8d69646ddf43439dfa9e40fe49f613e8e85b21c46718": "50874",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:3af420d471508bbf925960a44f4d8dd3baf565717c84a334f499754cd4a0f659": "51309",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:4ed739bbea82b6d24055d94c9f52264e0a3a778bfc5112692537584034b2da12": "51370",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:0843d9c86cb8cadc88b4b305b8b3d6607ae291addcb74c78e5dc60bf20c4c548": "52133",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:d34b14db185770c6e46d325cbb98a8d57900f7fbff107e9125d80e5a27b8ad4e": "51010",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:39fd96914910c5cc6dfcc2e355001d3f85321adac4cb66f088759c7e56547313": "51271",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:6e254cc752eaf710fe8b0d0e76228ffdc5a0be6a578f7461aa87afadeabefebe": "50680",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:ee2e757ccdebb5fe47f3f7f4ee547b40e1039d48c34dac99f0029c93b9e19096": "52091",
-                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:bba0fb06eb0903c44d9831a793d36101435f0eff08436a2674f205a15a927d67": "51281"
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:a99faa33b24a70c1524ca16289ac7f195bc7c355ee71885f66a3ab200cd3e371": "50646",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:4501e5d44165de4b71cbf5d3eb2780e112f3cdbb9556fa5c35fc832652e55596": "51509",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:4d838394d38a7ab1d43931c4aab4ad61bb559aec9722eaefc93eaac8469fe642": "50768",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:52f9b5416e622b10fc9c580d01e56200b47cc4259c3eca99a49a698a340b1a35": "50293",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:9c871126198a5be0fe298ba1f9174e352d6e6e16398f5e96d06079596fd1c8da": "50719",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:3e2f97e45389eb0ba2f6f1343ec2369f72b1d629a1272e98c63f27f2066d23f6": "49902",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:9ecb64677fcb77bcca90fce3a0464698418ddd6057fb26f8680e685c4c59c104": "50025",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:c90644deaef70f4215370cce984661b85d1f5bc0c67a453ec6c66c07a2955deb": "49961",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "15511",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:b7e36762f34da43770679358d9e9826760805b9c0db2a007efb0c608d1c08e23": "50524",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:251f145087a67f4aa0c1c5abc037fe01a1a9147603d3a356b6d16d8b8a4ab6c7": "49886",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:625811478460d8549782d4718ecb19f652ff90022c980d6da71cea261d4ca64a": "49964",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:cf7fa51d31528da339ba17b88925dc490025d16ae10ee65f6515b857c093334e": "51391",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:0c0f4ff82c9919b6730797c6b2235d86a7e3e8ab252e1af54412c986cd95be06": "50436",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:99e9da1a72a478781c1c335a7ca2359090b2fa43757196fc4e665035f04a14af": "50945",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "10491",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:e88ae599582e273efaa8abe645f57024dd4e9cc1ab4baffdf2c42911c4c76b94": "51869"
                     },
                     "unknown_expiry": [],
                     "expired_but_present": 0,
@@ -416,12 +1746,12 @@
                 "detail": {
                     "intake": "closed",
                     "accepted": [
-                        "138",
-                        "138"
+                        "134",
+                        "134"
                     ],
                     "rejected": [
-                        "1364",
-                        "1371"
+                        "1305",
+                        "1312"
                     ],
                     "drain_snapshots": [
                         [
@@ -438,7 +1768,7 @@
                     "queues_nonempty": [],
                     "inflight_workers": [],
                     "v2_namespace_write_checks": {
-                        "rl-login": {
+                        "rl-api": {
                             "store_families": 12,
                             "admission_shapes": 8,
                             "keys_checked": 170,
@@ -514,7 +1844,7 @@
                         "sentinel_intact": true,
                         "policy_noeviction": true
                     },
-                    "redis_now_ms": "1795357474451",
+                    "redis_now_ms": "1795360918052",
                     "block_keys_present": 0,
                     "block_keys_seen_then_gone": 0,
                     "active_remaining_ms": [],
@@ -564,6 +1894,7 @@
                     }
                 },
                 "pending_written": true,
+                "pending_written_ms": "1795360923896",
                 "audit_before_exposure": {
                     "ok": true,
                     "reasons": [],
@@ -574,1333 +1905,7 @@
                     }
                 },
                 "signal_visible_after_audit": true,
-                "signal_pttl_ms": 29054,
-                "pending_gone": true,
-                "confirmed_by": "control_connection"
-            },
-            "reopen_per_policy": {
-                "login_protection": {
-                    "result": {
-                        "policy": "login_protection",
-                        "ok": true,
-                        "ms": "1795357484140",
-                        "allowed": false,
-                        "blocked": true,
-                        "class": "Maatify\\RateLimiter\\DTO\\RateLimitResultDTO"
-                    },
-                    "ns_keys_before": 150,
-                    "ns_keys_after": 161,
-                    "k4_census_for_the_account": {
-                        "score": 1,
-                        "block": 0,
-                        "budget": 1,
-                        "cycle": 0,
-                        "pause": 0,
-                        "watch": 0,
-                        "distinct": 0
-                    },
-                    "return_ms": "36",
-                    "verified": true
-                }
-            },
-            "worker_stats": {
-                "rehearsal:wstats:retry-99": {
-                    "role": "retry",
-                    "user": "w_retry",
-                    "done": "0",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "0",
-                    "first_noperm_ms": "0",
-                    "ts": "1795357484304"
-                },
-                "rehearsal:wstats:direct-91": {
-                    "role": "direct",
-                    "user": "w_direct",
-                    "done": "58",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795357414825",
-                    "first_noperm_ms": "0",
-                    "ts": "1795357417586"
-                },
-                "rehearsal:wstats:deferred-92": {
-                    "role": "deferred",
-                    "user": "w_deferred",
-                    "done": "11",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795357416377",
-                    "first_noperm_ms": "0",
-                    "ts": "1795357417586"
-                },
-                "rehearsal:wstats:deferred-98": {
-                    "role": "deferred",
-                    "user": "w_deferred",
-                    "done": "0",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "0",
-                    "first_noperm_ms": "0",
-                    "ts": "1795357484301"
-                },
-                "rehearsal:wstats:legacy-94": {
-                    "role": "legacy",
-                    "user": "w_legacy",
-                    "done": "119",
-                    "errors": "15",
-                    "noperm": "15",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795357416643",
-                    "first_noperm_ms": "1795357416714",
-                    "ts": "1795357417572"
-                },
-                "rehearsal:wstats:direct-96": {
-                    "role": "direct",
-                    "user": "w_direct",
-                    "done": "1",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795357484140",
-                    "first_noperm_ms": "0",
-                    "ts": "1795357484290"
-                },
-                "rehearsal:wstats:direct-97": {
-                    "role": "direct",
-                    "user": "w_direct",
-                    "done": "0",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "0",
-                    "first_noperm_ms": "0",
-                    "ts": "1795357484290"
-                },
-                "rehearsal:wstats:direct-90": {
-                    "role": "direct",
-                    "user": "w_direct",
-                    "done": "66",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795357414799",
-                    "first_noperm_ms": "0",
-                    "ts": "1795357417587"
-                },
-                "rehearsal:wstats:retry-93": {
-                    "role": "retry",
-                    "user": "w_retry",
-                    "done": "11",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795357416245",
-                    "first_noperm_ms": "0",
-                    "ts": "1795357417592"
-                }
-            }
-        },
-        "B_otp_protection_own_ns": {
-            "name": "B_otp_protection_own_ns",
-            "policy_ns": {
-                "otp_protection": "rl-otp"
-            },
-            "intake_close": {
-                "accepted_at_close": "136",
-                "rejected_at_close": "0",
-                "accepted_later": "136",
-                "rejected_later": "34"
-            },
-            "k4_representability": {
-                "otp_protection": {
-                    "census": {
-                        "families": {
-                            "score": 7,
-                            "block": 0,
-                            "budget": 7,
-                            "cycle": 0,
-                            "pause": 0,
-                            "watch": 0,
-                            "distinct": 0
-                        },
-                        "k4_block_max_expiry_ms": "0"
-                    },
-                    "reader_k4_score_hot_account": 5,
-                    "block_keys_in_ns_all_scopes": 18
-                }
-            },
-            "synthetic_blocks": {
-                "rl-otp": {
-                    "key": "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0",
-                    "duration_s": 20,
-                    "pexpiretime_raw": "1795357505331",
-                    "redis_now_ms": "1795357485332"
-                }
-            },
-            "synthetic_previous_generation_block": {
-                "key": "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514",
-                "pexpiretime_raw": "1795357510347"
-            },
-            "timeline_redis_ms": {
-                "load_end": "1795357490333",
-                "intake_closed": "1795357490348",
-                "drained": "1795357492460",
-                "barrier_start": "1795357492460",
-                "barrier_applied": "1795357492462",
-                "connections_killed": "1795357493445",
-                "probes_done": "1795357493447",
-                "gate_while_block_active": "1795357494419",
-                "first_scan_done": "1795357494421",
-                "max_block_expiry_ms": "1795357784953",
-                "natural_expiry_passed": "1795357786326",
-                "final_scan_done": "1795357787281",
-                "activation_signal_set": "1795357794108",
-                "reopen_requested": "1795357796992",
-                "first_success_after_reopen": "1795357797201"
-            },
-            "measured": {
-                "drain_ms": "2112",
-                "barrier_and_probes_ms": "987",
-                "first_scan_ms": "974",
-                "wait_for_natural_expiry_ms": "291905",
-                "final_scan_and_gate_ms": "955",
-                "validity_hold_to_signal_ms": "6827",
-                "reopen_to_all_policies_verified_ms": "209",
-                "total_stop_to_all_policies_verified_ms": "306853",
-                "per_policy_reopen_to_verified_result_ms": {
-                    "otp_protection": "49"
-                }
-            },
-            "probes": {
-                "per_user": {
-                    "w_direct": {
-                        "incrementAt": "DENIED",
-                        "setAt": "DENIED",
-                        "blockAt": "DENIED",
-                        "replaceScoreAt": "DENIED",
-                        "incrementBudgetAt": "DENIED",
-                        "addDistinctAt": "DENIED",
-                        "incrementWatchFlagAt": "DENIED",
-                        "bumpBindingEpoch": "DENIED",
-                        "claimPostPunishmentReentryAt": "DENIED",
-                        "limit_recordFailure": "DENIED",
-                        "raw_SET": "DENIED",
-                        "raw_EVAL_HSET": "DENIED"
-                    },
-                    "w_deferred": {
-                        "incrementAt": "DENIED",
-                        "setAt": "DENIED",
-                        "blockAt": "DENIED",
-                        "replaceScoreAt": "DENIED",
-                        "incrementBudgetAt": "DENIED",
-                        "addDistinctAt": "DENIED",
-                        "incrementWatchFlagAt": "DENIED",
-                        "bumpBindingEpoch": "DENIED",
-                        "claimPostPunishmentReentryAt": "DENIED",
-                        "limit_recordFailure": "DENIED",
-                        "raw_SET": "DENIED",
-                        "raw_EVAL_HSET": "DENIED"
-                    },
-                    "w_retry": {
-                        "incrementAt": "DENIED",
-                        "setAt": "DENIED",
-                        "blockAt": "DENIED",
-                        "replaceScoreAt": "DENIED",
-                        "incrementBudgetAt": "DENIED",
-                        "addDistinctAt": "DENIED",
-                        "incrementWatchFlagAt": "DENIED",
-                        "bumpBindingEpoch": "DENIED",
-                        "claimPostPunishmentReentryAt": "DENIED",
-                        "limit_recordFailure": "DENIED",
-                        "raw_SET": "DENIED",
-                        "raw_EVAL_HSET": "DENIED"
-                    },
-                    "w_legacy": {
-                        "incrementAt": "DENIED",
-                        "setAt": "DENIED",
-                        "blockAt": "DENIED",
-                        "replaceScoreAt": "DENIED",
-                        "incrementBudgetAt": "DENIED",
-                        "addDistinctAt": "DENIED",
-                        "incrementWatchFlagAt": "DENIED",
-                        "bumpBindingEpoch": "DENIED",
-                        "claimPostPunishmentReentryAt": "DENIED",
-                        "limit_recordFailure": "DENIED",
-                        "raw_SET": "DENIED",
-                        "raw_EVAL_HSET": "DENIED"
-                    }
-                },
-                "admin_per_user": {
-                    "w_direct": {
-                        "ACL_SETUSER_self_allkeys": "DENIED",
-                        "CONFIG_SET": "DENIED",
-                        "FLUSHALL": "DENIED",
-                        "FLUSHDB": "DENIED",
-                        "DEBUG_SLEEP": "DENIED",
-                        "ACL_DELUSER_ctl": "DENIED"
-                    },
-                    "w_deferred": {
-                        "ACL_SETUSER_self_allkeys": "DENIED",
-                        "CONFIG_SET": "DENIED",
-                        "FLUSHALL": "DENIED",
-                        "FLUSHDB": "DENIED",
-                        "DEBUG_SLEEP": "DENIED",
-                        "ACL_DELUSER_ctl": "DENIED"
-                    },
-                    "w_retry": {
-                        "ACL_SETUSER_self_allkeys": "DENIED",
-                        "CONFIG_SET": "DENIED",
-                        "FLUSHALL": "DENIED",
-                        "FLUSHDB": "DENIED",
-                        "DEBUG_SLEEP": "DENIED",
-                        "ACL_DELUSER_ctl": "DENIED"
-                    },
-                    "w_legacy": {
-                        "ACL_SETUSER_self_allkeys": "DENIED",
-                        "CONFIG_SET": "DENIED",
-                        "FLUSHALL": "DENIED",
-                        "FLUSHDB": "DENIED",
-                        "DEBUG_SLEEP": "DENIED",
-                        "ACL_DELUSER_ctl": "DENIED"
-                    }
-                },
-                "digest_before": "db7e75cdcf0bbc4fc229e5b8ef2623ea8f724338:168",
-                "digest_after": "db7e75cdcf0bbc4fc229e5b8ef2623ea8f724338:168",
-                "ctl_user_still_exists": true,
-                "acl_log_entries_new": 56
-            },
-            "user_profiles_after_barrier": {
-                "ctl": {
-                    "flags": [
-                        "on",
-                        "sanitize-payload"
-                    ],
-                    "commands": "+@all",
-                    "keys": "~*"
-                },
-                "default": {
-                    "flags": [
-                        "off",
-                        "nopass"
-                    ],
-                    "commands": "-@all",
-                    "keys": ""
-                },
-                "feeder": {
-                    "flags": [
-                        "on",
-                        "sanitize-payload"
-                    ],
-                    "commands": "+@all -@dangerous -function",
-                    "keys": "~rehearsal:*"
-                },
-                "w_deferred": {
-                    "flags": [
-                        "on",
-                        "sanitize-payload"
-                    ],
-                    "commands": "+@all -@dangerous -function",
-                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                },
-                "w_direct": {
-                    "flags": [
-                        "on",
-                        "sanitize-payload"
-                    ],
-                    "commands": "+@all -@dangerous -function",
-                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                },
-                "w_legacy": {
-                    "flags": [
-                        "on",
-                        "sanitize-payload"
-                    ],
-                    "commands": "+@all -@dangerous -function",
-                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                },
-                "w_retry": {
-                    "flags": [
-                        "on",
-                        "sanitize-payload"
-                    ],
-                    "commands": "+@all -@dangerous -function",
-                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                }
-            },
-            "killed_connections": {
-                "w_direct": 3,
-                "w_deferred": 2,
-                "w_retry": 2,
-                "w_legacy": 2
-            },
-            "gate_while_block_active": {
-                "ok": false,
-                "reasons": [
-                    "BLOCK_ACTIVE"
-                ],
-                "detail": {
-                    "intake": "closed",
-                    "accepted": [
-                        "136",
-                        "136"
-                    ],
-                    "rejected": [
-                        "72",
-                        "79"
-                    ],
-                    "drain_snapshots": [
-                        [
-                            0,
-                            [],
-                            []
-                        ],
-                        [
-                            0,
-                            [],
-                            []
-                        ]
-                    ],
-                    "queues_nonempty": [],
-                    "inflight_workers": [],
-                    "v2_namespace_write_checks": {
-                        "rl-otp": {
-                            "store_families": 12,
-                            "admission_shapes": 8,
-                            "keys_checked": 188,
-                            "dryrun_checks": 7896,
-                            "holes": [],
-                            "holes_total": 0
-                        }
-                    },
-                    "barrier_holes": [],
-                    "open_connections_of_unsafe_users": [],
-                    "user_profiles": {
-                        "ctl": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all",
-                            "keys": "~*"
-                        },
-                        "default": {
-                            "flags": [
-                                "off",
-                                "nopass"
-                            ],
-                            "commands": "-@all",
-                            "keys": ""
-                        },
-                        "feeder": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all -@dangerous -function",
-                            "keys": "~rehearsal:*"
-                        },
-                        "w_deferred": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all -@dangerous -function",
-                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                        },
-                        "w_direct": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all -@dangerous -function",
-                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                        },
-                        "w_legacy": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all -@dangerous -function",
-                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                        },
-                        "w_retry": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all -@dangerous -function",
-                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                        }
-                    },
-                    "continuity": {
-                        "run_id_same": true,
-                        "uptime_monotonic": true,
-                        "evicted_same": true,
-                        "sentinel_intact": true,
-                        "policy_noeviction": true
-                    },
-                    "redis_now_ms": "1795357494418",
-                    "block_keys_present": 19,
-                    "block_keys_seen_then_gone": 0,
-                    "active_remaining_ms": {
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:6cea39243ad9da79f3a68f3036d772311e9acf88426b48a60c114597e1a89b54": "50282",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:4a515e386cbac19e0cd5943a4d886a5f793b62cc0ef3c572cf7efe3a4a77e321": "50858",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:e7abd22b9d0d360306f7533ff468d92c4b4c5ef717fce4e63b734f708c6993b7": "290535",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:2b9deb21a4f34e868dc558a65ce9964c896516f7660fc76a043e9c4a233c06fe": "50462",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:8102d3ada5e7610d298ad10adbab401f29092218d39b990c8d8ef42539ae02b4": "50390",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:ef6a761c1b2edeec5d4155a047f3473f38c205203bb07121e39f1514727b8e89": "51149",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:1cfdcdeb78aec573fe2416708db337e7ef2bc78275eb1310198adf9fef12046a": "50676",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:dde8e4f5e2767bd6261af5ec0c4e1f23cb3618c6940e6b6953b576dcfef45b9f": "290391",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:94ca7e37bd8edd733a63d73b727837604abb1f534f71a1b7a6d2fe260c089895": "50921",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:4be2f258add60ca5e1446159c5f264a4e1a5123d6d38346dacd71651b37c81a3": "50489",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "15929",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:587a1c4ab70c7ff0afb49de8e810f88f4ac601dd79ce3bf62f43c6fbcd4b4929": "50373",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:02bc27226a4bfadd60f801d92dd022a40ce6dbbe8d4db6836d1579b86d11f345": "52457",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:731f9034e85acd314b5db3df9177554f84d90f31cddaa39aa76ef8757f45eeac": "50535",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:3ad4deb3a2b6ebf6c31fde6647df5c5591e1a9981b1a85f2c6da81b85a508986": "50344",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:500906416fde75e3336b2fd7cea9c81ed92397bfe7e47d634e117f65fdc7051b": "50315",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:5e65df1ccb48635b6868d20fde702aea35add130a0df93d5125375d5f954e33a": "50742",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "10913",
-                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:5167288a046e60fa081449195a02ca8392707dd1eef7488b6befb5be3747f696": "51311"
-                    },
-                    "unknown_expiry": [],
-                    "expired_but_present": 0,
-                    "ledger_violations": [],
-                    "event_violations": []
-                }
-            },
-            "gate_final": {
-                "ok": true,
-                "reasons": [],
-                "detail": {
-                    "intake": "closed",
-                    "accepted": [
-                        "136",
-                        "136"
-                    ],
-                    "rejected": [
-                        "6840",
-                        "6847"
-                    ],
-                    "drain_snapshots": [
-                        [
-                            0,
-                            [],
-                            []
-                        ],
-                        [
-                            0,
-                            [],
-                            []
-                        ]
-                    ],
-                    "queues_nonempty": [],
-                    "inflight_workers": [],
-                    "v2_namespace_write_checks": {
-                        "rl-otp": {
-                            "store_families": 12,
-                            "admission_shapes": 8,
-                            "keys_checked": 169,
-                            "dryrun_checks": 7098,
-                            "holes": [],
-                            "holes_total": 0
-                        }
-                    },
-                    "barrier_holes": [],
-                    "open_connections_of_unsafe_users": [],
-                    "user_profiles": {
-                        "ctl": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all",
-                            "keys": "~*"
-                        },
-                        "default": {
-                            "flags": [
-                                "off",
-                                "nopass"
-                            ],
-                            "commands": "-@all",
-                            "keys": ""
-                        },
-                        "feeder": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all -@dangerous -function",
-                            "keys": "~rehearsal:*"
-                        },
-                        "w_deferred": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all -@dangerous -function",
-                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                        },
-                        "w_direct": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all -@dangerous -function",
-                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                        },
-                        "w_legacy": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all -@dangerous -function",
-                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                        },
-                        "w_retry": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all -@dangerous -function",
-                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                        }
-                    },
-                    "continuity": {
-                        "run_id_same": true,
-                        "uptime_monotonic": true,
-                        "evicted_same": true,
-                        "sentinel_intact": true,
-                        "policy_noeviction": true
-                    },
-                    "redis_now_ms": "1795357787281",
-                    "block_keys_present": 0,
-                    "block_keys_seen_then_gone": 0,
-                    "active_remaining_ms": [],
-                    "unknown_expiry": [],
-                    "expired_but_present": 0,
-                    "unexplained_absence": [],
-                    "new_since_first_scan": [],
-                    "ledger_violations": [],
-                    "event_violations": [],
-                    "monitoring": {
-                        "synced": true,
-                        "same_connection": true,
-                        "connections": 1
-                    }
-                }
-            },
-            "activation_permitted": true,
-            "signal": {
-                "state": "ISSUED",
-                "permitted": true,
-                "lease_ms": 30000,
-                "first_evaluation": {
-                    "ok": true,
-                    "reasons": [],
-                    "monitoring": {
-                        "synced": true,
-                        "same_connection": true,
-                        "connections": 1
-                    }
-                },
-                "recheck_after_hold": {
-                    "ok": true,
-                    "reasons": [],
-                    "monitoring": {
-                        "synced": true,
-                        "same_connection": true,
-                        "connections": 1
-                    }
-                },
-                "final_verification": {
-                    "ok": true,
-                    "reasons": [],
-                    "monitoring": {
-                        "synced": true,
-                        "same_connection": true,
-                        "connections": 1
-                    }
-                },
-                "pending_written": true,
-                "audit_before_exposure": {
-                    "ok": true,
-                    "reasons": [],
-                    "monitoring": {
-                        "synced": true,
-                        "same_connection": true,
-                        "connections": 1
-                    }
-                },
-                "signal_visible_after_audit": true,
-                "signal_pttl_ms": 29049,
-                "pending_gone": true,
-                "confirmed_by": "control_connection"
-            },
-            "reopen_per_policy": {
-                "otp_protection": {
-                    "result": {
-                        "policy": "otp_protection",
-                        "ok": true,
-                        "ms": "1795357797041",
-                        "allowed": false,
-                        "blocked": true,
-                        "class": "Maatify\\RateLimiter\\DTO\\RateLimitResultDTO"
-                    },
-                    "ns_keys_before": 149,
-                    "ns_keys_after": 159,
-                    "k4_census_for_the_account": {
-                        "score": 1,
-                        "block": 0,
-                        "budget": 1,
-                        "cycle": 0,
-                        "pause": 0,
-                        "watch": 0,
-                        "distinct": 0
-                    },
-                    "return_ms": "49",
-                    "verified": true
-                }
-            },
-            "worker_stats": {
-                "rehearsal:wstats:deferred-103": {
-                    "role": "deferred",
-                    "user": "w_deferred",
-                    "done": "11",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795357492156",
-                    "first_noperm_ms": "0",
-                    "ts": "1795357493429"
-                },
-                "rehearsal:wstats:direct-108": {
-                    "role": "direct",
-                    "user": "w_direct",
-                    "done": "0",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "0",
-                    "first_noperm_ms": "0",
-                    "ts": "1795357797194"
-                },
-                "rehearsal:wstats:retry-110": {
-                    "role": "retry",
-                    "user": "w_retry",
-                    "done": "0",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "0",
-                    "first_noperm_ms": "0",
-                    "ts": "1795357797195"
-                },
-                "rehearsal:wstats:direct-107": {
-                    "role": "direct",
-                    "user": "w_direct",
-                    "done": "1",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795357797041",
-                    "first_noperm_ms": "0",
-                    "ts": "1795357797185"
-                },
-                "rehearsal:wstats:direct-102": {
-                    "role": "direct",
-                    "user": "w_direct",
-                    "done": "49",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795357490269",
-                    "first_noperm_ms": "0",
-                    "ts": "1795357493429"
-                },
-                "rehearsal:wstats:retry-104": {
-                    "role": "retry",
-                    "user": "w_retry",
-                    "done": "18",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795357491806",
-                    "first_noperm_ms": "0",
-                    "ts": "1795357493425"
-                },
-                "rehearsal:wstats:deferred-109": {
-                    "role": "deferred",
-                    "user": "w_deferred",
-                    "done": "0",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "0",
-                    "first_noperm_ms": "0",
-                    "ts": "1795357797196"
-                },
-                "rehearsal:wstats:legacy-105": {
-                    "role": "legacy",
-                    "user": "w_legacy",
-                    "done": "118",
-                    "errors": "16",
-                    "noperm": "16",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795357492398",
-                    "first_noperm_ms": "1795357492468",
-                    "ts": "1795357493400"
-                },
-                "rehearsal:wstats:direct-101": {
-                    "role": "direct",
-                    "user": "w_direct",
-                    "done": "74",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795357490353",
-                    "first_noperm_ms": "0",
-                    "ts": "1795357493427"
-                }
-            }
-        },
-        "C_api_heavy_protection_own_ns": {
-            "name": "C_api_heavy_protection_own_ns",
-            "policy_ns": {
-                "api_heavy_protection": "rl-api"
-            },
-            "intake_close": {
-                "accepted_at_close": "136",
-                "rejected_at_close": "0",
-                "accepted_later": "136",
-                "rejected_later": "35"
-            },
-            "k4_representability": {
-                "api_heavy_protection": {
-                    "census": {
-                        "families": {
-                            "score": 0,
-                            "block": 0,
-                            "budget": 0,
-                            "cycle": 0,
-                            "pause": 0,
-                            "watch": 0,
-                            "distinct": 0
-                        },
-                        "k4_block_max_expiry_ms": "0"
-                    },
-                    "reader_k4_score_hot_account": 0,
-                    "block_keys_in_ns_all_scopes": 16
-                }
-            },
-            "synthetic_blocks": {
-                "rl-api": {
-                    "key": "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0",
-                    "duration_s": 20,
-                    "pexpiretime_raw": "1795357818231",
-                    "redis_now_ms": "1795357798232"
-                }
-            },
-            "synthetic_previous_generation_block": {
-                "key": "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514",
-                "pexpiretime_raw": "1795357823249"
-            },
-            "timeline_redis_ms": {
-                "load_end": "1795357803235",
-                "intake_closed": "1795357803249",
-                "drained": "1795357805360",
-                "barrier_start": "1795357805360",
-                "barrier_applied": "1795357805363",
-                "connections_killed": "1795357806347",
-                "probes_done": "1795357806349",
-                "gate_while_block_active": "1795357807317",
-                "first_scan_done": "1795357807318",
-                "max_block_expiry_ms": "1795357858969",
-                "natural_expiry_passed": "1795357860327",
-                "final_scan_done": "1795357861294",
-                "activation_signal_set": "1795357868111",
-                "reopen_requested": "1795357870978",
-                "first_success_after_reopen": "1795357871185"
-            },
-            "measured": {
-                "drain_ms": "2111",
-                "barrier_and_probes_ms": "989",
-                "first_scan_ms": "969",
-                "wait_for_natural_expiry_ms": "53009",
-                "final_scan_and_gate_ms": "967",
-                "validity_hold_to_signal_ms": "6817",
-                "reopen_to_all_policies_verified_ms": "207",
-                "total_stop_to_all_policies_verified_ms": "67936",
-                "per_policy_reopen_to_verified_result_ms": {
-                    "api_heavy_protection": "42"
-                }
-            },
-            "probes": {
-                "per_user": {
-                    "w_direct": {
-                        "incrementAt": "DENIED",
-                        "setAt": "DENIED",
-                        "blockAt": "DENIED",
-                        "replaceScoreAt": "DENIED",
-                        "incrementBudgetAt": "DENIED",
-                        "addDistinctAt": "DENIED",
-                        "incrementWatchFlagAt": "DENIED",
-                        "bumpBindingEpoch": "DENIED",
-                        "claimPostPunishmentReentryAt": "DENIED",
-                        "limit_recordFailure": "DENIED",
-                        "raw_SET": "DENIED",
-                        "raw_EVAL_HSET": "DENIED"
-                    },
-                    "w_deferred": {
-                        "incrementAt": "DENIED",
-                        "setAt": "DENIED",
-                        "blockAt": "DENIED",
-                        "replaceScoreAt": "DENIED",
-                        "incrementBudgetAt": "DENIED",
-                        "addDistinctAt": "DENIED",
-                        "incrementWatchFlagAt": "DENIED",
-                        "bumpBindingEpoch": "DENIED",
-                        "claimPostPunishmentReentryAt": "DENIED",
-                        "limit_recordFailure": "DENIED",
-                        "raw_SET": "DENIED",
-                        "raw_EVAL_HSET": "DENIED"
-                    },
-                    "w_retry": {
-                        "incrementAt": "DENIED",
-                        "setAt": "DENIED",
-                        "blockAt": "DENIED",
-                        "replaceScoreAt": "DENIED",
-                        "incrementBudgetAt": "DENIED",
-                        "addDistinctAt": "DENIED",
-                        "incrementWatchFlagAt": "DENIED",
-                        "bumpBindingEpoch": "DENIED",
-                        "claimPostPunishmentReentryAt": "DENIED",
-                        "limit_recordFailure": "DENIED",
-                        "raw_SET": "DENIED",
-                        "raw_EVAL_HSET": "DENIED"
-                    },
-                    "w_legacy": {
-                        "incrementAt": "DENIED",
-                        "setAt": "DENIED",
-                        "blockAt": "DENIED",
-                        "replaceScoreAt": "DENIED",
-                        "incrementBudgetAt": "DENIED",
-                        "addDistinctAt": "DENIED",
-                        "incrementWatchFlagAt": "DENIED",
-                        "bumpBindingEpoch": "DENIED",
-                        "claimPostPunishmentReentryAt": "DENIED",
-                        "limit_recordFailure": "DENIED",
-                        "raw_SET": "DENIED",
-                        "raw_EVAL_HSET": "DENIED"
-                    }
-                },
-                "admin_per_user": {
-                    "w_direct": {
-                        "ACL_SETUSER_self_allkeys": "DENIED",
-                        "CONFIG_SET": "DENIED",
-                        "FLUSHALL": "DENIED",
-                        "FLUSHDB": "DENIED",
-                        "DEBUG_SLEEP": "DENIED",
-                        "ACL_DELUSER_ctl": "DENIED"
-                    },
-                    "w_deferred": {
-                        "ACL_SETUSER_self_allkeys": "DENIED",
-                        "CONFIG_SET": "DENIED",
-                        "FLUSHALL": "DENIED",
-                        "FLUSHDB": "DENIED",
-                        "DEBUG_SLEEP": "DENIED",
-                        "ACL_DELUSER_ctl": "DENIED"
-                    },
-                    "w_retry": {
-                        "ACL_SETUSER_self_allkeys": "DENIED",
-                        "CONFIG_SET": "DENIED",
-                        "FLUSHALL": "DENIED",
-                        "FLUSHDB": "DENIED",
-                        "DEBUG_SLEEP": "DENIED",
-                        "ACL_DELUSER_ctl": "DENIED"
-                    },
-                    "w_legacy": {
-                        "ACL_SETUSER_self_allkeys": "DENIED",
-                        "CONFIG_SET": "DENIED",
-                        "FLUSHALL": "DENIED",
-                        "FLUSHDB": "DENIED",
-                        "DEBUG_SLEEP": "DENIED",
-                        "ACL_DELUSER_ctl": "DENIED"
-                    }
-                },
-                "digest_before": "3f55461b2e4878f4f27a57931b3650575914bfa9:172",
-                "digest_after": "3f55461b2e4878f4f27a57931b3650575914bfa9:172",
-                "ctl_user_still_exists": true,
-                "acl_log_entries_new": 57
-            },
-            "user_profiles_after_barrier": {
-                "ctl": {
-                    "flags": [
-                        "on",
-                        "sanitize-payload"
-                    ],
-                    "commands": "+@all",
-                    "keys": "~*"
-                },
-                "default": {
-                    "flags": [
-                        "off",
-                        "nopass"
-                    ],
-                    "commands": "-@all",
-                    "keys": ""
-                },
-                "feeder": {
-                    "flags": [
-                        "on",
-                        "sanitize-payload"
-                    ],
-                    "commands": "+@all -@dangerous -function",
-                    "keys": "~rehearsal:*"
-                },
-                "w_deferred": {
-                    "flags": [
-                        "on",
-                        "sanitize-payload"
-                    ],
-                    "commands": "+@all -@dangerous -function",
-                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                },
-                "w_direct": {
-                    "flags": [
-                        "on",
-                        "sanitize-payload"
-                    ],
-                    "commands": "+@all -@dangerous -function",
-                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                },
-                "w_legacy": {
-                    "flags": [
-                        "on",
-                        "sanitize-payload"
-                    ],
-                    "commands": "+@all -@dangerous -function",
-                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                },
-                "w_retry": {
-                    "flags": [
-                        "on",
-                        "sanitize-payload"
-                    ],
-                    "commands": "+@all -@dangerous -function",
-                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                }
-            },
-            "killed_connections": {
-                "w_direct": 3,
-                "w_deferred": 2,
-                "w_retry": 2,
-                "w_legacy": 2
-            },
-            "gate_while_block_active": {
-                "ok": false,
-                "reasons": [
-                    "BLOCK_ACTIVE"
-                ],
-                "detail": {
-                    "intake": "closed",
-                    "accepted": [
-                        "136",
-                        "136"
-                    ],
-                    "rejected": [
-                        "72",
-                        "79"
-                    ],
-                    "drain_snapshots": [
-                        [
-                            0,
-                            [],
-                            []
-                        ],
-                        [
-                            0,
-                            [],
-                            []
-                        ]
-                    ],
-                    "queues_nonempty": [],
-                    "inflight_workers": [],
-                    "v2_namespace_write_checks": {
-                        "rl-api": {
-                            "store_families": 12,
-                            "admission_shapes": 8,
-                            "keys_checked": 192,
-                            "dryrun_checks": 8064,
-                            "holes": [],
-                            "holes_total": 0
-                        }
-                    },
-                    "barrier_holes": [],
-                    "open_connections_of_unsafe_users": [],
-                    "user_profiles": {
-                        "ctl": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all",
-                            "keys": "~*"
-                        },
-                        "default": {
-                            "flags": [
-                                "off",
-                                "nopass"
-                            ],
-                            "commands": "-@all",
-                            "keys": ""
-                        },
-                        "feeder": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all -@dangerous -function",
-                            "keys": "~rehearsal:*"
-                        },
-                        "w_deferred": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all -@dangerous -function",
-                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                        },
-                        "w_direct": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all -@dangerous -function",
-                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                        },
-                        "w_legacy": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all -@dangerous -function",
-                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                        },
-                        "w_retry": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all -@dangerous -function",
-                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                        }
-                    },
-                    "continuity": {
-                        "run_id_same": true,
-                        "uptime_monotonic": true,
-                        "evicted_same": true,
-                        "sentinel_intact": true,
-                        "policy_noeviction": true
-                    },
-                    "redis_now_ms": "1795357807315",
-                    "block_keys_present": 17,
-                    "block_keys_seen_then_gone": 0,
-                    "active_remaining_ms": {
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:cf7fa51d31528da339ba17b88925dc490025d16ae10ee65f6515b857c093334e": "50913",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:b7e36762f34da43770679358d9e9826760805b9c0db2a007efb0c608d1c08e23": "51005",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:625811478460d8549782d4718ecb19f652ff90022c980d6da71cea261d4ca64a": "51359",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:99e9da1a72a478781c1c335a7ca2359090b2fa43757196fc4e665035f04a14af": "50469",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:251f145087a67f4aa0c1c5abc037fe01a1a9147603d3a356b6d16d8b8a4ab6c7": "50882",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:e88ae599582e273efaa8abe645f57024dd4e9cc1ab4baffdf2c42911c4c76b94": "51654",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:9ecb64677fcb77bcca90fce3a0464698418ddd6057fb26f8680e685c4c59c104": "50412",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:4d838394d38a7ab1d43931c4aab4ad61bb559aec9722eaefc93eaac8469fe642": "50466",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:c90644deaef70f4215370cce984661b85d1f5bc0c67a453ec6c66c07a2955deb": "50675",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:a99faa33b24a70c1524ca16289ac7f195bc7c355ee71885f66a3ab200cd3e371": "50759",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "10916",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:3e2f97e45389eb0ba2f6f1343ec2369f72b1d629a1272e98c63f27f2066d23f6": "50505",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:9c871126198a5be0fe298ba1f9174e352d6e6e16398f5e96d06079596fd1c8da": "50584",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:0c0f4ff82c9919b6730797c6b2235d86a7e3e8ab252e1af54412c986cd95be06": "50391",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:52f9b5416e622b10fc9c580d01e56200b47cc4259c3eca99a49a698a340b1a35": "50605",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "15934",
-                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:4501e5d44165de4b71cbf5d3eb2780e112f3cdbb9556fa5c35fc832652e55596": "50540"
-                    },
-                    "unknown_expiry": [],
-                    "expired_but_present": 0,
-                    "ledger_violations": [],
-                    "event_violations": []
-                }
-            },
-            "gate_final": {
-                "ok": true,
-                "reasons": [],
-                "detail": {
-                    "intake": "closed",
-                    "accepted": [
-                        "136",
-                        "136"
-                    ],
-                    "rejected": [
-                        "1305",
-                        "1312"
-                    ],
-                    "drain_snapshots": [
-                        [
-                            0,
-                            [],
-                            []
-                        ],
-                        [
-                            0,
-                            [],
-                            []
-                        ]
-                    ],
-                    "queues_nonempty": [],
-                    "inflight_workers": [],
-                    "v2_namespace_write_checks": {
-                        "rl-api": {
-                            "store_families": 12,
-                            "admission_shapes": 8,
-                            "keys_checked": 175,
-                            "dryrun_checks": 7350,
-                            "holes": [],
-                            "holes_total": 0
-                        }
-                    },
-                    "barrier_holes": [],
-                    "open_connections_of_unsafe_users": [],
-                    "user_profiles": {
-                        "ctl": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all",
-                            "keys": "~*"
-                        },
-                        "default": {
-                            "flags": [
-                                "off",
-                                "nopass"
-                            ],
-                            "commands": "-@all",
-                            "keys": ""
-                        },
-                        "feeder": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all -@dangerous -function",
-                            "keys": "~rehearsal:*"
-                        },
-                        "w_deferred": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all -@dangerous -function",
-                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                        },
-                        "w_direct": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all -@dangerous -function",
-                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                        },
-                        "w_legacy": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all -@dangerous -function",
-                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                        },
-                        "w_retry": {
-                            "flags": [
-                                "on",
-                                "sanitize-payload"
-                            ],
-                            "commands": "+@all -@dangerous -function",
-                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
-                        }
-                    },
-                    "continuity": {
-                        "run_id_same": true,
-                        "uptime_monotonic": true,
-                        "evicted_same": true,
-                        "sentinel_intact": true,
-                        "policy_noeviction": true
-                    },
-                    "redis_now_ms": "1795357861294",
-                    "block_keys_present": 0,
-                    "block_keys_seen_then_gone": 0,
-                    "active_remaining_ms": [],
-                    "unknown_expiry": [],
-                    "expired_but_present": 0,
-                    "unexplained_absence": [],
-                    "new_since_first_scan": [],
-                    "ledger_violations": [],
-                    "event_violations": [],
-                    "monitoring": {
-                        "synced": true,
-                        "same_connection": true,
-                        "connections": 1
-                    }
-                }
-            },
-            "activation_permitted": true,
-            "signal": {
-                "state": "ISSUED",
-                "permitted": true,
-                "lease_ms": 30000,
-                "first_evaluation": {
-                    "ok": true,
-                    "reasons": [],
-                    "monitoring": {
-                        "synced": true,
-                        "same_connection": true,
-                        "connections": 1
-                    }
-                },
-                "recheck_after_hold": {
-                    "ok": true,
-                    "reasons": [],
-                    "monitoring": {
-                        "synced": true,
-                        "same_connection": true,
-                        "connections": 1
-                    }
-                },
-                "final_verification": {
-                    "ok": true,
-                    "reasons": [],
-                    "monitoring": {
-                        "synced": true,
-                        "same_connection": true,
-                        "connections": 1
-                    }
-                },
-                "pending_written": true,
-                "audit_before_exposure": {
-                    "ok": true,
-                    "reasons": [],
-                    "monitoring": {
-                        "synced": true,
-                        "same_connection": true,
-                        "connections": 1
-                    }
-                },
-                "signal_visible_after_audit": true,
-                "signal_pttl_ms": 29038,
+                "signal_pttl_ms": 29063,
                 "pending_gone": true,
                 "confirmed_by": "control_connection"
             },
@@ -1909,13 +1914,13 @@
                     "result": {
                         "policy": "api_heavy_protection",
                         "ok": true,
-                        "ms": "1795357871020",
+                        "ms": "1795360927732",
                         "allowed": false,
                         "blocked": true,
                         "class": "Maatify\\RateLimiter\\DTO\\RateLimitResultDTO"
                     },
-                    "ns_keys_before": 155,
-                    "ns_keys_after": 166,
+                    "ns_keys_before": 150,
+                    "ns_keys_after": 161,
                     "k4_census_for_the_account": {
                         "score": 0,
                         "block": 0,
@@ -1925,65 +1930,21 @@
                         "watch": 0,
                         "distinct": 0
                     },
-                    "return_ms": "42",
+                    "return_ms": "19",
                     "verified": true
                 }
             },
             "worker_stats": {
-                "rehearsal:wstats:retry-121": {
+                "rehearsal:wstats:retry-115": {
                     "role": "retry",
                     "user": "w_retry",
-                    "done": "0",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "0",
-                    "first_noperm_ms": "0",
-                    "ts": "1795357871185"
-                },
-                "rehearsal:wstats:deferred-114": {
-                    "role": "deferred",
-                    "user": "w_deferred",
                     "done": "15",
                     "errors": "0",
                     "noperm": "0",
                     "conn_lost": "0",
-                    "last_ok_ms": "1795357805159",
+                    "last_ok_ms": "1795360861804",
                     "first_noperm_ms": "0",
-                    "ts": "1795357806325"
-                },
-                "rehearsal:wstats:legacy-116": {
-                    "role": "legacy",
-                    "user": "w_legacy",
-                    "done": "119",
-                    "errors": "16",
-                    "noperm": "16",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795357805335",
-                    "first_noperm_ms": "1795357805406",
-                    "ts": "1795357806338"
-                },
-                "rehearsal:wstats:retry-115": {
-                    "role": "retry",
-                    "user": "w_retry",
-                    "done": "12",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795357804425",
-                    "first_noperm_ms": "0",
-                    "ts": "1795357806325"
-                },
-                "rehearsal:wstats:direct-118": {
-                    "role": "direct",
-                    "user": "w_direct",
-                    "done": "0",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "0",
-                    "first_noperm_ms": "0",
-                    "ts": "1795357871177"
+                    "ts": "1795360863060"
                 },
                 "rehearsal:wstats:direct-119": {
                     "role": "direct",
@@ -1992,20 +1953,9 @@
                     "errors": "0",
                     "noperm": "0",
                     "conn_lost": "0",
-                    "last_ok_ms": "1795357871020",
+                    "last_ok_ms": "1795360927732",
                     "first_noperm_ms": "0",
-                    "ts": "1795357871181"
-                },
-                "rehearsal:wstats:direct-112": {
-                    "role": "direct",
-                    "user": "w_direct",
-                    "done": "41",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795357803263",
-                    "first_noperm_ms": "0",
-                    "ts": "1795357806325"
+                    "ts": "1795360927907"
                 },
                 "rehearsal:wstats:deferred-120": {
                     "role": "deferred",
@@ -2016,18 +1966,73 @@
                     "conn_lost": "0",
                     "last_ok_ms": "0",
                     "first_noperm_ms": "0",
-                    "ts": "1795357871187"
+                    "ts": "1795360927896"
                 },
                 "rehearsal:wstats:direct-113": {
                     "role": "direct",
                     "user": "w_direct",
-                    "done": "78",
+                    "done": "46",
                     "errors": "0",
                     "noperm": "0",
                     "conn_lost": "0",
-                    "last_ok_ms": "1795357803203",
+                    "last_ok_ms": "1795360859464",
                     "first_noperm_ms": "0",
-                    "ts": "1795357806331"
+                    "ts": "1795360863057"
+                },
+                "rehearsal:wstats:direct-112": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "68",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795360859327",
+                    "first_noperm_ms": "0",
+                    "ts": "1795360863058"
+                },
+                "rehearsal:wstats:deferred-114": {
+                    "role": "deferred",
+                    "user": "w_deferred",
+                    "done": "14",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795360861515",
+                    "first_noperm_ms": "0",
+                    "ts": "1795360863059"
+                },
+                "rehearsal:wstats:direct-118": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "0",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "0",
+                    "first_noperm_ms": "0",
+                    "ts": "1795360927921"
+                },
+                "rehearsal:wstats:retry-121": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "0",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "0",
+                    "first_noperm_ms": "0",
+                    "ts": "1795360927902"
+                },
+                "rehearsal:wstats:legacy-116": {
+                    "role": "legacy",
+                    "user": "w_legacy",
+                    "done": "128",
+                    "errors": "15",
+                    "noperm": "15",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795360862083",
+                    "first_noperm_ms": "1795360862158",
+                    "ts": "1795360863037"
                 }
             }
         },
@@ -2038,18 +2043,18 @@
                 "otp_protection": "rl-shared"
             },
             "intake_close": {
-                "accepted_at_close": "270",
+                "accepted_at_close": "272",
                 "rejected_at_close": "0",
-                "accepted_later": "270",
+                "accepted_later": "272",
                 "rejected_later": "70"
             },
             "k4_representability": {
                 "login_protection": {
                     "census": {
                         "families": {
-                            "score": 7,
+                            "score": 8,
                             "block": 0,
-                            "budget": 7,
+                            "budget": 8,
                             "cycle": 0,
                             "pause": 0,
                             "watch": 0,
@@ -2057,67 +2062,67 @@
                         },
                         "k4_block_max_expiry_ms": "0"
                     },
-                    "reader_k4_score_hot_account": 0,
-                    "block_keys_in_ns_all_scopes": 35
+                    "reader_k4_score_hot_account": 3,
+                    "block_keys_in_ns_all_scopes": 32
                 },
                 "otp_protection": {
                     "census": {
                         "families": {
-                            "score": 7,
-                            "block": 3,
-                            "budget": 7,
-                            "cycle": 3,
+                            "score": 9,
+                            "block": 1,
+                            "budget": 9,
+                            "cycle": 1,
                             "pause": 0,
                             "watch": 0,
                             "distinct": 0
                         },
-                        "k4_block_max_expiry_ms": "1795358172122"
+                        "k4_block_max_expiry_ms": "1795361228358"
                     },
                     "reader_k4_score_hot_account": 10,
-                    "block_keys_in_ns_all_scopes": 35
+                    "block_keys_in_ns_all_scopes": 32
                 }
             },
             "synthetic_blocks": {
                 "rl-shared": {
                     "key": "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0",
                     "duration_s": 40,
-                    "pexpiretime_raw": "1795357912212",
-                    "redis_now_ms": "1795357872212"
+                    "pexpiretime_raw": "1795360968945",
+                    "redis_now_ms": "1795360928946"
                 }
             },
             "synthetic_previous_generation_block": {
                 "key": "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514",
-                "pexpiretime_raw": "1795357917246"
+                "pexpiretime_raw": "1795360973979"
             },
             "timeline_redis_ms": {
-                "load_end": "1795357877217",
-                "intake_closed": "1795357877247",
-                "drained": "1795357879507",
-                "barrier_start": "1795357879507",
-                "barrier_applied": "1795357879508",
-                "connections_killed": "1795357880536",
-                "probes_done": "1795357880538",
-                "gate_while_block_active": "1795357881923",
-                "first_scan_done": "1795357881925",
-                "max_block_expiry_ms": "1795358172532",
-                "natural_expiry_passed": "1795358173866",
-                "final_scan_done": "1795358175248",
-                "activation_signal_set": "1795358183759",
-                "reopen_requested": "1795358186686",
-                "first_success_after_reopen": "1795358186903"
+                "load_end": "1795360933950",
+                "intake_closed": "1795360933980",
+                "drained": "1795360935936",
+                "barrier_start": "1795360935936",
+                "barrier_applied": "1795360935937",
+                "connections_killed": "1795360936961",
+                "probes_done": "1795360936963",
+                "gate_while_block_active": "1795360938358",
+                "first_scan_done": "1795360938360",
+                "max_block_expiry_ms": "1795361228358",
+                "natural_expiry_passed": "1795361229628",
+                "final_scan_done": "1795361230957",
+                "activation_signal_set": "1795361239284",
+                "reopen_requested": "1795361242169",
+                "first_success_after_reopen": "1795361242387"
             },
             "measured": {
-                "drain_ms": "2260",
-                "barrier_and_probes_ms": "1031",
-                "first_scan_ms": "1387",
-                "wait_for_natural_expiry_ms": "291941",
-                "final_scan_and_gate_ms": "1382",
-                "validity_hold_to_signal_ms": "8511",
-                "reopen_to_all_policies_verified_ms": "217",
-                "total_stop_to_all_policies_verified_ms": "309656",
+                "drain_ms": "1956",
+                "barrier_and_probes_ms": "1027",
+                "first_scan_ms": "1397",
+                "wait_for_natural_expiry_ms": "291268",
+                "final_scan_and_gate_ms": "1329",
+                "validity_hold_to_signal_ms": "8327",
+                "reopen_to_all_policies_verified_ms": "218",
+                "total_stop_to_all_policies_verified_ms": "308407",
                 "per_policy_reopen_to_verified_result_ms": {
-                    "login_protection": "20",
-                    "otp_protection": "33"
+                    "login_protection": "45",
+                    "otp_protection": "44"
                 }
             },
             "probes": {
@@ -2213,8 +2218,8 @@
                         "ACL_DELUSER_ctl": "DENIED"
                     }
                 },
-                "digest_before": "bad707c012d4b23b6c635261a5e272dd2295f6be:359",
-                "digest_after": "bad707c012d4b23b6c635261a5e272dd2295f6be:359",
+                "digest_before": "d71085e2d248b0508d7bd8fa3efa2aae16c6b06a:353",
+                "digest_after": "d71085e2d248b0508d7bd8fa3efa2aae16c6b06a:353",
                 "ctl_user_still_exists": true,
                 "acl_log_entries_new": 56
             },
@@ -2290,12 +2295,12 @@
                 "detail": {
                     "intake": "closed",
                     "accepted": [
-                        "270",
-                        "270"
+                        "272",
+                        "272"
                     ],
                     "rejected": [
-                        "154",
-                        "168"
+                        "140",
+                        "154"
                     ],
                     "drain_snapshots": [
                         [
@@ -2315,8 +2320,8 @@
                         "rl-shared": {
                             "store_families": 12,
                             "admission_shapes": 8,
-                            "keys_checked": 379,
-                            "dryrun_checks": 15918,
+                            "keys_checked": 373,
+                            "dryrun_checks": 15666,
                             "holes": [],
                             "holes_total": 0
                         }
@@ -2388,46 +2393,43 @@
                         "sentinel_intact": true,
                         "policy_noeviction": true
                     },
-                    "redis_now_ms": "1795357881920",
-                    "block_keys_present": 36,
+                    "redis_now_ms": "1795360938356",
+                    "block_keys_present": 33,
                     "block_keys_seen_then_gone": 0,
                     "active_remaining_ms": {
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:ee2e757ccdebb5fe47f3f7f4ee547b40e1039d48c34dac99f0029c93b9e19096": "50394",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:3ad4deb3a2b6ebf6c31fde6647df5c5591e1a9981b1a85f2c6da81b85a508986": "49996",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:d1e72600dba4dcf56ef2f884a3979c8c43f9489832baf58a79946a08b4827867": "51408",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:ef6a761c1b2edeec5d4155a047f3473f38c205203bb07121e39f1514727b8e89": "50202",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:c1c293c45515b01cc30293d5e8e381c0475b6e9ae96913c8b5a451307833ad64": "289809",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:500906416fde75e3336b2fd7cea9c81ed92397bfe7e47d634e117f65fdc7051b": "49925",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "35326",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:51d68dd16c94ce045f46d2d6a0b9f406c2379454f3a9e906d3d59f5b3cca1a28": "50225",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:5167288a046e60fa081449195a02ca8392707dd1eef7488b6befb5be3747f696": "49722",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:d4f7f363bf03461d9883ca9373f7c57f796602098a8e3baa4da1a3e84284d6b6": "289997",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:64298ce2d2bd67ed6457b003e24c93352322c2fee04d46d5095c96895cf47254": "290202",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:39fd96914910c5cc6dfcc2e355001d3f85321adac4cb66f088759c7e56547313": "52030",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:731f9034e85acd314b5db3df9177554f84d90f31cddaa39aa76ef8757f45eeac": "50691",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:bba0fb06eb0903c44d9831a793d36101435f0eff08436a2674f205a15a927d67": "49782",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:13c51e6a17ebd16140d38475c22569c4f6fab50f56702e9e22a2aaaa4bdd51c1": "290612",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:8102d3ada5e7610d298ad10adbab401f29092218d39b990c8d8ef42539ae02b4": "50062",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:94ca7e37bd8edd733a63d73b727837604abb1f534f71a1b7a6d2fe260c089895": "50996",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:5e65df1ccb48635b6868d20fde702aea35add130a0df93d5125375d5f954e33a": "50611",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:0843d9c86cb8cadc88b4b305b8b3d6607ae291addcb74c78e5dc60bf20c4c548": "50519",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:6cea39243ad9da79f3a68f3036d772311e9acf88426b48a60c114597e1a89b54": "50267",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:3af420d471508bbf925960a44f4d8dd3baf565717c84a334f499754cd4a0f659": "50450",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:2b9deb21a4f34e868dc558a65ce9964c896516f7660fc76a043e9c4a233c06fe": "50334",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:4a515e386cbac19e0cd5943a4d886a5f793b62cc0ef3c572cf7efe3a4a77e321": "49842",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "30292",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:4be2f258add60ca5e1446159c5f264a4e1a5123d6d38346dacd71651b37c81a3": "49808",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:85fe03e89870b24a5abc8d69646ddf43439dfa9e40fe49f613e8e85b21c46718": "49851",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:02bc27226a4bfadd60f801d92dd022a40ce6dbbe8d4db6836d1579b86d11f345": "50712",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:c6154e8da71e9047339f7dc53f7063bf5dbbacb3142746a05d9ac3b1996a570e": "51426",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:8bf5ad06ba2249e8275f088f7c4e5c5b5676eb873466dbd29110b75a66653c48": "49757",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:587a1c4ab70c7ff0afb49de8e810f88f4ac601dd79ce3bf62f43c6fbcd4b4929": "49765",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:d34b14db185770c6e46d325cbb98a8d57900f7fbff107e9125d80e5a27b8ad4e": "49709",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:6e254cc752eaf710fe8b0d0e76228ffdc5a0be6a578f7461aa87afadeabefebe": "49800",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:4ed739bbea82b6d24055d94c9f52264e0a3a778bfc5112692537584034b2da12": "49714",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:b51800ddc2b8eca08a5562eccc18f35ea0e8f5ed4e6ec3fedc634acaa14c30aa": "49891",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:aad26d88ce63ee98861573b9ac2f30a3924aa254f27b6c82c528e7d394ebaaab": "49844",
-                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:1cfdcdeb78aec573fe2416708db337e7ef2bc78275eb1310198adf9fef12046a": "49883"
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:0843d9c86cb8cadc88b4b305b8b3d6607ae291addcb74c78e5dc60bf20c4c548": "50123",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:731f9034e85acd314b5db3df9177554f84d90f31cddaa39aa76ef8757f45eeac": "51511",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:94ca7e37bd8edd733a63d73b727837604abb1f534f71a1b7a6d2fe260c089895": "50495",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:5167288a046e60fa081449195a02ca8392707dd1eef7488b6befb5be3747f696": "50082",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:d4f7f363bf03461d9883ca9373f7c57f796602098a8e3baa4da1a3e84284d6b6": "290002",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:8102d3ada5e7610d298ad10adbab401f29092218d39b990c8d8ef42539ae02b4": "50126",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:bba0fb06eb0903c44d9831a793d36101435f0eff08436a2674f205a15a927d67": "50198",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:d34b14db185770c6e46d325cbb98a8d57900f7fbff107e9125d80e5a27b8ad4e": "50991",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:ee2e757ccdebb5fe47f3f7f4ee547b40e1039d48c34dac99f0029c93b9e19096": "50930",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:6cea39243ad9da79f3a68f3036d772311e9acf88426b48a60c114597e1a89b54": "50173",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:4ed739bbea82b6d24055d94c9f52264e0a3a778bfc5112692537584034b2da12": "50206",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:500906416fde75e3336b2fd7cea9c81ed92397bfe7e47d634e117f65fdc7051b": "50724",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:b51800ddc2b8eca08a5562eccc18f35ea0e8f5ed4e6ec3fedc634acaa14c30aa": "50683",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:4a515e386cbac19e0cd5943a4d886a5f793b62cc0ef3c572cf7efe3a4a77e321": "50373",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:d1e72600dba4dcf56ef2f884a3979c8c43f9489832baf58a79946a08b4827867": "52437",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:2b9deb21a4f34e868dc558a65ce9964c896516f7660fc76a043e9c4a233c06fe": "50603",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:587a1c4ab70c7ff0afb49de8e810f88f4ac601dd79ce3bf62f43c6fbcd4b4929": "51840",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "35623",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:5e65df1ccb48635b6868d20fde702aea35add130a0df93d5125375d5f954e33a": "50057",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:6e254cc752eaf710fe8b0d0e76228ffdc5a0be6a578f7461aa87afadeabefebe": "49991",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:02bc27226a4bfadd60f801d92dd022a40ce6dbbe8d4db6836d1579b86d11f345": "50338",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:c6154e8da71e9047339f7dc53f7063bf5dbbacb3142746a05d9ac3b1996a570e": "50271",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:1cfdcdeb78aec573fe2416708db337e7ef2bc78275eb1310198adf9fef12046a": "50409",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:ef6a761c1b2edeec5d4155a047f3473f38c205203bb07121e39f1514727b8e89": "51000",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:8bf5ad06ba2249e8275f088f7c4e5c5b5676eb873466dbd29110b75a66653c48": "50166",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "30589",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:477fbbce9f903649fe30e818a706449b793be987dc4b88a6fc0922a149fb434e": "289989",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:4be2f258add60ca5e1446159c5f264a4e1a5123d6d38346dacd71651b37c81a3": "50240",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:3af420d471508bbf925960a44f4d8dd3baf565717c84a334f499754cd4a0f659": "51497",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:aad26d88ce63ee98861573b9ac2f30a3924aa254f27b6c82c528e7d394ebaaab": "50039",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:85fe03e89870b24a5abc8d69646ddf43439dfa9e40fe49f613e8e85b21c46718": "50468",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:51d68dd16c94ce045f46d2d6a0b9f406c2379454f3a9e906d3d59f5b3cca1a28": "50718",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:39fd96914910c5cc6dfcc2e355001d3f85321adac4cb66f088759c7e56547313": "50304"
                     },
                     "unknown_expiry": [],
                     "expired_but_present": 0,
@@ -2441,12 +2443,12 @@
                 "detail": {
                     "intake": "closed",
                     "accepted": [
-                        "270",
-                        "270"
+                        "272",
+                        "272"
                     ],
                     "rejected": [
-                        "12736",
-                        "12750"
+                        "13210",
+                        "13224"
                     ],
                     "drain_snapshots": [
                         [
@@ -2466,8 +2468,8 @@
                         "rl-shared": {
                             "store_families": 12,
                             "admission_shapes": 8,
-                            "keys_checked": 343,
-                            "dryrun_checks": 14406,
+                            "keys_checked": 340,
+                            "dryrun_checks": 14280,
                             "holes": [],
                             "holes_total": 0
                         }
@@ -2539,7 +2541,7 @@
                         "sentinel_intact": true,
                         "policy_noeviction": true
                     },
-                    "redis_now_ms": "1795358175247",
+                    "redis_now_ms": "1795361230957",
                     "block_keys_present": 0,
                     "block_keys_seen_then_gone": 0,
                     "active_remaining_ms": [],
@@ -2589,6 +2591,7 @@
                     }
                 },
                 "pending_written": true,
+                "pending_written_ms": "1795361237955",
                 "audit_before_exposure": {
                     "ok": true,
                     "reasons": [],
@@ -2599,7 +2602,7 @@
                     }
                 },
                 "signal_visible_after_audit": true,
-                "signal_pttl_ms": 28632,
+                "signal_pttl_ms": 28671,
                 "pending_gone": true,
                 "confirmed_by": "control_connection"
             },
@@ -2608,13 +2611,13 @@
                     "result": {
                         "policy": "login_protection",
                         "ok": true,
-                        "ms": "1795358186706",
+                        "ms": "1795361242214",
                         "allowed": false,
                         "blocked": true,
                         "class": "Maatify\\RateLimiter\\DTO\\RateLimitResultDTO"
                     },
-                    "ns_keys_before": 323,
-                    "ns_keys_after": 344,
+                    "ns_keys_before": 320,
+                    "ns_keys_after": 341,
                     "k4_census_for_the_account": {
                         "score": 1,
                         "block": 0,
@@ -2624,20 +2627,20 @@
                         "watch": 0,
                         "distinct": 0
                     },
-                    "return_ms": "20",
+                    "return_ms": "45",
                     "verified": true
                 },
                 "otp_protection": {
                     "result": {
                         "policy": "otp_protection",
                         "ok": true,
-                        "ms": "1795358186719",
+                        "ms": "1795361242213",
                         "allowed": false,
                         "blocked": true,
                         "class": "Maatify\\RateLimiter\\DTO\\RateLimitResultDTO"
                     },
-                    "ns_keys_before": 323,
-                    "ns_keys_after": 344,
+                    "ns_keys_before": 320,
+                    "ns_keys_after": 341,
                     "k4_census_for_the_account": {
                         "score": 1,
                         "block": 0,
@@ -2647,21 +2650,43 @@
                         "watch": 0,
                         "distinct": 0
                     },
-                    "return_ms": "33",
+                    "return_ms": "44",
                     "verified": true
                 }
             },
             "worker_stats": {
-                "rehearsal:wstats:legacy-127": {
-                    "role": "legacy",
-                    "user": "w_legacy",
-                    "done": "121",
-                    "errors": "17",
-                    "noperm": "17",
+                "rehearsal:wstats:direct-129": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "1",
+                    "errors": "0",
+                    "noperm": "0",
                     "conn_lost": "0",
-                    "last_ok_ms": "1795357879469",
-                    "first_noperm_ms": "1795357879537",
-                    "ts": "1795357880535"
+                    "last_ok_ms": "1795361242213",
+                    "first_noperm_ms": "0",
+                    "ts": "1795361242366"
+                },
+                "rehearsal:wstats:deferred-125": {
+                    "role": "deferred",
+                    "user": "w_deferred",
+                    "done": "27",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795360935677",
+                    "first_noperm_ms": "0",
+                    "ts": "1795360936943"
+                },
+                "rehearsal:wstats:retry-126": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "33",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795360935404",
+                    "first_noperm_ms": "0",
+                    "ts": "1795360936954"
                 },
                 "rehearsal:wstats:deferred-131": {
                     "role": "deferred",
@@ -2672,51 +2697,29 @@
                     "conn_lost": "0",
                     "last_ok_ms": "0",
                     "first_noperm_ms": "0",
-                    "ts": "1795358186899"
-                },
-                "rehearsal:wstats:direct-123": {
-                    "role": "direct",
-                    "user": "w_direct",
-                    "done": "116",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795357877243",
-                    "first_noperm_ms": "0",
-                    "ts": "1795357880535"
+                    "ts": "1795361242367"
                 },
                 "rehearsal:wstats:direct-130": {
                     "role": "direct",
                     "user": "w_direct",
-                    "done": "0",
+                    "done": "1",
                     "errors": "0",
                     "noperm": "0",
                     "conn_lost": "0",
-                    "last_ok_ms": "0",
+                    "last_ok_ms": "1795361242214",
                     "first_noperm_ms": "0",
-                    "ts": "1795358186900"
+                    "ts": "1795361242366"
                 },
-                "rehearsal:wstats:retry-126": {
-                    "role": "retry",
-                    "user": "w_retry",
-                    "done": "24",
-                    "errors": "0",
-                    "noperm": "0",
+                "rehearsal:wstats:legacy-127": {
+                    "role": "legacy",
+                    "user": "w_legacy",
+                    "done": "120",
+                    "errors": "16",
+                    "noperm": "16",
                     "conn_lost": "0",
-                    "last_ok_ms": "1795357879222",
-                    "first_noperm_ms": "0",
-                    "ts": "1795357880512"
-                },
-                "rehearsal:wstats:direct-129": {
-                    "role": "direct",
-                    "user": "w_direct",
-                    "done": "2",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795358186719",
-                    "first_noperm_ms": "0",
-                    "ts": "1795358186880"
+                    "last_ok_ms": "1795360935893",
+                    "first_noperm_ms": "1795360935961",
+                    "ts": "1795360936903"
                 },
                 "rehearsal:wstats:retry-132": {
                     "role": "retry",
@@ -2727,29 +2730,29 @@
                     "conn_lost": "0",
                     "last_ok_ms": "0",
                     "first_noperm_ms": "0",
-                    "ts": "1795358186899"
+                    "ts": "1795361242369"
+                },
+                "rehearsal:wstats:direct-123": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "127",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795360933985",
+                    "first_noperm_ms": "0",
+                    "ts": "1795360936944"
                 },
                 "rehearsal:wstats:direct-124": {
                     "role": "direct",
                     "user": "w_direct",
-                    "done": "125",
+                    "done": "116",
                     "errors": "0",
                     "noperm": "0",
                     "conn_lost": "0",
-                    "last_ok_ms": "1795357877241",
+                    "last_ok_ms": "1795360933985",
                     "first_noperm_ms": "0",
-                    "ts": "1795357880515"
-                },
-                "rehearsal:wstats:deferred-125": {
-                    "role": "deferred",
-                    "user": "w_deferred",
-                    "done": "25",
-                    "errors": "0",
-                    "noperm": "0",
-                    "conn_lost": "0",
-                    "last_ok_ms": "1795357879203",
-                    "first_noperm_ms": "0",
-                    "ts": "1795357880520"
+                    "ts": "1795360936944"
                 }
             }
         }
@@ -2765,7 +2768,7 @@
             "held_snapshot": [
                 1,
                 [
-                    "rehearsal:q:proc:direct-137=1"
+                    "rehearsal:q:proc:direct-138=1"
                 ],
                 []
             ],
@@ -2946,6 +2949,7 @@
                     }
                 },
                 "pending_written": true,
+                "pending_written_ms": "1795361318244",
                 "audit_before_exposure": {
                     "ok": false,
                     "reasons": [
@@ -2992,12 +2996,14 @@
                     }
                 },
                 "pending_written": true,
+                "pending_written_ms": "1795361332689",
                 "exception_before_exposure": "injected failure in the audit",
                 "independent_after_failure": {
                     "reachable": true,
                     "allowed_present": false,
                     "pending_present": true,
-                    "pttl_ms": -2
+                    "pttl_ms": -2,
+                    "redis_ms": "1795361332690"
                 }
             }
         },
@@ -3034,12 +3040,14 @@
                     }
                 },
                 "pending_written": true,
+                "pending_written_ms": "1795361344842",
                 "exception_before_exposure": "Redis reply ended unexpectedly.",
                 "independent_after_failure": {
                     "reachable": true,
                     "allowed_present": false,
                     "pending_present": true,
-                    "pttl_ms": -2
+                    "pttl_ms": -2,
+                    "redis_ms": "1795361344845"
                 }
             },
             "observer": [
@@ -3090,6 +3098,7 @@
                     }
                 },
                 "pending_written": true,
+                "pending_written_ms": "1795361362997",
                 "audit_before_exposure": {
                     "ok": true,
                     "reasons": [],
@@ -3102,13 +3111,15 @@
                 "exception_at_exposure": "Redis reply ended unexpectedly.",
                 "independent_after_failure": {
                     "reachable": false
-                }
+                },
+                "confirmed_by": "fresh_connection",
+                "why_unconfirmed": "no independent connection"
             },
             "observer": {
                 "allowed": false,
                 "pending": true,
                 "allowed_pttl_ms": -2,
-                "pending_pttl_ms": 2402
+                "pending_pttl_ms": 2391
             }
         },
         "N11c_control_lost_before_final_verification": {
@@ -3177,6 +3188,7 @@
                     }
                 },
                 "pending_written": true,
+                "pending_written_ms": "1795361391248",
                 "audit_before_exposure": {
                     "ok": true,
                     "reasons": [],
@@ -3191,14 +3203,15 @@
                     "reachable": true,
                     "allowed_present": true,
                     "pending_present": false,
-                    "pttl_ms": 7390
+                    "pttl_ms": 7387,
+                    "redis_ms": "1795361391861"
                 },
                 "confirmed_by": "fresh_connection"
             },
             "observer": {
                 "allowed": true,
                 "pending": false,
-                "allowed_pttl_ms": 7389,
+                "allowed_pttl_ms": 7386,
                 "pending_pttl_ms": -2
             }
         },
@@ -3235,6 +3248,7 @@
                     }
                 },
                 "pending_written": true,
+                "pending_written_ms": "1795361405881",
                 "audit_before_exposure": {
                     "ok": true,
                     "reasons": [],
@@ -3253,7 +3267,7 @@
                 {
                     "allowed": true,
                     "pending": false,
-                    "allowed_pttl_ms": 2389,
+                    "allowed_pttl_ms": 2394,
                     "pending_pttl_ms": -2
                 },
                 {
@@ -3263,6 +3277,195 @@
                     "pending_pttl_ms": -2
                 }
             ]
+        },
+        "N11f_lost_reply_applied_then_expired_is_unconfirmed": {
+            "out": {
+                "state": "UNCONFIRMED",
+                "permitted": false,
+                "lease_ms": 5000,
+                "first_evaluation": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "recheck_after_hold": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "final_verification": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "pending_written": true,
+                "pending_written_ms": "1795361424679",
+                "audit_before_exposure": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "exception_at_exposure": "simulated: the RENAME reply was lost",
+                "independent_after_failure": {
+                    "reachable": true,
+                    "allowed_present": false,
+                    "pending_present": false,
+                    "pttl_ms": -2,
+                    "redis_ms": "1795361431455"
+                },
+                "confirmed_by": "fresh_connection",
+                "why_unconfirmed": "both keys absent after a lost reply: the exposure may have happened and expired",
+                "lease_elapsed_at_independent_read": true
+            },
+            "observer_inside": {
+                "allowed": true,
+                "pending": false,
+                "allowed_pttl_ms": 4228,
+                "pending_pttl_ms": -2
+            },
+            "observer_after": {
+                "allowed": false,
+                "pending": false,
+                "allowed_pttl_ms": -2,
+                "pending_pttl_ms": -2
+            }
+        },
+        "N11g_lost_request_pending_intact_is_not_issued": {
+            "out": {
+                "state": "NOT_ISSUED",
+                "permitted": false,
+                "lease_ms": 20000,
+                "first_evaluation": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "recheck_after_hold": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "final_verification": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "pending_written": true,
+                "pending_written_ms": "1795361443617",
+                "audit_before_exposure": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "exception_at_exposure": "simulated: the RENAME never reached Redis (its reply is, of course, never seen)",
+                "independent_after_failure": {
+                    "reachable": true,
+                    "allowed_present": false,
+                    "pending_present": true,
+                    "pttl_ms": -2,
+                    "redis_ms": "1795361444224"
+                },
+                "confirmed_by": "fresh_connection",
+                "decisive_evidence": "pending key intact: the RENAME did not apply"
+            },
+            "observer": {
+                "allowed": false,
+                "pending": true,
+                "allowed_pttl_ms": -2,
+                "pending_pttl_ms": 19393
+            }
+        },
+        "N11h_lost_reply_applied_seen_inside_lease_is_issued": {
+            "out": {
+                "state": "ISSUED",
+                "permitted": true,
+                "lease_ms": 20000,
+                "first_evaluation": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "recheck_after_hold": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "final_verification": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "pending_written": true,
+                "pending_written_ms": "1795361456329",
+                "audit_before_exposure": {
+                    "ok": true,
+                    "reasons": [],
+                    "monitoring": {
+                        "synced": true,
+                        "same_connection": true,
+                        "connections": 1
+                    }
+                },
+                "exception_at_exposure": "simulated: the RENAME reply was lost",
+                "independent_after_failure": {
+                    "reachable": true,
+                    "allowed_present": true,
+                    "pending_present": false,
+                    "pttl_ms": 19235,
+                    "redis_ms": "1795361457094"
+                },
+                "confirmed_by": "fresh_connection"
+            },
+            "observer": {
+                "allowed": true,
+                "pending": false,
+                "allowed_pttl_ms": 19234,
+                "pending_pttl_ms": -2
+            }
         },
         "N3d_absent_family_reentry_claim_hole": {
             "reasons": [
@@ -3292,27 +3495,27 @@
             "ledger": [
                 {
                     "key": "bb8604049276",
-                    "recorded": "1795358376001",
+                    "recorded": "1795361475482",
                     "observed": "-2",
-                    "redis_ms_after_observation": "1795358362213"
+                    "redis_ms_after_observation": "1795361461688"
                 },
                 {
                     "key": "b5fdd9a74b98",
-                    "recorded": "1795358378001",
-                    "observed": "1795358363005",
-                    "redis_ms_after_observation": "1795358362214"
+                    "recorded": "1795361477483",
+                    "observed": "1795361462486",
+                    "redis_ms_after_observation": "1795361461688"
                 }
             ],
             "events": [
-                "del@1795358362005 key=bb8604049276 recorded_expiry=1795358376001",
-                "expire@1795358362005 key=b5fdd9a74b98 recorded_expiry=1795358378001",
-                "expired@1795358363014 key=b5fdd9a74b98 recorded_expiry=1795358378001"
+                "del@1795361461486 key=bb8604049276 recorded_expiry=1795361475482",
+                "expire@1795361461486 key=b5fdd9a74b98 recorded_expiry=1795361477483",
+                "expired@1795361462589 key=b5fdd9a74b98 recorded_expiry=1795361477483"
             ]
         },
         "N4e_last_moment_delete_caught_by_events": {
-            "left_ms_at_delete": "117",
+            "left_ms_at_delete": "109",
             "events": [
-                "del@1795358390395 key=fcee24a4a6c6 recorded_expiry=1795358390512"
+                "del@1795361489714 key=fcee24a4a6c6 recorded_expiry=1795361489823"
             ],
             "reasons": [
                 "BLOCK_EVENT_VIOLATION"
@@ -3399,6 +3602,9 @@
         "N11c_control_lost_before_final_verification",
         "N11d_control_lost_after_exposure_confirmed_by_fresh_connection",
         "N11e_control_lost_after_exposure_without_fallback_is_unconfirmed_and_expires",
+        "N11f_lost_reply_applied_then_expired_is_unconfirmed",
+        "N11g_lost_request_pending_intact_is_not_issued",
+        "N11h_lost_reply_applied_seen_inside_lease_is_issued",
         "N9_lost_watcher_blocks_the_signal",
         "N9b_replaced_watcher_connection_blocks_the_signal",
         "N4_unknown_expiry",
@@ -3433,6 +3639,9 @@
         "N11c_control_lost_before_final_verification",
         "N11d_control_lost_after_exposure_confirmed_by_fresh_connection",
         "N11e_control_lost_after_exposure_without_fallback_is_unconfirmed_and_expires",
+        "N11f_lost_reply_applied_then_expired_is_unconfirmed",
+        "N11g_lost_request_pending_intact_is_not_issued",
+        "N11h_lost_reply_applied_seen_inside_lease_is_issued",
         "N3d_absent_family_reentry_claim_hole",
         "N3e_admission_shape_permit_hole",
         "N4_unknown_expiry",
