@@ -1,0 +1,67 @@
+== width probe ==
+requested_width=32 expected_PHP_INT_SIZE=4 actual_PHP_INT_SIZE=4
+== redis-server (from inside redis container) ==
+Redis server v=7.0.15 sha=00000000:0 malloc=jemalloc-5.2.1 bits=64 build=d6d81b7b50ab2e83
+== php container ==
+git version 2.47.3
+PHP 8.4.27 PHP_INT_SIZE=4 ext-redis=6.3.0
+source HEAD=109f3c6d7d81efda750a2d6d4be13eaa0eff55c6 tree=7ec62d35b97f675f33cbe66bb556de74bd82b085 dirty_files=0 remote=https://github.com/Maatify/php-rate-limiter.git
+harness_sha256=8c85d51fe4bb2ce5dbacb87b6e9cf179425824978377655ec51e757192ca70d6
+{
+    "environment": {
+        "php": "8.4.27",
+        "php_int_size": 4,
+        "ext_redis": "6.3.0",
+        "redis_server": "7.0.15",
+        "source_head": "109f3c6d7d81efda750a2d6d4be13eaa0eff55c6",
+        "source_tree": "7ec62d35b97f675f33cbe66bb556de74bd82b085"
+    },
+    "results": [
+        {
+            "id": "C1_writer_reader_same_scope",
+            "kind": "control",
+            "ok": true,
+            "inputs": {
+                "env": "prod",
+                "account": "acct-1",
+                "failures": 3
+            },
+            "reader_k4_score": 9,
+            "independent_hmac_key_exists_in_redis": true,
+            "dbsize": 19
+        },
+        {
+            "id": "C2_separation_other_account_other_env",
+            "kind": "control",
+            "ok": true,
+            "reader_same_env_other_account": 0,
+            "reader_other_env_same_account": 0
+        },
+        {
+            "id": "C3_two_envs_isolated_counters",
+            "kind": "control",
+            "ok": true,
+            "prod_score": 9,
+            "staging_score": 3
+        },
+        {
+            "id": "C4_single_env_distinct_accounts_distinct_preimages",
+            "kind": "control",
+            "ok": true,
+            "note": "account is the trailing field"
+        },
+        {
+            "id": "S2_environment_scope_domain",
+            "kind": "structural",
+            "ok": true,
+            "accepted": {
+                "x:y:z": true,
+                "tab\tenv": true,
+                "ünï": true
+            }
+        }
+    ],
+    "control_failures": 0
+}
+harness_exit_code=0
+container_exit_code=0
