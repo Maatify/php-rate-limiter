@@ -7,8 +7,8 @@ declare(strict_types=1);
  *
  * Runs the PUBLIC writer (RateLimiterBuilder::build()->limit()) and the PUBLIC reader (buildOperationalReader()->readScorePolicy())
  * against a real Redis, with synthetic data only. Expects: /work = clean clone at the base SHA, /deps/vendor = composer runtime deps,
- * REDIS_INTEGRATION_HOST / REDIS_INTEGRATION_PORT. Exit 0 only when every control holds; the demonstration (D*) section is reported
- * separately and never changes the exit code (it records a proven gap, it is not a pass/fail control of the current contract).
+ * REDIS_INTEGRATION_HOST / REDIS_INTEGRATION_PORT. Exit 0 only when every control (C*) holds. The structural checks (S*) are
+ * reported separately and never change the exit code; no store is written and no limiter runs under any ambiguous pair of scopes.
  */
 
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
@@ -46,7 +46,7 @@ $failed = 0;
 function record(string $id, bool $ok, array $detail, bool $control = true): void
 {
     global $results, $failed;
-    $results[] = ['id' => $id, 'kind' => $control ? 'control' : 'demonstration', 'ok' => $ok] + $detail;
+    $results[] = ['id' => $id, 'kind' => $control ? 'control' : 'structural', 'ok' => $ok] + $detail;
     if ($control && ! $ok) {
         $failed++;
     }
@@ -163,35 +163,14 @@ $differentAccountsSameEnv = k4Preimage(POLICY, 'prod', 'a') !== k4Preimage(POLIC
     && k4Preimage(POLICY, 'prod', 'a:b') !== k4Preimage(POLICY, 'prod', 'a:c');
 record('C4_single_env_distinct_accounts_distinct_preimages', $same && $differentAccountsSameEnv, ['note' => 'account is the trailing field']);
 
-// ---- D1: DEMONSTRATION of the proven gap: env "prod" + account "a:b"  ==  env "prod:a" + account "b" ------------------------
-flushDb($exec);
-$x = runtime($exec, 'prod');
-$y = runtime($exec, 'prod:a');
-$pre1 = k4Preimage(POLICY, 'prod', 'a:b');
-$pre2 = k4Preimage(POLICY, 'prod:a', 'b');
-writeFailures($x, 'a:b', 3);
-$seenByY = k4Score($y, 'b');
-$yWrongScoreBeforeAnyOwnWrite = $seenByY;
-$keysBefore = dbsize($exec);
-$yDecision = $y['limiter']->limit(ctx('b'), RateLimitCommand::checkOnly(POLICY));
-writeFailures($y, 'b', 1);
-record('D1_cross_env_collision_k4', $pre1 === $pre2, [
-    'preimage_env_prod_account_a:b' => $pre1, 'preimage_env_prod:a_account_b' => $pre2, 'preimages_equal' => $pre1 === $pre2,
-    'same_hmac' => k4Key('prod', 'a:b') === k4Key('prod:a', 'b'),
-    'writer_x_failures' => 3, 'reader_y_score_for_account_b_before_any_own_write' => $yWrongScoreBeforeAnyOwnWrite,
-    'reader_y_view_of_b_hard_block_level' => $y['reader']->readScorePolicy(ctx('b'), POLICY)->scopes->k4?->activeHardBlock?->level,
-    'writer_y_checkOnly_decision_for_account_b' => $yDecision->decision, 'writer_y_block_level' => $yDecision->blockLevel,
-    'dbsize_after_x' => $keysBefore, 'dbsize_after_y_write' => dbsize($exec), 'score_after_y_write_seen_by_x' => k4Score($x, 'a:b'),
-], false);
+// ---- S1: STRUCTURAL check of the preimage (pure string work: no store, no runtime, nothing is written) --------------------
+// The writer and reader preimage is the unencoded `:`-join; two different (env, account) pairs whose join is the same string produce the same
+// HMAC input. This only states the format; it does not run any limiter under such inputs.
+$joinOnly = static fn(string $env, string $account): string => $env . ':' . $account;
+record('S1_preimage_is_an_unencoded_join', $joinOnly('prod', 'a:b') === $joinOnly('prod:a', 'b')
+    && k4Preimage(POLICY, 'prod', 'a:b') === POLICY . ':rate_limiter:k4:v2:prod:a:b', ['note' => 'string-level fact about the format; no state involved'], false);
 
-// ---- D2: pure preimage collisions in the sibling families built with the same pattern (no Redis involved) ---------------------
-$aux1 = 'login_protection:rate_limiter:aux:anti_equilibrium:v1:prod:a:b';
-$aux2 = 'login_protection:rate_limiter:aux:anti_equilibrium:v1:' . 'prod:a' . ':b';
-$cool1 = 'login_protection:rate_limiter:budget_cooldown:v1:' . 'prod' . ':' . 'a:b';
-$cool2 = 'login_protection:rate_limiter:budget_cooldown:v1:' . 'prod:a' . ':' . 'b';
-record('D2_sibling_families_preimage', true, ['aux_equal' => $aux1 === $aux2, 'budget_cooldown_equal' => $cool1 === $cool2], false);
-
-// ---- D3: the domain of accepted configuration values ------------------------------------------------------------------------
+// ---- S2: the domain of accepted configuration values ------------------------------------------------------------------------
 $accepted = [];
 foreach (['prod:a', 'a:b:c', ':', "tab\tenv", 'ünï', 'x:rate_limiter:k4:v2:y'] as $v) {
     try {
@@ -201,7 +180,7 @@ foreach (['prod:a', 'a:b:c', ':', "tab\tenv", 'ünï', 'x:rate_limiter:k4:v2:y']
         $accepted[$v] = false;
     }
 }
-record('D3_environment_scope_domain', true, ['accepted' => $accepted], false);
+record('S2_environment_scope_domain', true, ['accepted' => $accepted], false);
 
 echo json_encode(['environment' => $env, 'results' => $results, 'control_failures' => $failed], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), "\n";
 exit($failed === 0 ? 0 : 1);

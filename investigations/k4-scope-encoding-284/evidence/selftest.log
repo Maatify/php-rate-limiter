@@ -1,0 +1,19 @@
+PASS T1_happy_64 (exit 0)
+PASS T1_evidence: log non-empty and exit file is 0
+PASS T1_cleanup: every container and the network removed by its own name
+PASS T2_tee_23 (exit 7)
+PASS T2_cleanup: cleanup by name after a tee failure
+PASS T3_width_mismatch_32 (exit 6)
+PASS T3_not_started: no control ran on the wrong width
+PASS T3_no_redis_started: Redis not started on the wrong width
+PASS T3_width_mismatch_64 (exit 6)
+PASS T4_redis_timeout (exit 5)
+PASS T4_bounded: gave up after 2s (bound 2s timeout)
+PASS T4_cleanup: cleanup by name after a readiness timeout
+PASS T5_harness_failure (exit 1)
+PASS T5_exit_file: exit file records 1
+PASS T6_unwritable_out (exit 7)
+PASS T7_bad_width (exit 2)
+PASS T7_missing_deps (exit 2)
+PASS T8_distinct_names: run A 's284-redis-64-32725-12315-33875' vs run B 's284-redis-64-9952-27156-33897'
+selftest_failures=0
