@@ -11,11 +11,11 @@ PASS T4_redis_timeout (exit 5)
 PASS T4_bounded: gave up after 2s (bound 2s timeout)
 PASS T4_cleanup: cleanup by name after a readiness timeout
 PASS T5_harness_failure (exit 1)
-PASS T5_exit_file: exit file records 1
+PASS T5_rejected_kept: a failing run is kept under rejected/ and writes no accepted exit file
 PASS T6_unwritable_out (exit 7)
 PASS T7_bad_width (exit 2)
 PASS T7_missing_deps (exit 2)
-PASS T8_distinct_names: run A 's284r-redis-64-29733-15384-67135' vs run B 's284r-redis-64-9685-1505-67163'
+PASS T8_distinct_names: run A 's284r-redis-64-965-9046-85337' vs run B 's284r-redis-64-5024-23019-85381'
 PASS T9_late_pong (exit 5)
 PASS T9_no_controls: no control ran after a late PONG
 PASS T9_cleanup: cleanup by name after a late PONG
@@ -34,4 +34,18 @@ PASS T13_dirty_tree (exit 4)
 PASS T14_revparse_fails (exit 4)
 PASS T15_wrong_head (exit 4)
 PASS T16_controls_rc_passthrough (exit 1)
+PASS T24_width_mismatch_rejected (exit 6)
+PASS T24_old_evidence_intact: previous accepted evidence untouched after a rejected run
+PASS T24_rejected_run_kept: the rejected run is kept under rejected/
+PASS T25_results_missing (exit 7)
+PASS T25_old_evidence_intact: old evidence intact when the results file is missing
+PASS T26_results_sha_mismatch (exit 7)
+PASS T26_old_evidence_intact: old evidence intact when the results sha256 differs from the logged one
+PASS T27_results_not_verified (exit 7)
+PASS T27_old_evidence_intact: old evidence intact when the harness did not verify its own save
+PASS T28_control_failure_rejected (exit 1)
+PASS T28_old_evidence_intact: old evidence intact when a control failed
+PASS T29_good_run_promotes (exit 0)
+PASS T29_promoted: log, results and exit file promoted; nothing rejected
+PASS T30_32bit_needs_no_results (exit 0)
 selftest_failures=0

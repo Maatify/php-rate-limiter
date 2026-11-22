@@ -17,7 +17,19 @@ case "$1" in
   exec) if [[ "$3" == redis-cli ]]; then [[ "${FAKE_IGNORE_TERM:-0}" == 1 ]] && trap '' TERM; sleep "${FAKE_PONG_DELAY:-0}"; [[ "${FAKE_REDIS_READY:-1}" == 1 ]] && echo PONG; exit "${FAKE_PROBE_RC:-0}"; fi; echo "Redis server v=7.0.15"; exit 0 ;;
   run)
     for a in "$@"; do
-      [[ "$a" == bash ]] && { echo "FAKE-HARNESS-RAN"; exit "${FAKE_HARNESS_RC:-0}"; }
+      if [[ "$a" == bash ]]; then
+        echo "FAKE-HARNESS-RAN"
+        mnt=""; for b in "$@"; do [[ "$b" == *:/out ]] && mnt="${b%%:/out}"; done
+        mode="${FAKE_RESULTS:-ok}"
+        if [[ -n "$mnt" && "$mode" != missing ]]; then
+          printf '{"control_failures":0,"scenarios":{"A_login_protection_own_ns":{}}}' > "$mnt/rehearsal-results.json"
+          sha="$( (command -v sha256sum >/dev/null && sha256sum "$mnt/rehearsal-results.json" || shasum -a 256 "$mnt/rehearsal-results.json") | cut -d' ' -f1)"
+          [[ "$mode" == badsha ]] && sha="$(printf '%064d' 0)"
+          ver=true; [[ "$mode" == unverified ]] && ver=false
+          echo "{\"tag\":\"results_file\",\"saved_and_verified\":$ver,\"results_sha256\":\"$sha\"}"
+        fi
+        exit "${FAKE_HARNESS_RC:-0}"
+      fi
       [[ "$a" == -d ]] && exit 0
     done
     printf '%s' "${FAKE_INT_SIZE:-8}"; exit 0 ;;
@@ -77,7 +89,7 @@ check T4_cleanup "$(names_cleaned)" "cleanup by name after a readiness timeout"
 
 # T5 a failing control passes its own exit code through
 reset; FAKE_INT_SIZE=8 FAKE_HARNESS_RC=1 run 64 "$work/o5"; expect T5_harness_failure 1 "$rc"
-check T5_exit_file "$([[ "$(cat "$work/o5/exit-64bit.txt")" == 1 ]] && echo yes || echo no)" "exit file records 1"
+check T5_rejected_kept "$([[ -n "$(ls "$work/o5/rejected" 2>/dev/null)" && ! -e "$work/o5/exit-64bit.txt" ]] && echo yes || echo no)" "a failing run is kept under rejected/ and writes no accepted exit file"
 
 # T6 evidence directory cannot be created -> 7
 : > "$work/notadir"; reset; FAKE_INT_SIZE=8 run 64 "$work/notadir/sub"; expect T6_unwritable_out 7 "$rc"
@@ -145,6 +157,24 @@ FAKE_GIT_MODE=dirty cc; expect T13_dirty_tree 4 "$rc"
 FAKE_GIT_MODE=revparse_fail cc; expect T14_revparse_fails 4 "$rc"
 FAKE_GIT_MODE= FAKE_HEAD=deadbeef cc; expect T15_wrong_head 4 "$rc"
 FAKE_GIT_MODE= FAKE_HARNESS_RC=1 cc; expect T16_controls_rc_passthrough 1 "$rc"
+
+# T24..T30 evidence integrity: accepted evidence is never replaced by a rejected run
+seed_old() { mkdir -p "$1"; echo OLD > "$1/run-64bit.log"; echo 0 > "$1/exit-64bit.txt"; echo OLD > "$1/rehearsal-results.json"; }
+old_intact() { [[ "$(cat "$1/run-64bit.log")" == OLD && "$(cat "$1/exit-64bit.txt")" == 0 && "$(cat "$1/rehearsal-results.json")" == OLD ]] && echo yes || echo no; }
+seed_old "$work/o17"; reset; FAKE_INT_SIZE=4 run 64 "$work/o17"; expect T24_width_mismatch_rejected 6 "$rc"
+check T24_old_evidence_intact "$(old_intact "$work/o17")" "previous accepted evidence untouched after a rejected run"
+check T24_rejected_run_kept "$([[ -n "$(ls "$work/o17/rejected" 2>/dev/null)" ]] && echo yes || echo no)" "the rejected run is kept under rejected/"
+seed_old "$work/o18"; reset; FAKE_INT_SIZE=8 FAKE_RESULTS=missing run 64 "$work/o18"; expect T25_results_missing 7 "$rc"
+check T25_old_evidence_intact "$(old_intact "$work/o18")" "old evidence intact when the results file is missing"
+seed_old "$work/o19"; reset; FAKE_INT_SIZE=8 FAKE_RESULTS=badsha run 64 "$work/o19"; expect T26_results_sha_mismatch 7 "$rc"
+check T26_old_evidence_intact "$(old_intact "$work/o19")" "old evidence intact when the results sha256 differs from the logged one"
+seed_old "$work/o20"; reset; FAKE_INT_SIZE=8 FAKE_RESULTS=unverified run 64 "$work/o20"; expect T27_results_not_verified 7 "$rc"
+check T27_old_evidence_intact "$(old_intact "$work/o20")" "old evidence intact when the harness did not verify its own save"
+seed_old "$work/o21"; reset; FAKE_INT_SIZE=8 FAKE_HARNESS_RC=1 run 64 "$work/o21"; expect T28_control_failure_rejected 1 "$rc"
+check T28_old_evidence_intact "$(old_intact "$work/o21")" "old evidence intact when a control failed"
+reset; FAKE_INT_SIZE=8 run 64 "$work/o22"; expect T29_good_run_promotes 0 "$rc"
+check T29_promoted "$([[ -s "$work/o22/run-64bit.log" && -s "$work/o22/rehearsal-results.json" && "$(cat "$work/o22/exit-64bit.txt")" == 0 && ! -d "$work/o22/rejected" ]] && echo yes || echo no)" "log, results and exit file promoted; nothing rejected"
+reset; FAKE_INT_SIZE=4 run 32 "$work/o23"; expect T30_32bit_needs_no_results 0 "$rc"
 
 echo "selftest_failures=$failures"
 exit $((failures == 0 ? 0 : 1))

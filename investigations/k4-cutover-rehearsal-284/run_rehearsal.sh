@@ -27,13 +27,25 @@ esac
 [[ -n "$deps" && -f "$deps/vendor/autoload.php" && -n "$out" ]] || { echo "usage: deps dir must contain vendor/autoload.php and out dir must be given" >&2; exit 2; }
 
 mkdir -p "$out" || { echo "cannot create evidence directory: $out" >&2; exit 7; }
-out_abs="$(cd "$out" && pwd)"
 run_mode=controller; [[ "$width" == 32 ]] && run_mode=int
-log="$out/run-${width}bit.log"; exit_file="$out/exit-${width}bit.txt"
-: > "$log" || { echo "cannot write evidence log: $log" >&2; exit 7; }
+exit_file="$out/exit-${width}bit.txt"
 
 # Every resource of THIS run carries the run's own suffix and is removed by that exact name (never by pattern, never another run's).
 suffix="${RANDOM}-${RANDOM}-$$"
+# Evidence of THIS run is written to a private staging directory. Accepted evidence already in $out is never touched until this run is verified;
+# a rejected run is kept under $out/rejected/ and the previous evidence stays exactly as it was.
+stage="$out/.stage-${suffix}"
+mkdir -p "$stage" || { echo "cannot create staging directory: $stage" >&2; exit 7; }
+out_abs="$(cd "$stage" && pwd)"
+log="$stage/run-${width}bit.log"
+: > "$log" || { echo "cannot write evidence log: $log" >&2; exit 7; }
+sha256_of() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
+reject() { # rc reason -> keep the staged evidence aside, leave accepted evidence untouched
+  local code="$1" reason="$2" dest
+  echo "EVIDENCE REJECTED: $reason (exit $code); previous accepted evidence in $out is untouched" >&2
+  mkdir -p "$out/rejected" && dest="$out/rejected/$(date +%s)-${width}bit-rc${code}" && mv "$stage" "$dest" 2>/dev/null && echo "rejected run kept in $dest" >&2
+  exit "$code"
+}
 net="s284r-${width}-${suffix}"; redis="s284r-redis-${width}-${suffix}"
 php_probe="s284r-probe-${width}-${suffix}"; php_run="s284r-php-${width}-${suffix}"
 cleanup() {
@@ -81,7 +93,7 @@ body() {
 
   # 3. Clean clone of the official remote inside the PHP container, pinned base check, then the controls.
   "$docker_bin" run --rm --name "$php_run" ${platform:+--platform "$platform"} --network "$net" -v "$deps:/deps:ro" -v "$here:/study:ro" -v "$out_abs:/out" \
-    -e REDIS_INTEGRATION_HOST="$redis" -e REDIS_INTEGRATION_PORT=6379 "$image" bash /study/container_check.sh "$base_sha" "$base_tree" "$run_mode" /out
+    -e REDIS_INTEGRATION_HOST="$redis" -e REDIS_INTEGRATION_PORT=6379 ${S284_SCENARIOS:+-e S284_SCENARIOS="$S284_SCENARIOS"} "$image" bash /study/container_check.sh "$base_sha" "$base_tree" "$run_mode" /out
   rc=$?
   echo "container_exit_code=$rc"
   return "$rc"
@@ -93,12 +105,27 @@ statuses=("${PIPESTATUS[@]}")
 body_rc="${statuses[0]}"; tee_rc="${statuses[1]:-1}"
 
 if [[ "$tee_rc" -ne 0 ]]; then
-  echo "EVIDENCE WRITE FAILED: tee exited $tee_rc (body exit $body_rc)" >&2
-  exit 7
+  reject 7 "tee exited $tee_rc (body exit $body_rc)"
 fi
 if [[ ! -s "$log" ]]; then
-  echo "EVIDENCE WRITE FAILED: empty log $log" >&2
-  exit 7
+  reject 7 "empty log $log"
 fi
+if [[ "$body_rc" -ne 0 ]]; then
+  reject "$body_rc" "the run did not hold (exit $body_rc)"
+fi
+results_name=""
+if [[ "$width" == 64 ]]; then
+  # The results file must exist, be non-empty, be reported as saved-and-verified by the harness, and match the sha256 the harness logged.
+  results="$stage/rehearsal-results.json"
+  [[ -s "$results" ]] || reject 7 "results file missing or empty"
+  logged_sha="$(grep -o '"results_sha256":"[0-9a-f]\{64\}"' "$log" | tail -1 | cut -d'"' -f4)"
+  grep -q '"saved_and_verified":true' "$log" || reject 7 "the harness did not report the results file as saved and verified"
+  [[ -n "$logged_sha" && "$(sha256_of "$results")" == "$logged_sha" ]] || reject 7 "results file sha256 differs from the one the harness logged"
+  results_name="rehearsal-results.json"
+fi
+# promote the verified run: accepted evidence is replaced only now
+mv -f "$log" "$out/run-${width}bit.log" || reject 7 "cannot promote the log"
+if [[ -n "$results_name" ]]; then mv -f "$stage/$results_name" "$out/$results_name" || reject 7 "cannot promote the results"; fi
 printf '%s\n' "$body_rc" > "$exit_file" || { echo "EVIDENCE WRITE FAILED: $exit_file" >&2; exit 7; }
+rmdir "$stage" 2>/dev/null || true
 exit "$body_rc"
