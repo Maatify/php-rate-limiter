@@ -1,0 +1,1357 @@
+{
+    "base": {
+        "php": "8.4.27",
+        "php_int_size": 8,
+        "ext_redis": "6.3.0"
+    },
+    "scenarios": {
+        "A_login_protection_own_ns": {
+            "name": "A_login_protection_own_ns",
+            "policy_ns": {
+                "login_protection": "rl-login"
+            },
+            "jobs_pushed": 119,
+            "k4_representability": {
+                "login_protection": {
+                    "census": {
+                        "families": {
+                            "score": 4,
+                            "block": 0,
+                            "budget": 4,
+                            "cycle": 0,
+                            "pause": 0,
+                            "watch": 0,
+                            "distinct": 0
+                        },
+                        "k4_block_max_expiry_ms": "0"
+                    },
+                    "reader_k4_score_hot_account": 3,
+                    "block_keys_in_ns_all_scopes": 16
+                }
+            },
+            "synthetic_blocks": {
+                "rl-login": {
+                    "key": "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0",
+                    "duration_s": 20,
+                    "pexpiretime_raw": "1795338262411",
+                    "redis_now_ms": "1795338242411"
+                }
+            },
+            "synthetic_previous_generation_block": {
+                "key": "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514",
+                "pexpiretime_raw": "1795338267449"
+            },
+            "timeline_redis_ms": {
+                "load_end": "1795338247415",
+                "intake_closed": "1795338247449",
+                "writes_before_barrier": "210",
+                "drained": "1795338249312",
+                "barrier_start": "1795338249313",
+                "barrier_applied": "1795338249314",
+                "probes_done": "1795338250197",
+                "gate_while_block_active": "1795338250536",
+                "first_scan_done": "1795338250539",
+                "max_block_expiry_ms": "1795338304018",
+                "natural_expiry_passed": "1795338305293",
+                "final_scan_done": "1795338305608",
+                "activation_signal_set": "1795338308953",
+                "reopen_requested": "1795338308955",
+                "first_success_after_reopen": "1795338309259"
+            },
+            "measured": {
+                "drain_ms": "1863",
+                "barrier_and_probes_ms": "885",
+                "first_scan_ms": "342",
+                "wait_for_natural_expiry_ms": "54754",
+                "final_scan_and_gate_ms": "315",
+                "validity_hold_to_signal_ms": "3345",
+                "reopen_to_first_success_ms": "304",
+                "total_stop_to_service_ms": "61810"
+            },
+            "probes": {
+                "per_user": {
+                    "w_direct": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_deferred": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_retry": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_legacy": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    }
+                },
+                "digest_before": "d090ddeb2f514673e9a2468dccab0f71fc25f4d8:167",
+                "digest_after": "d090ddeb2f514673e9a2468dccab0f71fc25f4d8:167",
+                "acl_log_entries_new": 36,
+                "acl_log_sample": [
+                    {
+                        "reason": "key",
+                        "context": "toplevel",
+                        "object": "maatify:rate-limiter:v1:probe:block:eval",
+                        "username": "w_legacy"
+                    },
+                    {
+                        "reason": "key",
+                        "context": "toplevel",
+                        "object": "maatify:rate-limiter:v1:probe:block:raw",
+                        "username": "w_legacy"
+                    },
+                    {
+                        "reason": "key",
+                        "context": "toplevel",
+                        "object": "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:circuit:eea5768d5a5271d0af7902d1af16b25fb742b18fdf2092c651f141c7273ee3eb",
+                        "username": "w_legacy"
+                    },
+                    {
+                        "reason": "key",
+                        "context": "toplevel",
+                        "object": "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:score:2a7e8fe67fd2ac36ad2fb05b9a03ac5f85493e358f125a0d615ad7b15ef2e28c",
+                        "username": "w_legacy"
+                    },
+                    {
+                        "reason": "key",
+                        "context": "toplevel",
+                        "object": "maatify:rate-limiter:v1:{8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28}:adm:epoch:2a7e8fe67fd2ac36ad2fb05b9a03ac5f85493e358f125a0d615ad7b15ef2e28c",
+                        "username": "w_legacy"
+                    }
+                ]
+            },
+            "gate_while_block_active": {
+                "ok": false,
+                "reasons": [
+                    "BLOCK_ACTIVE"
+                ],
+                "detail": {
+                    "intake": "closed",
+                    "feeder_pushed": [
+                        "119",
+                        "119"
+                    ],
+                    "queues_nonempty": [],
+                    "inflight_workers": [],
+                    "barrier_holes": [],
+                    "continuity": {
+                        "run_id_same": true,
+                        "uptime_monotonic": true,
+                        "evicted_same": true,
+                        "sentinel_intact": true,
+                        "policy_noeviction": true
+                    },
+                    "redis_now_ms": "1795338250533",
+                    "block_keys_seen": 17,
+                    "active_remaining_ms": {
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:b51800ddc2b8eca08a5562eccc18f35ea0e8f5ed4e6ec3fedc634acaa14c30aa": "51934",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:c6154e8da71e9047339f7dc53f7063bf5dbbacb3142746a05d9ac3b1996a570e": "52946",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:85fe03e89870b24a5abc8d69646ddf43439dfa9e40fe49f613e8e85b21c46718": "51893",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:51d68dd16c94ce045f46d2d6a0b9f406c2379454f3a9e906d3d59f5b3cca1a28": "52609",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:0843d9c86cb8cadc88b4b305b8b3d6607ae291addcb74c78e5dc60bf20c4c548": "53168",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:d1e72600dba4dcf56ef2f884a3979c8c43f9489832baf58a79946a08b4827867": "51903",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:8bf5ad06ba2249e8275f088f7c4e5c5b5676eb873466dbd29110b75a66653c48": "52227",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:39fd96914910c5cc6dfcc2e355001d3f85321adac4cb66f088759c7e56547313": "53485",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:ee2e757ccdebb5fe47f3f7f4ee547b40e1039d48c34dac99f0029c93b9e19096": "52361",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:4e72c252ac3ed49b8732fc26dc615684a1991b538cb9f66ce007af930946209c": "51440",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:d34b14db185770c6e46d325cbb98a8d57900f7fbff107e9125d80e5a27b8ad4e": "52313",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "11878",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:4ed739bbea82b6d24055d94c9f52264e0a3a778bfc5112692537584034b2da12": "51974",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:6e254cc752eaf710fe8b0d0e76228ffdc5a0be6a578f7461aa87afadeabefebe": "52042",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:aad26d88ce63ee98861573b9ac2f30a3924aa254f27b6c82c528e7d394ebaaab": "52645",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "16916",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:3af420d471508bbf925960a44f4d8dd3baf565717c84a334f499754cd4a0f659": "52169"
+                    },
+                    "unknown_expiry": [],
+                    "expired_but_present": 0,
+                    "scan_snapshot": {
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:b51800ddc2b8eca08a5562eccc18f35ea0e8f5ed4e6ec3fedc634acaa14c30aa": "1795338302467",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:c6154e8da71e9047339f7dc53f7063bf5dbbacb3142746a05d9ac3b1996a570e": "1795338303479",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:85fe03e89870b24a5abc8d69646ddf43439dfa9e40fe49f613e8e85b21c46718": "1795338302426",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:51d68dd16c94ce045f46d2d6a0b9f406c2379454f3a9e906d3d59f5b3cca1a28": "1795338303142",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:0843d9c86cb8cadc88b4b305b8b3d6607ae291addcb74c78e5dc60bf20c4c548": "1795338303701",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:d1e72600dba4dcf56ef2f884a3979c8c43f9489832baf58a79946a08b4827867": "1795338302436",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:8bf5ad06ba2249e8275f088f7c4e5c5b5676eb873466dbd29110b75a66653c48": "1795338302760",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:39fd96914910c5cc6dfcc2e355001d3f85321adac4cb66f088759c7e56547313": "1795338304018",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:ee2e757ccdebb5fe47f3f7f4ee547b40e1039d48c34dac99f0029c93b9e19096": "1795338302894",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:4e72c252ac3ed49b8732fc26dc615684a1991b538cb9f66ce007af930946209c": "1795338301973",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:d34b14db185770c6e46d325cbb98a8d57900f7fbff107e9125d80e5a27b8ad4e": "1795338302846",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "1795338262411",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:4ed739bbea82b6d24055d94c9f52264e0a3a778bfc5112692537584034b2da12": "1795338302507",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:6e254cc752eaf710fe8b0d0e76228ffdc5a0be6a578f7461aa87afadeabefebe": "1795338302575",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:aad26d88ce63ee98861573b9ac2f30a3924aa254f27b6c82c528e7d394ebaaab": "1795338303178",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "1795338267449",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:3af420d471508bbf925960a44f4d8dd3baf565717c84a334f499754cd4a0f659": "1795338302702"
+                    }
+                }
+            },
+            "gate_final": {
+                "ok": true,
+                "reasons": [],
+                "detail": {
+                    "intake": "closed",
+                    "feeder_pushed": [
+                        "119",
+                        "119"
+                    ],
+                    "queues_nonempty": [],
+                    "inflight_workers": [],
+                    "barrier_holes": [],
+                    "continuity": {
+                        "run_id_same": true,
+                        "uptime_monotonic": true,
+                        "evicted_same": true,
+                        "sentinel_intact": true,
+                        "policy_noeviction": true
+                    },
+                    "redis_now_ms": "1795338305608",
+                    "block_keys_seen": 0,
+                    "active_remaining_ms": [],
+                    "unknown_expiry": [],
+                    "expired_but_present": 0,
+                    "unexplained_absence": [],
+                    "new_since_first_scan": [],
+                    "scan_snapshot": []
+                }
+            },
+            "activation_permitted": true,
+            "worker_stats": {
+                "rehearsal:wstats:legacy-94": {
+                    "role": "legacy",
+                    "user": "w_legacy",
+                    "done": "109",
+                    "errors": "916",
+                    "noperm": "916",
+                    "last_ok_ms": "1795338249248",
+                    "first_noperm_ms": "1795338249319",
+                    "ts": "1795338308924"
+                },
+                "rehearsal:wstats:deferred-92": {
+                    "role": "deferred",
+                    "user": "w_deferred",
+                    "done": "6",
+                    "errors": "0",
+                    "noperm": "0",
+                    "last_ok_ms": "1795338249180",
+                    "first_noperm_ms": "0",
+                    "ts": "1795338308952"
+                },
+                "rehearsal:wstats:direct-90": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "46",
+                    "errors": "0",
+                    "noperm": "0",
+                    "last_ok_ms": "1795338247341",
+                    "first_noperm_ms": "0",
+                    "ts": "1795338308922"
+                },
+                "rehearsal:wstats:direct-91": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "67",
+                    "errors": "0",
+                    "noperm": "0",
+                    "last_ok_ms": "1795338247395",
+                    "first_noperm_ms": "0",
+                    "ts": "1795338308939"
+                },
+                "rehearsal:wstats:retry-93": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "16",
+                    "errors": "0",
+                    "noperm": "0",
+                    "last_ok_ms": "1795338248728",
+                    "first_noperm_ms": "0",
+                    "ts": "1795338308922"
+                }
+            }
+        },
+        "B_otp_protection_own_ns": {
+            "name": "B_otp_protection_own_ns",
+            "policy_ns": {
+                "otp_protection": "rl-otp"
+            },
+            "jobs_pushed": 116,
+            "k4_representability": {
+                "otp_protection": {
+                    "census": {
+                        "families": {
+                            "score": 5,
+                            "block": 1,
+                            "budget": 5,
+                            "cycle": 1,
+                            "pause": 0,
+                            "watch": 0,
+                            "distinct": 0
+                        },
+                        "k4_block_max_expiry_ms": "1795338611643"
+                    },
+                    "reader_k4_score_hot_account": 0,
+                    "block_keys_in_ns_all_scopes": 18
+                }
+            },
+            "synthetic_blocks": {
+                "rl-otp": {
+                    "key": "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0",
+                    "duration_s": 20,
+                    "pexpiretime_raw": "1795338330170",
+                    "redis_now_ms": "1795338310171"
+                }
+            },
+            "synthetic_previous_generation_block": {
+                "key": "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514",
+                "pexpiretime_raw": "1795338335223"
+            },
+            "timeline_redis_ms": {
+                "load_end": "1795338315206",
+                "intake_closed": "1795338315223",
+                "writes_before_barrier": "210",
+                "drained": "1795338317101",
+                "barrier_start": "1795338317101",
+                "barrier_applied": "1795338317102",
+                "probes_done": "1795338317988",
+                "gate_while_block_active": "1795338318327",
+                "first_scan_done": "1795338318330",
+                "max_block_expiry_ms": "1795338611643",
+                "natural_expiry_passed": "1795338612934",
+                "final_scan_done": "1795338613244",
+                "activation_signal_set": "1795338616594",
+                "reopen_requested": "1795338616596",
+                "first_success_after_reopen": "1795338616907"
+            },
+            "measured": {
+                "drain_ms": "1878",
+                "barrier_and_probes_ms": "887",
+                "first_scan_ms": "342",
+                "wait_for_natural_expiry_ms": "294604",
+                "final_scan_and_gate_ms": "310",
+                "validity_hold_to_signal_ms": "3350",
+                "reopen_to_first_success_ms": "311",
+                "total_stop_to_service_ms": "301684"
+            },
+            "probes": {
+                "per_user": {
+                    "w_direct": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_deferred": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_retry": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_legacy": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    }
+                },
+                "digest_before": "b76d27ed8a2df43dc74ff6828e0775b434db2056:169",
+                "digest_after": "b76d27ed8a2df43dc74ff6828e0775b434db2056:169",
+                "acl_log_entries_new": 36,
+                "acl_log_sample": [
+                    {
+                        "reason": "key",
+                        "context": "toplevel",
+                        "object": "maatify:rate-limiter:v1:probe:block:eval",
+                        "username": "w_legacy"
+                    },
+                    {
+                        "reason": "key",
+                        "context": "toplevel",
+                        "object": "maatify:rate-limiter:v1:probe:block:raw",
+                        "username": "w_legacy"
+                    },
+                    {
+                        "reason": "key",
+                        "context": "toplevel",
+                        "object": "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:circuit:eea5768d5a5271d0af7902d1af16b25fb742b18fdf2092c651f141c7273ee3eb",
+                        "username": "w_legacy"
+                    },
+                    {
+                        "reason": "key",
+                        "context": "toplevel",
+                        "object": "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:score:2a7e8fe67fd2ac36ad2fb05b9a03ac5f85493e358f125a0d615ad7b15ef2e28c",
+                        "username": "w_legacy"
+                    },
+                    {
+                        "reason": "key",
+                        "context": "toplevel",
+                        "object": "maatify:rate-limiter:v1:{f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1}:adm:epoch:2a7e8fe67fd2ac36ad2fb05b9a03ac5f85493e358f125a0d615ad7b15ef2e28c",
+                        "username": "w_legacy"
+                    }
+                ]
+            },
+            "gate_while_block_active": {
+                "ok": false,
+                "reasons": [
+                    "BLOCK_ACTIVE"
+                ],
+                "detail": {
+                    "intake": "closed",
+                    "feeder_pushed": [
+                        "116",
+                        "116"
+                    ],
+                    "queues_nonempty": [],
+                    "inflight_workers": [],
+                    "barrier_holes": [],
+                    "continuity": {
+                        "run_id_same": true,
+                        "uptime_monotonic": true,
+                        "evicted_same": true,
+                        "sentinel_intact": true,
+                        "policy_noeviction": true
+                    },
+                    "redis_now_ms": "1795338318324",
+                    "block_keys_seen": 19,
+                    "active_remaining_ms": {
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:f4300a134bb8684167890fa7c6535dca8c8fea06be5fe5d09d4679c62eb723e9": "291578",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "16899",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:6cea39243ad9da79f3a68f3036d772311e9acf88426b48a60c114597e1a89b54": "52212",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:1cfdcdeb78aec573fe2416708db337e7ef2bc78275eb1310198adf9fef12046a": "52644",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:477fbbce9f903649fe30e818a706449b793be987dc4b88a6fc0922a149fb434e": "6719",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:02bc27226a4bfadd60f801d92dd022a40ce6dbbe8d4db6836d1579b86d11f345": "52064",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:13c51e6a17ebd16140d38475c22569c4f6fab50f56702e9e22a2aaaa4bdd51c1": "291431",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:500906416fde75e3336b2fd7cea9c81ed92397bfe7e47d634e117f65fdc7051b": "51981",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:8102d3ada5e7610d298ad10adbab401f29092218d39b990c8d8ef42539ae02b4": "51997",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:074a979639e697c783fb5573365a87a6bb257670c6529aafdddc63ad3852f0fe": "293319",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:5167288a046e60fa081449195a02ca8392707dd1eef7488b6befb5be3747f696": "53318",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:3ad4deb3a2b6ebf6c31fde6647df5c5591e1a9981b1a85f2c6da81b85a508986": "51913",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:587a1c4ab70c7ff0afb49de8e810f88f4ac601dd79ce3bf62f43c6fbcd4b4929": "52511",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:4a515e386cbac19e0cd5943a4d886a5f793b62cc0ef3c572cf7efe3a4a77e321": "52318",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:e7abd22b9d0d360306f7533ff468d92c4b4c5ef717fce4e63b734f708c6993b7": "291266",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "11846",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:4be2f258add60ca5e1446159c5f264a4e1a5123d6d38346dacd71651b37c81a3": "51949",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:94ca7e37bd8edd733a63d73b727837604abb1f534f71a1b7a6d2fe260c089895": "52166",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:ef6a761c1b2edeec5d4155a047f3473f38c205203bb07121e39f1514727b8e89": "54161"
+                    },
+                    "unknown_expiry": [],
+                    "expired_but_present": 0,
+                    "scan_snapshot": {
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:f4300a134bb8684167890fa7c6535dca8c8fea06be5fe5d09d4679c62eb723e9": "1795338609902",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "1795338335223",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:6cea39243ad9da79f3a68f3036d772311e9acf88426b48a60c114597e1a89b54": "1795338370536",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:1cfdcdeb78aec573fe2416708db337e7ef2bc78275eb1310198adf9fef12046a": "1795338370968",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:477fbbce9f903649fe30e818a706449b793be987dc4b88a6fc0922a149fb434e": "1795338325043",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:02bc27226a4bfadd60f801d92dd022a40ce6dbbe8d4db6836d1579b86d11f345": "1795338370388",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:13c51e6a17ebd16140d38475c22569c4f6fab50f56702e9e22a2aaaa4bdd51c1": "1795338609755",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:500906416fde75e3336b2fd7cea9c81ed92397bfe7e47d634e117f65fdc7051b": "1795338370305",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:8102d3ada5e7610d298ad10adbab401f29092218d39b990c8d8ef42539ae02b4": "1795338370321",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:074a979639e697c783fb5573365a87a6bb257670c6529aafdddc63ad3852f0fe": "1795338611643",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:5167288a046e60fa081449195a02ca8392707dd1eef7488b6befb5be3747f696": "1795338371642",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:3ad4deb3a2b6ebf6c31fde6647df5c5591e1a9981b1a85f2c6da81b85a508986": "1795338370237",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:587a1c4ab70c7ff0afb49de8e810f88f4ac601dd79ce3bf62f43c6fbcd4b4929": "1795338370835",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:4a515e386cbac19e0cd5943a4d886a5f793b62cc0ef3c572cf7efe3a4a77e321": "1795338370642",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:e7abd22b9d0d360306f7533ff468d92c4b4c5ef717fce4e63b734f708c6993b7": "1795338609590",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "1795338330170",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:4be2f258add60ca5e1446159c5f264a4e1a5123d6d38346dacd71651b37c81a3": "1795338370273",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:94ca7e37bd8edd733a63d73b727837604abb1f534f71a1b7a6d2fe260c089895": "1795338370490",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:ef6a761c1b2edeec5d4155a047f3473f38c205203bb07121e39f1514727b8e89": "1795338372485"
+                    }
+                }
+            },
+            "gate_final": {
+                "ok": true,
+                "reasons": [],
+                "detail": {
+                    "intake": "closed",
+                    "feeder_pushed": [
+                        "116",
+                        "116"
+                    ],
+                    "queues_nonempty": [],
+                    "inflight_workers": [],
+                    "barrier_holes": [],
+                    "continuity": {
+                        "run_id_same": true,
+                        "uptime_monotonic": true,
+                        "evicted_same": true,
+                        "sentinel_intact": true,
+                        "policy_noeviction": true
+                    },
+                    "redis_now_ms": "1795338613243",
+                    "block_keys_seen": 0,
+                    "active_remaining_ms": [],
+                    "unknown_expiry": [],
+                    "expired_but_present": 0,
+                    "unexplained_absence": [],
+                    "new_since_first_scan": [],
+                    "scan_snapshot": []
+                }
+            },
+            "activation_permitted": true,
+            "worker_stats": {
+                "rehearsal:wstats:legacy-99": {
+                    "role": "legacy",
+                    "user": "w_legacy",
+                    "done": "114",
+                    "errors": "4736",
+                    "noperm": "4736",
+                    "last_ok_ms": "1795338317101",
+                    "first_noperm_ms": "1795338317176",
+                    "ts": "1795338616536"
+                },
+                "rehearsal:wstats:direct-96": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "59",
+                    "errors": "0",
+                    "noperm": "0",
+                    "last_ok_ms": "1795338315177",
+                    "first_noperm_ms": "0",
+                    "ts": "1795338616577"
+                },
+                "rehearsal:wstats:deferred-97": {
+                    "role": "deferred",
+                    "user": "w_deferred",
+                    "done": "14",
+                    "errors": "0",
+                    "noperm": "0",
+                    "last_ok_ms": "1795338316865",
+                    "first_noperm_ms": "0",
+                    "ts": "1795338616589"
+                },
+                "rehearsal:wstats:direct-95": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "41",
+                    "errors": "0",
+                    "noperm": "0",
+                    "last_ok_ms": "1795338315121",
+                    "first_noperm_ms": "0",
+                    "ts": "1795338616577"
+                },
+                "rehearsal:wstats:retry-98": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "20",
+                    "errors": "0",
+                    "noperm": "0",
+                    "last_ok_ms": "1795338316769",
+                    "first_noperm_ms": "0",
+                    "ts": "1795338616573"
+                }
+            }
+        },
+        "C_api_heavy_protection_own_ns": {
+            "name": "C_api_heavy_protection_own_ns",
+            "policy_ns": {
+                "api_heavy_protection": "rl-api"
+            },
+            "jobs_pushed": 114,
+            "k4_representability": {
+                "api_heavy_protection": {
+                    "census": {
+                        "families": {
+                            "score": 0,
+                            "block": 0,
+                            "budget": 0,
+                            "cycle": 0,
+                            "pause": 0,
+                            "watch": 0,
+                            "distinct": 0
+                        },
+                        "k4_block_max_expiry_ms": "0"
+                    },
+                    "reader_k4_score_hot_account": 0,
+                    "block_keys_in_ns_all_scopes": 16
+                }
+            },
+            "synthetic_blocks": {
+                "rl-api": {
+                    "key": "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0",
+                    "duration_s": 20,
+                    "pexpiretime_raw": "1795338637828",
+                    "redis_now_ms": "1795338617828"
+                }
+            },
+            "synthetic_previous_generation_block": {
+                "key": "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514",
+                "pexpiretime_raw": "1795338642860"
+            },
+            "timeline_redis_ms": {
+                "load_end": "1795338622843",
+                "intake_closed": "1795338622860",
+                "writes_before_barrier": "200",
+                "drained": "1795338626285",
+                "barrier_start": "1795338626285",
+                "barrier_applied": "1795338626286",
+                "probes_done": "1795338627172",
+                "gate_while_block_active": "1795338627513",
+                "first_scan_done": "1795338627516",
+                "max_block_expiry_ms": "1795338678855",
+                "natural_expiry_passed": "1795338680167",
+                "final_scan_done": "1795338680478",
+                "activation_signal_set": "1795338683826",
+                "reopen_requested": "1795338683828",
+                "first_success_after_reopen": "1795338684135"
+            },
+            "measured": {
+                "drain_ms": "3425",
+                "barrier_and_probes_ms": "887",
+                "first_scan_ms": "344",
+                "wait_for_natural_expiry_ms": "52651",
+                "final_scan_and_gate_ms": "311",
+                "validity_hold_to_signal_ms": "3348",
+                "reopen_to_first_success_ms": "307",
+                "total_stop_to_service_ms": "61275"
+            },
+            "probes": {
+                "per_user": {
+                    "w_direct": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_deferred": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_retry": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_legacy": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    }
+                },
+                "digest_before": "707f7b1af9948509a87a9961dc14701f78c8b68d:167",
+                "digest_after": "707f7b1af9948509a87a9961dc14701f78c8b68d:167",
+                "acl_log_entries_new": 36,
+                "acl_log_sample": [
+                    {
+                        "reason": "key",
+                        "context": "toplevel",
+                        "object": "maatify:rate-limiter:v1:probe:block:eval",
+                        "username": "w_legacy"
+                    },
+                    {
+                        "reason": "key",
+                        "context": "toplevel",
+                        "object": "maatify:rate-limiter:v1:probe:block:raw",
+                        "username": "w_legacy"
+                    },
+                    {
+                        "reason": "key",
+                        "context": "toplevel",
+                        "object": "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:circuit:eea5768d5a5271d0af7902d1af16b25fb742b18fdf2092c651f141c7273ee3eb",
+                        "username": "w_legacy"
+                    },
+                    {
+                        "reason": "key",
+                        "context": "toplevel",
+                        "object": "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:score:2a7e8fe67fd2ac36ad2fb05b9a03ac5f85493e358f125a0d615ad7b15ef2e28c",
+                        "username": "w_legacy"
+                    },
+                    {
+                        "reason": "key",
+                        "context": "toplevel",
+                        "object": "maatify:rate-limiter:v1:{e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9}:adm:epoch:2a7e8fe67fd2ac36ad2fb05b9a03ac5f85493e358f125a0d615ad7b15ef2e28c",
+                        "username": "w_legacy"
+                    }
+                ]
+            },
+            "gate_while_block_active": {
+                "ok": false,
+                "reasons": [
+                    "BLOCK_ACTIVE"
+                ],
+                "detail": {
+                    "intake": "closed",
+                    "feeder_pushed": [
+                        "114",
+                        "114"
+                    ],
+                    "queues_nonempty": [],
+                    "inflight_workers": [],
+                    "barrier_holes": [],
+                    "continuity": {
+                        "run_id_same": true,
+                        "uptime_monotonic": true,
+                        "evicted_same": true,
+                        "sentinel_intact": true,
+                        "policy_noeviction": true
+                    },
+                    "redis_now_ms": "1795338627511",
+                    "block_keys_seen": 17,
+                    "active_remaining_ms": {
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:cf7fa51d31528da339ba17b88925dc490025d16ae10ee65f6515b857c093334e": "50418",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:52f9b5416e622b10fc9c580d01e56200b47cc4259c3eca99a49a698a340b1a35": "50404",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:e88ae599582e273efaa8abe645f57024dd4e9cc1ab4baffdf2c42911c4c76b94": "50558",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:4501e5d44165de4b71cbf5d3eb2780e112f3cdbb9556fa5c35fc832652e55596": "50803",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "10317",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:251f145087a67f4aa0c1c5abc037fe01a1a9147603d3a356b6d16d8b8a4ab6c7": "50503",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:b7e36762f34da43770679358d9e9826760805b9c0db2a007efb0c608d1c08e23": "50840",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:0c0f4ff82c9919b6730797c6b2235d86a7e3e8ab252e1af54412c986cd95be06": "50474",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:3e2f97e45389eb0ba2f6f1343ec2369f72b1d629a1272e98c63f27f2066d23f6": "50637",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:9ecb64677fcb77bcca90fce3a0464698418ddd6057fb26f8680e685c4c59c104": "50456",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:99e9da1a72a478781c1c335a7ca2359090b2fa43757196fc4e665035f04a14af": "50596",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:9c871126198a5be0fe298ba1f9174e352d6e6e16398f5e96d06079596fd1c8da": "50971",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:4d838394d38a7ab1d43931c4aab4ad61bb559aec9722eaefc93eaac8469fe642": "50875",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:a99faa33b24a70c1524ca16289ac7f195bc7c355ee71885f66a3ab200cd3e371": "51344",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:625811478460d8549782d4718ecb19f652ff90022c980d6da71cea261d4ca64a": "50383",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "15349",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:c90644deaef70f4215370cce984661b85d1f5bc0c67a453ec6c66c07a2955deb": "50609"
+                    },
+                    "unknown_expiry": [],
+                    "expired_but_present": 0,
+                    "scan_snapshot": {
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:cf7fa51d31528da339ba17b88925dc490025d16ae10ee65f6515b857c093334e": "1795338677929",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:52f9b5416e622b10fc9c580d01e56200b47cc4259c3eca99a49a698a340b1a35": "1795338677915",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:e88ae599582e273efaa8abe645f57024dd4e9cc1ab4baffdf2c42911c4c76b94": "1795338678069",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:4501e5d44165de4b71cbf5d3eb2780e112f3cdbb9556fa5c35fc832652e55596": "1795338678314",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "1795338637828",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:251f145087a67f4aa0c1c5abc037fe01a1a9147603d3a356b6d16d8b8a4ab6c7": "1795338678014",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:b7e36762f34da43770679358d9e9826760805b9c0db2a007efb0c608d1c08e23": "1795338678351",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:0c0f4ff82c9919b6730797c6b2235d86a7e3e8ab252e1af54412c986cd95be06": "1795338677985",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:3e2f97e45389eb0ba2f6f1343ec2369f72b1d629a1272e98c63f27f2066d23f6": "1795338678148",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:9ecb64677fcb77bcca90fce3a0464698418ddd6057fb26f8680e685c4c59c104": "1795338677967",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:99e9da1a72a478781c1c335a7ca2359090b2fa43757196fc4e665035f04a14af": "1795338678107",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:9c871126198a5be0fe298ba1f9174e352d6e6e16398f5e96d06079596fd1c8da": "1795338678482",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:4d838394d38a7ab1d43931c4aab4ad61bb559aec9722eaefc93eaac8469fe642": "1795338678386",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:a99faa33b24a70c1524ca16289ac7f195bc7c355ee71885f66a3ab200cd3e371": "1795338678855",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:625811478460d8549782d4718ecb19f652ff90022c980d6da71cea261d4ca64a": "1795338677894",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "1795338642860",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:c90644deaef70f4215370cce984661b85d1f5bc0c67a453ec6c66c07a2955deb": "1795338678120"
+                    }
+                }
+            },
+            "gate_final": {
+                "ok": true,
+                "reasons": [],
+                "detail": {
+                    "intake": "closed",
+                    "feeder_pushed": [
+                        "114",
+                        "114"
+                    ],
+                    "queues_nonempty": [],
+                    "inflight_workers": [],
+                    "barrier_holes": [],
+                    "continuity": {
+                        "run_id_same": true,
+                        "uptime_monotonic": true,
+                        "evicted_same": true,
+                        "sentinel_intact": true,
+                        "policy_noeviction": true
+                    },
+                    "redis_now_ms": "1795338680478",
+                    "block_keys_seen": 0,
+                    "active_remaining_ms": [],
+                    "unknown_expiry": [],
+                    "expired_but_present": 0,
+                    "unexplained_absence": [],
+                    "new_since_first_scan": [],
+                    "scan_snapshot": []
+                }
+            },
+            "activation_permitted": true,
+            "worker_stats": {
+                "rehearsal:wstats:deferred-102": {
+                    "role": "deferred",
+                    "user": "w_deferred",
+                    "done": "9",
+                    "errors": "0",
+                    "noperm": "0",
+                    "last_ok_ms": "1795338624680",
+                    "first_noperm_ms": "0",
+                    "ts": "1795338683819"
+                },
+                "rehearsal:wstats:retry-103": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "11",
+                    "errors": "0",
+                    "noperm": "0",
+                    "last_ok_ms": "1795338626205",
+                    "first_noperm_ms": "0",
+                    "ts": "1795338683819"
+                },
+                "rehearsal:wstats:legacy-104": {
+                    "role": "legacy",
+                    "user": "w_legacy",
+                    "done": "139",
+                    "errors": "921",
+                    "noperm": "921",
+                    "last_ok_ms": "1795338626232",
+                    "first_noperm_ms": "1795338626299",
+                    "ts": "1795338683770"
+                },
+                "rehearsal:wstats:direct-100": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "51",
+                    "errors": "0",
+                    "noperm": "0",
+                    "last_ok_ms": "1795338622810",
+                    "first_noperm_ms": "0",
+                    "ts": "1795338683805"
+                },
+                "rehearsal:wstats:direct-101": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "53",
+                    "errors": "0",
+                    "noperm": "0",
+                    "last_ok_ms": "1795338622491",
+                    "first_noperm_ms": "0",
+                    "ts": "1795338683825"
+                }
+            }
+        },
+        "D_login_and_otp_shared_ns": {
+            "name": "D_login_and_otp_shared_ns",
+            "policy_ns": {
+                "login_protection": "rl-shared",
+                "otp_protection": "rl-shared"
+            },
+            "jobs_pushed": 234,
+            "k4_representability": {
+                "login_protection": {
+                    "census": {
+                        "families": {
+                            "score": 5,
+                            "block": 0,
+                            "budget": 5,
+                            "cycle": 0,
+                            "pause": 0,
+                            "watch": 0,
+                            "distinct": 0
+                        },
+                        "k4_block_max_expiry_ms": "0"
+                    },
+                    "reader_k4_score_hot_account": 3,
+                    "block_keys_in_ns_all_scopes": 37
+                },
+                "otp_protection": {
+                    "census": {
+                        "families": {
+                            "score": 7,
+                            "block": 3,
+                            "budget": 7,
+                            "cycle": 1,
+                            "pause": 0,
+                            "watch": 0,
+                            "distinct": 0
+                        },
+                        "k4_block_max_expiry_ms": "1795338985702"
+                    },
+                    "reader_k4_score_hot_account": 0,
+                    "block_keys_in_ns_all_scopes": 37
+                }
+            },
+            "synthetic_blocks": {
+                "rl-shared": {
+                    "key": "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0",
+                    "duration_s": 40,
+                    "pexpiretime_raw": "1795338725051",
+                    "redis_now_ms": "1795338685051"
+                }
+            },
+            "synthetic_previous_generation_block": {
+                "key": "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514",
+                "pexpiretime_raw": "1795338730096"
+            },
+            "timeline_redis_ms": {
+                "load_end": "1795338690069",
+                "intake_closed": "1795338690096",
+                "writes_before_barrier": "322",
+                "drained": "1795338693519",
+                "barrier_start": "1795338693519",
+                "barrier_applied": "1795338693520",
+                "probes_done": "1795338694437",
+                "gate_while_block_active": "1795338694792",
+                "first_scan_done": "1795338694796",
+                "max_block_expiry_ms": "1795338986052",
+                "natural_expiry_passed": "1795338987284",
+                "final_scan_done": "1795338987595",
+                "activation_signal_set": "1795338990966",
+                "reopen_requested": "1795338990968",
+                "first_success_after_reopen": "1795338991277"
+            },
+            "measured": {
+                "drain_ms": "3423",
+                "barrier_and_probes_ms": "918",
+                "first_scan_ms": "359",
+                "wait_for_natural_expiry_ms": "292488",
+                "final_scan_and_gate_ms": "311",
+                "validity_hold_to_signal_ms": "3371",
+                "reopen_to_first_success_ms": "309",
+                "total_stop_to_service_ms": "301181"
+            },
+            "probes": {
+                "per_user": {
+                    "w_direct": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_deferred": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_retry": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_legacy": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    }
+                },
+                "digest_before": "be14fa3c3d7bb92689797c6e8b84f0614ff34091:334",
+                "digest_after": "be14fa3c3d7bb92689797c6e8b84f0614ff34091:334",
+                "acl_log_entries_new": 36,
+                "acl_log_sample": [
+                    {
+                        "reason": "key",
+                        "context": "toplevel",
+                        "object": "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:circuit:eea5768d5a5271d0af7902d1af16b25fb742b18fdf2092c651f141c7273ee3eb",
+                        "username": "w_legacy"
+                    },
+                    {
+                        "reason": "key",
+                        "context": "toplevel",
+                        "object": "maatify:rate-limiter:v1:probe:block:eval",
+                        "username": "w_legacy"
+                    },
+                    {
+                        "reason": "key",
+                        "context": "toplevel",
+                        "object": "maatify:rate-limiter:v1:probe:block:raw",
+                        "username": "w_legacy"
+                    },
+                    {
+                        "reason": "key",
+                        "context": "toplevel",
+                        "object": "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:score:2a7e8fe67fd2ac36ad2fb05b9a03ac5f85493e358f125a0d615ad7b15ef2e28c",
+                        "username": "w_legacy"
+                    },
+                    {
+                        "reason": "key",
+                        "context": "toplevel",
+                        "object": "maatify:rate-limiter:v1:{99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6}:adm:epoch:2a7e8fe67fd2ac36ad2fb05b9a03ac5f85493e358f125a0d615ad7b15ef2e28c",
+                        "username": "w_legacy"
+                    }
+                ]
+            },
+            "gate_while_block_active": {
+                "ok": false,
+                "reasons": [
+                    "BLOCK_ACTIVE"
+                ],
+                "detail": {
+                    "intake": "closed",
+                    "feeder_pushed": [
+                        "234",
+                        "234"
+                    ],
+                    "queues_nonempty": [],
+                    "inflight_workers": [],
+                    "barrier_holes": [],
+                    "continuity": {
+                        "run_id_same": true,
+                        "uptime_monotonic": true,
+                        "evicted_same": true,
+                        "sentinel_intact": true,
+                        "policy_noeviction": true
+                    },
+                    "redis_now_ms": "1795338694787",
+                    "block_keys_seen": 38,
+                    "active_remaining_ms": {
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:5167288a046e60fa081449195a02ca8392707dd1eef7488b6befb5be3747f696": "52661",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:51d68dd16c94ce045f46d2d6a0b9f406c2379454f3a9e906d3d59f5b3cca1a28": "52010",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:8bf5ad06ba2249e8275f088f7c4e5c5b5676eb873466dbd29110b75a66653c48": "50625",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:4be2f258add60ca5e1446159c5f264a4e1a5123d6d38346dacd71651b37c81a3": "50481",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "30264",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:bba0fb06eb0903c44d9831a793d36101435f0eff08436a2674f205a15a927d67": "50070",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:c6154e8da71e9047339f7dc53f7063bf5dbbacb3142746a05d9ac3b1996a570e": "50301",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:0733f061c2de735e591c45a630c2217bfa264cefee587afe13c18b77039d432f": "5369",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:94ca7e37bd8edd733a63d73b727837604abb1f534f71a1b7a6d2fe260c089895": "50815",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:587a1c4ab70c7ff0afb49de8e810f88f4ac601dd79ce3bf62f43c6fbcd4b4929": "50883",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:85fe03e89870b24a5abc8d69646ddf43439dfa9e40fe49f613e8e85b21c46718": "50451",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:02bc27226a4bfadd60f801d92dd022a40ce6dbbe8d4db6836d1579b86d11f345": "50914",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:ef6a761c1b2edeec5d4155a047f3473f38c205203bb07121e39f1514727b8e89": "52118",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:3af420d471508bbf925960a44f4d8dd3baf565717c84a334f499754cd4a0f659": "52107",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:ee2e757ccdebb5fe47f3f7f4ee547b40e1039d48c34dac99f0029c93b9e19096": "50665",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "35309",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:d1e72600dba4dcf56ef2f884a3979c8c43f9489832baf58a79946a08b4827867": "50320",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:2b9deb21a4f34e868dc558a65ce9964c896516f7660fc76a043e9c4a233c06fe": "50731",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:d55187b084540a64c1ceb61f4cadacff2262ad4f9482aae388027631f2d7f505": "5411",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:1cfdcdeb78aec573fe2416708db337e7ef2bc78275eb1310198adf9fef12046a": "52619",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:aad26d88ce63ee98861573b9ac2f30a3924aa254f27b6c82c528e7d394ebaaab": "51592",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:8102d3ada5e7610d298ad10adbab401f29092218d39b990c8d8ef42539ae02b4": "51265",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:f4300a134bb8684167890fa7c6535dca8c8fea06be5fe5d09d4679c62eb723e9": "290732",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:39fd96914910c5cc6dfcc2e355001d3f85321adac4cb66f088759c7e56547313": "50518",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:731f9034e85acd314b5db3df9177554f84d90f31cddaa39aa76ef8757f45eeac": "50596",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:6e254cc752eaf710fe8b0d0e76228ffdc5a0be6a578f7461aa87afadeabefebe": "50148",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:4a515e386cbac19e0cd5943a4d886a5f793b62cc0ef3c572cf7efe3a4a77e321": "50447",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:500906416fde75e3336b2fd7cea9c81ed92397bfe7e47d634e117f65fdc7051b": "50521",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:d34b14db185770c6e46d325cbb98a8d57900f7fbff107e9125d80e5a27b8ad4e": "49990",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:b51800ddc2b8eca08a5562eccc18f35ea0e8f5ed4e6ec3fedc634acaa14c30aa": "50289",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:216eb0d3f61e401c04af46f02c0fac4d398a8bbeaf719b7e667330c14f8df080": "50301",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:4ed739bbea82b6d24055d94c9f52264e0a3a778bfc5112692537584034b2da12": "50359",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:6a3d0bb46ed70dc1200f439a37f65dd489c21b7d3d766a57671ab61909fd4923": "290915",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:dde8e4f5e2767bd6261af5ec0c4e1f23cb3618c6940e6b6953b576dcfef45b9f": "291265",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:6cea39243ad9da79f3a68f3036d772311e9acf88426b48a60c114597e1a89b54": "50526",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:3ad4deb3a2b6ebf6c31fde6647df5c5591e1a9981b1a85f2c6da81b85a508986": "50624",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:0843d9c86cb8cadc88b4b305b8b3d6607ae291addcb74c78e5dc60bf20c4c548": "51424",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:5e65df1ccb48635b6868d20fde702aea35add130a0df93d5125375d5f954e33a": "51060"
+                    },
+                    "unknown_expiry": [],
+                    "expired_but_present": 0,
+                    "scan_snapshot": {
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:5167288a046e60fa081449195a02ca8392707dd1eef7488b6befb5be3747f696": "1795338747448",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:51d68dd16c94ce045f46d2d6a0b9f406c2379454f3a9e906d3d59f5b3cca1a28": "1795338746797",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:8bf5ad06ba2249e8275f088f7c4e5c5b5676eb873466dbd29110b75a66653c48": "1795338745412",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:4be2f258add60ca5e1446159c5f264a4e1a5123d6d38346dacd71651b37c81a3": "1795338745268",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "1795338725051",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:bba0fb06eb0903c44d9831a793d36101435f0eff08436a2674f205a15a927d67": "1795338744857",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:c6154e8da71e9047339f7dc53f7063bf5dbbacb3142746a05d9ac3b1996a570e": "1795338745088",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:0733f061c2de735e591c45a630c2217bfa264cefee587afe13c18b77039d432f": "1795338700156",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:94ca7e37bd8edd733a63d73b727837604abb1f534f71a1b7a6d2fe260c089895": "1795338745602",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:587a1c4ab70c7ff0afb49de8e810f88f4ac601dd79ce3bf62f43c6fbcd4b4929": "1795338745670",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:85fe03e89870b24a5abc8d69646ddf43439dfa9e40fe49f613e8e85b21c46718": "1795338745238",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:02bc27226a4bfadd60f801d92dd022a40ce6dbbe8d4db6836d1579b86d11f345": "1795338745701",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:ef6a761c1b2edeec5d4155a047f3473f38c205203bb07121e39f1514727b8e89": "1795338746905",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:3af420d471508bbf925960a44f4d8dd3baf565717c84a334f499754cd4a0f659": "1795338746894",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:ee2e757ccdebb5fe47f3f7f4ee547b40e1039d48c34dac99f0029c93b9e19096": "1795338745452",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "1795338730096",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:d1e72600dba4dcf56ef2f884a3979c8c43f9489832baf58a79946a08b4827867": "1795338745107",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:2b9deb21a4f34e868dc558a65ce9964c896516f7660fc76a043e9c4a233c06fe": "1795338745518",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:d55187b084540a64c1ceb61f4cadacff2262ad4f9482aae388027631f2d7f505": "1795338700198",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:1cfdcdeb78aec573fe2416708db337e7ef2bc78275eb1310198adf9fef12046a": "1795338747406",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:aad26d88ce63ee98861573b9ac2f30a3924aa254f27b6c82c528e7d394ebaaab": "1795338746379",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:8102d3ada5e7610d298ad10adbab401f29092218d39b990c8d8ef42539ae02b4": "1795338746052",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:f4300a134bb8684167890fa7c6535dca8c8fea06be5fe5d09d4679c62eb723e9": "1795338985519",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:39fd96914910c5cc6dfcc2e355001d3f85321adac4cb66f088759c7e56547313": "1795338745305",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:731f9034e85acd314b5db3df9177554f84d90f31cddaa39aa76ef8757f45eeac": "1795338745383",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:6e254cc752eaf710fe8b0d0e76228ffdc5a0be6a578f7461aa87afadeabefebe": "1795338744935",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:4a515e386cbac19e0cd5943a4d886a5f793b62cc0ef3c572cf7efe3a4a77e321": "1795338745234",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:500906416fde75e3336b2fd7cea9c81ed92397bfe7e47d634e117f65fdc7051b": "1795338745308",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:d34b14db185770c6e46d325cbb98a8d57900f7fbff107e9125d80e5a27b8ad4e": "1795338744777",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:b51800ddc2b8eca08a5562eccc18f35ea0e8f5ed4e6ec3fedc634acaa14c30aa": "1795338745076",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:216eb0d3f61e401c04af46f02c0fac4d398a8bbeaf719b7e667330c14f8df080": "1795338745088",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:4ed739bbea82b6d24055d94c9f52264e0a3a778bfc5112692537584034b2da12": "1795338745146",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:6a3d0bb46ed70dc1200f439a37f65dd489c21b7d3d766a57671ab61909fd4923": "1795338985702",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:dde8e4f5e2767bd6261af5ec0c4e1f23cb3618c6940e6b6953b576dcfef45b9f": "1795338986052",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:6cea39243ad9da79f3a68f3036d772311e9acf88426b48a60c114597e1a89b54": "1795338745313",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:3ad4deb3a2b6ebf6c31fde6647df5c5591e1a9981b1a85f2c6da81b85a508986": "1795338745411",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:0843d9c86cb8cadc88b4b305b8b3d6607ae291addcb74c78e5dc60bf20c4c548": "1795338746211",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:5e65df1ccb48635b6868d20fde702aea35add130a0df93d5125375d5f954e33a": "1795338745847"
+                    }
+                }
+            },
+            "gate_final": {
+                "ok": true,
+                "reasons": [],
+                "detail": {
+                    "intake": "closed",
+                    "feeder_pushed": [
+                        "234",
+                        "234"
+                    ],
+                    "queues_nonempty": [],
+                    "inflight_workers": [],
+                    "barrier_holes": [],
+                    "continuity": {
+                        "run_id_same": true,
+                        "uptime_monotonic": true,
+                        "evicted_same": true,
+                        "sentinel_intact": true,
+                        "policy_noeviction": true
+                    },
+                    "redis_now_ms": "1795338987594",
+                    "block_keys_seen": 0,
+                    "active_remaining_ms": [],
+                    "unknown_expiry": [],
+                    "expired_but_present": 0,
+                    "unexplained_absence": [],
+                    "new_since_first_scan": [],
+                    "scan_snapshot": []
+                }
+            },
+            "activation_permitted": true,
+            "worker_stats": {
+                "rehearsal:wstats:direct-106": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "104",
+                    "errors": "0",
+                    "noperm": "0",
+                    "last_ok_ms": "1795338690042",
+                    "first_noperm_ms": "0",
+                    "ts": "1795338990942"
+                },
+                "rehearsal:wstats:direct-105": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "112",
+                    "errors": "0",
+                    "noperm": "0",
+                    "last_ok_ms": "1795338690042",
+                    "first_noperm_ms": "0",
+                    "ts": "1795338990966"
+                },
+                "rehearsal:wstats:retry-108": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "18",
+                    "errors": "0",
+                    "noperm": "0",
+                    "last_ok_ms": "1795338693007",
+                    "first_noperm_ms": "0",
+                    "ts": "1795338990943"
+                },
+                "rehearsal:wstats:legacy-109": {
+                    "role": "legacy",
+                    "user": "w_legacy",
+                    "done": "140",
+                    "errors": "4767",
+                    "noperm": "4767",
+                    "last_ok_ms": "1795338693488",
+                    "first_noperm_ms": "1795338693555",
+                    "ts": "1795338990928"
+                },
+                "rehearsal:wstats:deferred-107": {
+                    "role": "deferred",
+                    "user": "w_deferred",
+                    "done": "18",
+                    "errors": "0",
+                    "noperm": "0",
+                    "last_ok_ms": "1795338691859",
+                    "first_noperm_ms": "0",
+                    "ts": "1795338990940"
+                }
+            }
+        }
+    },
+    "negative": {
+        "N1_hung_request_blocks_gate": {
+            "denied": [
+                "NOT_DRAINED"
+            ],
+            "after": []
+        },
+        "N2_pending_retry_and_delayed_jobs_block_gate": {
+            "denied": [
+                "NOT_DRAINED"
+            ]
+        },
+        "N3_unrevoked_writer_is_a_barrier_hole": {
+            "holes": [
+                "w_legacy:SET",
+                "w_legacy:DEL",
+                "w_legacy:HSET",
+                "w_legacy:EXPIRE",
+                "w_legacy:PEXPIREAT",
+                "w_legacy:INCRBY",
+                "w_legacy:ZADD"
+            ],
+            "after_fix": []
+        },
+        "N4_unknown_expiry_and_unexplained_absence": {
+            "unknown": [
+                "BLOCK_UNKNOWN_EXPIRY",
+                "BLOCK_ACTIVE"
+            ],
+            "absence": [
+                "BLOCK_UNEXPLAINED_ABSENCE"
+            ]
+        },
+        "N5_data_continuity_break_sentinel_lost": {
+            "reasons": [
+                "DATA_CONTINUITY_BROKEN"
+            ]
+        },
+        "N6_late_writer_after_barrier_denied_and_gate_holds": {
+            "legacy_noperm": 25,
+            "acl_log_legacy": 1,
+            "gate": [
+                "BLOCK_ACTIVE"
+            ]
+        },
+        "N5b_eviction_breaks_continuity": {
+            "evicted_keys": 3423,
+            "reasons": [
+                "INTAKE_NOT_CLOSED",
+                "DATA_CONTINUITY_BROKEN"
+            ]
+        },
+        "N7_redis_restart_breaks_continuity_and_barrier": {
+            "reasons": [
+                "INTAKE_NOT_CLOSED",
+                "WRITE_BARRIER_HOLE",
+                "DATA_CONTINUITY_BROKEN"
+            ]
+        }
+    },
+    "control_failures": 0
+}

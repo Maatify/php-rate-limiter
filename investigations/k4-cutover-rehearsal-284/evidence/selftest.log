@@ -1,0 +1,37 @@
+PASS T1_happy_64 (exit 0)
+PASS T1_evidence: log non-empty and exit file is 0
+PASS T1_cleanup: every container and the network removed by its own name
+PASS T2_tee_23 (exit 7)
+PASS T2_cleanup: cleanup by name after a tee failure
+PASS T3_width_mismatch_32 (exit 6)
+PASS T3_not_started: no control ran on the wrong width
+PASS T3_no_redis_started: Redis not started on the wrong width
+PASS T3_width_mismatch_64 (exit 6)
+PASS T4_redis_timeout (exit 5)
+PASS T4_bounded: gave up after 2s (bound 2s timeout)
+PASS T4_cleanup: cleanup by name after a readiness timeout
+PASS T5_harness_failure (exit 1)
+PASS T5_exit_file: exit file records 1
+PASS T6_unwritable_out (exit 7)
+PASS T7_bad_width (exit 2)
+PASS T7_missing_deps (exit 2)
+PASS T8_distinct_names: run A 's284r-redis-64-29733-15384-67135' vs run B 's284r-redis-64-9685-1505-67163'
+PASS T9_late_pong (exit 5)
+PASS T9_no_controls: no control ran after a late PONG
+PASS T9_cleanup: cleanup by name after a late PONG
+PASS T10_hung_probe (exit 5)
+PASS T10_bounded: hung probe cut after 2s (timeout 2s)
+PASS T10b_timely_pong (exit 0)
+PASS T17_pong_with_exit_19 (exit 5)
+PASS T17_no_controls: no control ran when the readiness command exited non-zero
+PASS T18_term_ignoring_probe (exit 5)
+PASS T18_bounded: TERM-ignoring probe cut after 1s (timeout 1s; the previous runner took 4s)
+PASS T18_cleanup: cleanup by name
+PASS T11_clean_source (exit 0)
+PASS T12_git_status_fails_empty_output (exit 4)
+PASS T12_not_run: controls did not run when git status failed
+PASS T13_dirty_tree (exit 4)
+PASS T14_revparse_fails (exit 4)
+PASS T15_wrong_head (exit 4)
+PASS T16_controls_rc_passthrough (exit 1)
+selftest_failures=0
