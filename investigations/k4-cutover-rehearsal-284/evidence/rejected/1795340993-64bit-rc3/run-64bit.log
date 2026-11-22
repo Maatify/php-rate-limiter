@@ -1,0 +1,13 @@
+== width probe ==
+requested_width=64 expected_PHP_INT_SIZE=8 actual_PHP_INT_SIZE=8
+== redis-server (from inside redis container) ==
+Redis server v=7.0.15 sha=00000000:0 malloc=jemalloc-5.2.1 bits=64 build=d6d81b7b50ab2e83
+== php container ==
+git version 2.47.3
+PHP 8.4.27 PHP_INT_SIZE=8 ext-redis=6.3.0
+source HEAD=ca626bf9d6f6216036321c79bd8216df98d70b75 tree=b8bf598ffeceb8338744d5de3005878d43b799dc dirty_files=0 remote=https://github.com/Maatify/php-rate-limiter.git
+harness_sha256=e7f7ec01a61efcd46e79a902db0fc35ec38d4c54440eaee9f28d6a5e777c0e8a
+{"t":"09:49:52","tag":"source_origin_mismatch","class":"Maatify\\RateLimiter\\Tests\\Support\\Redis\\RespRedisCommandExecutor","file":"/deps/src/Tests/Support/Redis/RespRedisCommandExecutor.php"}
+SOURCE ORIGIN MISMATCH: Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor loaded from /deps/src/Tests/Support/Redis/RespRedisCommandExecutor.php, not from /work
+harness_exit_code=3
+container_exit_code=3

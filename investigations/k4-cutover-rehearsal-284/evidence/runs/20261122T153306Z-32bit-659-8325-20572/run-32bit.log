@@ -1,0 +1,25 @@
+== width probe ==
+requested_width=32 expected_PHP_INT_SIZE=4 actual_PHP_INT_SIZE=4
+== redis-server (from inside redis container) ==
+Redis server v=7.0.15 sha=00000000:0 malloc=jemalloc-5.2.1 bits=64 build=d6d81b7b50ab2e83
+== php container ==
+git version 2.47.3
+PHP 8.4.27 PHP_INT_SIZE=4 ext-redis=6.3.0
+source HEAD=ca626bf9d6f6216036321c79bd8216df98d70b75 tree=b8bf598ffeceb8338744d5de3005878d43b799dc dirty_files=0 remote=https://github.com/Maatify/php-rate-limiter.git
+harness_sha256=a231b22f2ea9ca9877570666ddd536230f534286003364fbf256213e591e62ba
+{
+    "mode": "int",
+    "checks": {
+        "php_int_size": 4,
+        "dcmp_big_gt": true,
+        "dcmp_big_eq": true,
+        "dcmp_len": true,
+        "dsub": true,
+        "naive_int_cast_preserves_ms": true,
+        "neg_one_not_decimal": true,
+        "ms_from_time": true
+    },
+    "ok": true
+}
+harness_exit_code=0
+container_exit_code=0

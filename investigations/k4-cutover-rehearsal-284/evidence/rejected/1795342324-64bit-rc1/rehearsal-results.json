@@ -1,0 +1,2627 @@
+{
+    "base": {
+        "php": "8.4.27",
+        "php_int_size": 8,
+        "ext_redis": "6.3.0",
+        "harness_sha256": "45022c1c89b9412dada85c42713bf1475924db926508d694324babfb5e15b7e1"
+    },
+    "source_origin": {
+        "Maatify\\RateLimiter\\Builder\\RateLimiterBuilder": {
+            "file": "/work/src/Builder/RateLimiterBuilder.php",
+            "sha256": "95ef1e91ec63712cd4ae95262e78b1181039282219e34e095bddb5b305a48825",
+            "from_clone": true
+        },
+        "Maatify\\RateLimiter\\Repository\\Redis\\RedisFullCapabilityStore": {
+            "file": "/work/src/Repository/Redis/RedisFullCapabilityStore.php",
+            "sha256": "996edefa85b230173d9ba5b85be51a51582dc45f18717f9b457985ad0dc97116",
+            "from_clone": true
+        },
+        "Maatify\\RateLimiter\\Service\\EvaluationPipeline": {
+            "file": "/work/src/Service/EvaluationPipeline.php",
+            "sha256": "919adaa4892867c49eec10c1795760bb06339eb5fbdf7d38930b899fdc44d993",
+            "from_clone": true
+        },
+        "Maatify\\RateLimiter\\Repository\\Redis\\RedisRequestOverlay": {
+            "file": "/work/src/Repository/Redis/RedisRequestOverlay.php",
+            "sha256": "b9420fd23ac909689fcbc4c21f24cf243bb18e34a96eecfd5789aac834de3816",
+            "from_clone": true
+        },
+        "Maatify\\RateLimiter\\Tests\\Support\\Redis\\RespRedisCommandExecutor": {
+            "file": "/work/tests/Support/Redis/RespRedisCommandExecutor.php",
+            "sha256": "d5272012ec927d9b2e9290768a45527630dfa2e04ee30a37683d96a894810798",
+            "from_clone": true
+        },
+        "Maatify\\RateLimiter\\Tests\\Support\\Redis\\OverlayWire": {
+            "file": "/work/tests/Support/Redis/OverlayWire.php",
+            "sha256": "338db2fc44e0478ce285c0daf4980e92e0ae3057750b8edf2817a1799341b2fa",
+            "from_clone": true
+        },
+        "Maatify\\RateLimiter\\DTO\\RateLimitContextDTO": {
+            "file": "/work/src/DTO/RateLimitContextDTO.php",
+            "sha256": "1b375d8d05f8b9f782c74e36edd309181d0844c461e388f37e85253357bf402d",
+            "from_clone": true
+        }
+    },
+    "scenarios": {
+        "A_login_protection_own_ns": {
+            "name": "A_login_protection_own_ns",
+            "policy_ns": {
+                "login_protection": "rl-login"
+            },
+            "intake_close": {
+                "accepted_at_close": "128",
+                "rejected_at_close": "0",
+                "accepted_later": "128",
+                "rejected_later": "33"
+            },
+            "k4_representability": {
+                "login_protection": {
+                    "census": {
+                        "families": {
+                            "score": 5,
+                            "block": 0,
+                            "budget": 5,
+                            "cycle": 0,
+                            "pause": 0,
+                            "watch": 0,
+                            "distinct": 0
+                        },
+                        "k4_block_max_expiry_ms": "0"
+                    },
+                    "reader_k4_score_hot_account": 6,
+                    "block_keys_in_ns_all_scopes": 16
+                }
+            },
+            "synthetic_blocks": {
+                "rl-login": {
+                    "key": "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0",
+                    "duration_s": 20,
+                    "pexpiretime_raw": "1795341521104",
+                    "redis_now_ms": "1795341501104"
+                }
+            },
+            "synthetic_previous_generation_block": {
+                "key": "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514",
+                "pexpiretime_raw": "1795341526132"
+            },
+            "timeline_redis_ms": {
+                "load_end": "1795341506109",
+                "intake_closed": "1795341506133",
+                "drained": "1795341508088",
+                "barrier_start": "1795341508088",
+                "barrier_applied": "1795341508089",
+                "connections_killed": "1795341509076",
+                "probes_done": "1795341509078",
+                "gate_while_block_active": "1795341509589",
+                "first_scan_done": "1795341509592",
+                "max_block_expiry_ms": "1795341562135",
+                "natural_expiry_passed": "1795341563401",
+                "final_scan_done": "1795341563942",
+                "activation_signal_set": "1795341567461",
+                "reopen_requested": "1795341570286",
+                "first_success_after_reopen": "1795341570509"
+            },
+            "measured": {
+                "drain_ms": "1955",
+                "barrier_and_probes_ms": "990",
+                "first_scan_ms": "514",
+                "wait_for_natural_expiry_ms": "53809",
+                "final_scan_and_gate_ms": "541",
+                "validity_hold_to_signal_ms": "3519",
+                "reopen_to_all_policies_verified_ms": "223",
+                "total_stop_to_all_policies_verified_ms": "64376",
+                "per_policy_reopen_to_verified_result_ms": {
+                    "login_protection": "36"
+                }
+            },
+            "probes": {
+                "per_user": {
+                    "w_direct": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_deferred": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_retry": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_legacy": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    }
+                },
+                "admin_per_user": {
+                    "w_direct": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    },
+                    "w_deferred": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    },
+                    "w_retry": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    },
+                    "w_legacy": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    }
+                },
+                "digest_before": "b13c7bdf3df2331dcc3d458ec07b900ed2f65a86:168",
+                "digest_after": "b13c7bdf3df2331dcc3d458ec07b900ed2f65a86:168",
+                "ctl_user_still_exists": true,
+                "acl_log_entries_new": 57
+            },
+            "user_profiles_after_barrier": {
+                "ctl": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all",
+                    "keys": "~*"
+                },
+                "default": {
+                    "flags": [
+                        "off",
+                        "nopass"
+                    ],
+                    "commands": "-@all",
+                    "keys": ""
+                },
+                "feeder": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "~rehearsal:*"
+                },
+                "w_deferred": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                },
+                "w_direct": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                },
+                "w_legacy": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                },
+                "w_retry": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                }
+            },
+            "killed_connections": {
+                "w_direct": 3,
+                "w_deferred": 2,
+                "w_retry": 2,
+                "w_legacy": 2
+            },
+            "gate_while_block_active": {
+                "ok": false,
+                "reasons": [
+                    "BLOCK_ACTIVE"
+                ],
+                "detail": {
+                    "intake": "closed",
+                    "accepted": [
+                        "128",
+                        "128"
+                    ],
+                    "rejected": [
+                        "64",
+                        "71"
+                    ],
+                    "drain_snapshots": [
+                        [
+                            0,
+                            [],
+                            []
+                        ],
+                        [
+                            0,
+                            [],
+                            []
+                        ]
+                    ],
+                    "queues_nonempty": [],
+                    "inflight_workers": [],
+                    "barrier_holes": [],
+                    "open_connections_of_unsafe_users": [],
+                    "user_profiles": {
+                        "ctl": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all",
+                            "keys": "~*"
+                        },
+                        "default": {
+                            "flags": [
+                                "off",
+                                "nopass"
+                            ],
+                            "commands": "-@all",
+                            "keys": ""
+                        },
+                        "feeder": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "~rehearsal:*"
+                        },
+                        "w_deferred": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_direct": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_legacy": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_retry": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        }
+                    },
+                    "continuity": {
+                        "run_id_same": true,
+                        "uptime_monotonic": true,
+                        "evicted_same": true,
+                        "sentinel_intact": true,
+                        "policy_noeviction": true
+                    },
+                    "redis_now_ms": "1795341509587",
+                    "block_keys_present": 17,
+                    "block_keys_seen_then_gone": 0,
+                    "active_remaining_ms": {
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "11517",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:0843d9c86cb8cadc88b4b305b8b3d6607ae291addcb74c78e5dc60bf20c4c548": "51484",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:6e254cc752eaf710fe8b0d0e76228ffdc5a0be6a578f7461aa87afadeabefebe": "50990",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:c6154e8da71e9047339f7dc53f7063bf5dbbacb3142746a05d9ac3b1996a570e": "51065",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:b51800ddc2b8eca08a5562eccc18f35ea0e8f5ed4e6ec3fedc634acaa14c30aa": "51446",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:ee2e757ccdebb5fe47f3f7f4ee547b40e1039d48c34dac99f0029c93b9e19096": "51062",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:bba0fb06eb0903c44d9831a793d36101435f0eff08436a2674f205a15a927d67": "51941",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:85fe03e89870b24a5abc8d69646ddf43439dfa9e40fe49f613e8e85b21c46718": "50918",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:4ed739bbea82b6d24055d94c9f52264e0a3a778bfc5112692537584034b2da12": "51006",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:51d68dd16c94ce045f46d2d6a0b9f406c2379454f3a9e906d3d59f5b3cca1a28": "52548",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "16545",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:d34b14db185770c6e46d325cbb98a8d57900f7fbff107e9125d80e5a27b8ad4e": "51149",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:8bf5ad06ba2249e8275f088f7c4e5c5b5676eb873466dbd29110b75a66653c48": "52059",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:aad26d88ce63ee98861573b9ac2f30a3924aa254f27b6c82c528e7d394ebaaab": "51419",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:39fd96914910c5cc6dfcc2e355001d3f85321adac4cb66f088759c7e56547313": "51314",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:d1e72600dba4dcf56ef2f884a3979c8c43f9489832baf58a79946a08b4827867": "50912",
+                        "maatify:rate-limiter:v1:8b111b43c5f6dfdaed92001c7a8402dd7ae192be4f1d4110864549d623c75d28:block:3af420d471508bbf925960a44f4d8dd3baf565717c84a334f499754cd4a0f659": "51187"
+                    },
+                    "unknown_expiry": [],
+                    "expired_but_present": 0,
+                    "ledger_violations": [],
+                    "event_violations": []
+                }
+            },
+            "gate_final": {
+                "ok": true,
+                "reasons": [],
+                "detail": {
+                    "intake": "closed",
+                    "accepted": [
+                        "128",
+                        "128"
+                    ],
+                    "rejected": [
+                        "1222",
+                        "1228"
+                    ],
+                    "drain_snapshots": [
+                        [
+                            0,
+                            [],
+                            []
+                        ],
+                        [
+                            0,
+                            [],
+                            []
+                        ]
+                    ],
+                    "queues_nonempty": [],
+                    "inflight_workers": [],
+                    "barrier_holes": [],
+                    "open_connections_of_unsafe_users": [],
+                    "user_profiles": {
+                        "ctl": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all",
+                            "keys": "~*"
+                        },
+                        "default": {
+                            "flags": [
+                                "off",
+                                "nopass"
+                            ],
+                            "commands": "-@all",
+                            "keys": ""
+                        },
+                        "feeder": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "~rehearsal:*"
+                        },
+                        "w_deferred": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_direct": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_legacy": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_retry": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        }
+                    },
+                    "continuity": {
+                        "run_id_same": true,
+                        "uptime_monotonic": true,
+                        "evicted_same": true,
+                        "sentinel_intact": true,
+                        "policy_noeviction": true
+                    },
+                    "redis_now_ms": "1795341563942",
+                    "block_keys_present": 0,
+                    "block_keys_seen_then_gone": 0,
+                    "active_remaining_ms": [],
+                    "unknown_expiry": [],
+                    "expired_but_present": 0,
+                    "unexplained_absence": [],
+                    "new_since_first_scan": [],
+                    "ledger_violations": [],
+                    "event_violations": []
+                }
+            },
+            "activation_permitted": true,
+            "reopen_per_policy": {
+                "login_protection": {
+                    "result": {
+                        "policy": "login_protection",
+                        "ok": true,
+                        "ms": "1795341570322",
+                        "allowed": false,
+                        "blocked": true,
+                        "class": "Maatify\\RateLimiter\\DTO\\RateLimitResultDTO"
+                    },
+                    "ns_keys_before": 151,
+                    "ns_keys_after": 162,
+                    "k4_census_for_the_account": {
+                        "score": 1,
+                        "block": 0,
+                        "budget": 1,
+                        "cycle": 0,
+                        "pause": 0,
+                        "watch": 0,
+                        "distinct": 0
+                    },
+                    "return_ms": "36",
+                    "verified": true
+                }
+            },
+            "worker_stats": {
+                "rehearsal:wstats:deferred-93": {
+                    "role": "deferred",
+                    "user": "w_deferred",
+                    "done": "15",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795341507859",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341509053"
+                },
+                "rehearsal:wstats:direct-98": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "1",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795341570322",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341570505"
+                },
+                "rehearsal:wstats:direct-97": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "0",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "0",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341570505"
+                },
+                "rehearsal:wstats:retry-94": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "9",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795341507248",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341509049"
+                },
+                "rehearsal:wstats:legacy-95": {
+                    "role": "legacy",
+                    "user": "w_legacy",
+                    "done": "114",
+                    "errors": "15",
+                    "noperm": "15",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795341508086",
+                    "first_noperm_ms": "1795341508159",
+                    "ts": "1795341509042"
+                },
+                "rehearsal:wstats:retry-100": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "0",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "0",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341570505"
+                },
+                "rehearsal:wstats:direct-92": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "52",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795341506115",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341509069"
+                },
+                "rehearsal:wstats:deferred-99": {
+                    "role": "deferred",
+                    "user": "w_deferred",
+                    "done": "0",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "0",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341570487"
+                },
+                "rehearsal:wstats:direct-91": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "59",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795341506083",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341509048"
+                }
+            }
+        },
+        "B_otp_protection_own_ns": {
+            "name": "B_otp_protection_own_ns",
+            "policy_ns": {
+                "otp_protection": "rl-otp"
+            },
+            "intake_close": {
+                "accepted_at_close": "128",
+                "rejected_at_close": "0",
+                "accepted_later": "128",
+                "rejected_later": "33"
+            },
+            "k4_representability": {
+                "otp_protection": {
+                    "census": {
+                        "families": {
+                            "score": 7,
+                            "block": 2,
+                            "budget": 7,
+                            "cycle": 2,
+                            "pause": 0,
+                            "watch": 0,
+                            "distinct": 0
+                        },
+                        "k4_block_max_expiry_ms": "1795341871365"
+                    },
+                    "reader_k4_score_hot_account": 10,
+                    "block_keys_in_ns_all_scopes": 19
+                }
+            },
+            "synthetic_blocks": {
+                "rl-otp": {
+                    "key": "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0",
+                    "duration_s": 20,
+                    "pexpiretime_raw": "1795341591553",
+                    "redis_now_ms": "1795341571553"
+                }
+            },
+            "synthetic_previous_generation_block": {
+                "key": "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514",
+                "pexpiretime_raw": "1795341596574"
+            },
+            "timeline_redis_ms": {
+                "load_end": "1795341576555",
+                "intake_closed": "1795341576575",
+                "drained": "1795341578542",
+                "barrier_start": "1795341578543",
+                "barrier_applied": "1795341578545",
+                "connections_killed": "1795341579537",
+                "probes_done": "1795341579539",
+                "gate_while_block_active": "1795341580049",
+                "first_scan_done": "1795341580052",
+                "max_block_expiry_ms": "1795341871365",
+                "natural_expiry_passed": "1795341872583",
+                "final_scan_done": "1795341873116",
+                "activation_signal_set": "1795341876629",
+                "reopen_requested": "1795341879505",
+                "first_success_after_reopen": "1795341879714"
+            },
+            "measured": {
+                "drain_ms": "1967",
+                "barrier_and_probes_ms": "997",
+                "first_scan_ms": "513",
+                "wait_for_natural_expiry_ms": "292531",
+                "final_scan_and_gate_ms": "533",
+                "validity_hold_to_signal_ms": "3513",
+                "reopen_to_all_policies_verified_ms": "209",
+                "total_stop_to_all_policies_verified_ms": "303139",
+                "per_policy_reopen_to_verified_result_ms": {
+                    "otp_protection": "45"
+                }
+            },
+            "probes": {
+                "per_user": {
+                    "w_direct": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_deferred": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_retry": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_legacy": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    }
+                },
+                "admin_per_user": {
+                    "w_direct": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    },
+                    "w_deferred": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    },
+                    "w_retry": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    },
+                    "w_legacy": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    }
+                },
+                "digest_before": "de5232d05ee29791d2da685ad8d5b8955c4c3f03:174",
+                "digest_after": "de5232d05ee29791d2da685ad8d5b8955c4c3f03:174",
+                "ctl_user_still_exists": true,
+                "acl_log_entries_new": 56
+            },
+            "user_profiles_after_barrier": {
+                "ctl": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all",
+                    "keys": "~*"
+                },
+                "default": {
+                    "flags": [
+                        "off",
+                        "nopass"
+                    ],
+                    "commands": "-@all",
+                    "keys": ""
+                },
+                "feeder": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "~rehearsal:*"
+                },
+                "w_deferred": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                },
+                "w_direct": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                },
+                "w_legacy": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                },
+                "w_retry": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                }
+            },
+            "killed_connections": {
+                "w_direct": 3,
+                "w_deferred": 2,
+                "w_retry": 2,
+                "w_legacy": 2
+            },
+            "gate_while_block_active": {
+                "ok": false,
+                "reasons": [
+                    "BLOCK_ACTIVE"
+                ],
+                "detail": {
+                    "intake": "closed",
+                    "accepted": [
+                        "128",
+                        "128"
+                    ],
+                    "rejected": [
+                        "66",
+                        "73"
+                    ],
+                    "drain_snapshots": [
+                        [
+                            0,
+                            [],
+                            []
+                        ],
+                        [
+                            0,
+                            [],
+                            []
+                        ]
+                    ],
+                    "queues_nonempty": [],
+                    "inflight_workers": [],
+                    "barrier_holes": [],
+                    "open_connections_of_unsafe_users": [],
+                    "user_profiles": {
+                        "ctl": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all",
+                            "keys": "~*"
+                        },
+                        "default": {
+                            "flags": [
+                                "off",
+                                "nopass"
+                            ],
+                            "commands": "-@all",
+                            "keys": ""
+                        },
+                        "feeder": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "~rehearsal:*"
+                        },
+                        "w_deferred": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_direct": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_legacy": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_retry": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        }
+                    },
+                    "continuity": {
+                        "run_id_same": true,
+                        "uptime_monotonic": true,
+                        "evicted_same": true,
+                        "sentinel_intact": true,
+                        "policy_noeviction": true
+                    },
+                    "redis_now_ms": "1795341580045",
+                    "block_keys_present": 20,
+                    "block_keys_seen_then_gone": 0,
+                    "active_remaining_ms": {
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:ef6a761c1b2edeec5d4155a047f3473f38c205203bb07121e39f1514727b8e89": "55435",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:1cfdcdeb78aec573fe2416708db337e7ef2bc78275eb1310198adf9fef12046a": "51451",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:5e65df1ccb48635b6868d20fde702aea35add130a0df93d5125375d5f954e33a": "51619",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:8102d3ada5e7610d298ad10adbab401f29092218d39b990c8d8ef42539ae02b4": "51060",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:4be2f258add60ca5e1446159c5f264a4e1a5123d6d38346dacd71651b37c81a3": "50913",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:0733f061c2de735e591c45a630c2217bfa264cefee587afe13c18b77039d432f": "291320",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "16529",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:6cea39243ad9da79f3a68f3036d772311e9acf88426b48a60c114597e1a89b54": "51319",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:5167288a046e60fa081449195a02ca8392707dd1eef7488b6befb5be3747f696": "54517",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:94ca7e37bd8edd733a63d73b727837604abb1f534f71a1b7a6d2fe260c089895": "51412",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "11508",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:2b9deb21a4f34e868dc558a65ce9964c896516f7660fc76a043e9c4a233c06fe": "50909",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:02bc27226a4bfadd60f801d92dd022a40ce6dbbe8d4db6836d1579b86d11f345": "51858",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:dde8e4f5e2767bd6261af5ec0c4e1f23cb3618c6940e6b6953b576dcfef45b9f": "291060",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:587a1c4ab70c7ff0afb49de8e810f88f4ac601dd79ce3bf62f43c6fbcd4b4929": "52140",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:4a515e386cbac19e0cd5943a4d886a5f793b62cc0ef3c572cf7efe3a4a77e321": "51290",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:731f9034e85acd314b5db3df9177554f84d90f31cddaa39aa76ef8757f45eeac": "50987",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:500906416fde75e3336b2fd7cea9c81ed92397bfe7e47d634e117f65fdc7051b": "51202",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:d4f7f363bf03461d9883ca9373f7c57f796602098a8e3baa4da1a3e84284d6b6": "290810",
+                        "maatify:rate-limiter:v1:f90111bed6ed312be246767648f76d37c893587f12648aba35424283d3e748f1:block:f4300a134bb8684167890fa7c6535dca8c8fea06be5fe5d09d4679c62eb723e9": "290910"
+                    },
+                    "unknown_expiry": [],
+                    "expired_but_present": 0,
+                    "ledger_violations": [],
+                    "event_violations": []
+                }
+            },
+            "gate_final": {
+                "ok": true,
+                "reasons": [],
+                "detail": {
+                    "intake": "closed",
+                    "accepted": [
+                        "128",
+                        "128"
+                    ],
+                    "rejected": [
+                        "6601",
+                        "6608"
+                    ],
+                    "drain_snapshots": [
+                        [
+                            0,
+                            [],
+                            []
+                        ],
+                        [
+                            0,
+                            [],
+                            []
+                        ]
+                    ],
+                    "queues_nonempty": [],
+                    "inflight_workers": [],
+                    "barrier_holes": [],
+                    "open_connections_of_unsafe_users": [],
+                    "user_profiles": {
+                        "ctl": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all",
+                            "keys": "~*"
+                        },
+                        "default": {
+                            "flags": [
+                                "off",
+                                "nopass"
+                            ],
+                            "commands": "-@all",
+                            "keys": ""
+                        },
+                        "feeder": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "~rehearsal:*"
+                        },
+                        "w_deferred": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_direct": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_legacy": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_retry": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        }
+                    },
+                    "continuity": {
+                        "run_id_same": true,
+                        "uptime_monotonic": true,
+                        "evicted_same": true,
+                        "sentinel_intact": true,
+                        "policy_noeviction": true
+                    },
+                    "redis_now_ms": "1795341873116",
+                    "block_keys_present": 0,
+                    "block_keys_seen_then_gone": 0,
+                    "active_remaining_ms": [],
+                    "unknown_expiry": [],
+                    "expired_but_present": 0,
+                    "unexplained_absence": [],
+                    "new_since_first_scan": [],
+                    "ledger_violations": [],
+                    "event_violations": []
+                }
+            },
+            "activation_permitted": true,
+            "reopen_per_policy": {
+                "otp_protection": {
+                    "result": {
+                        "policy": "otp_protection",
+                        "ok": true,
+                        "ms": "1795341879550",
+                        "allowed": false,
+                        "blocked": true,
+                        "class": "Maatify\\RateLimiter\\DTO\\RateLimitResultDTO"
+                    },
+                    "ns_keys_before": 154,
+                    "ns_keys_after": 164,
+                    "k4_census_for_the_account": {
+                        "score": 1,
+                        "block": 0,
+                        "budget": 1,
+                        "cycle": 0,
+                        "pause": 0,
+                        "watch": 0,
+                        "distinct": 0
+                    },
+                    "return_ms": "45",
+                    "verified": true
+                }
+            },
+            "worker_stats": {
+                "rehearsal:wstats:deferred-110": {
+                    "role": "deferred",
+                    "user": "w_deferred",
+                    "done": "0",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "0",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341879698"
+                },
+                "rehearsal:wstats:retry-111": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "0",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "0",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341879699"
+                },
+                "rehearsal:wstats:direct-108": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "1",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795341879550",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341879697"
+                },
+                "rehearsal:wstats:direct-102": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "66",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795341576518",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341579518"
+                },
+                "rehearsal:wstats:retry-105": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "7",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795341576849",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341579518"
+                },
+                "rehearsal:wstats:deferred-104": {
+                    "role": "deferred",
+                    "user": "w_deferred",
+                    "done": "11",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795341578290",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341579518"
+                },
+                "rehearsal:wstats:legacy-106": {
+                    "role": "legacy",
+                    "user": "w_legacy",
+                    "done": "113",
+                    "errors": "15",
+                    "noperm": "15",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795341578526",
+                    "first_noperm_ms": "1795341578605",
+                    "ts": "1795341579491"
+                },
+                "rehearsal:wstats:direct-103": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "50",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795341576560",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341579517"
+                },
+                "rehearsal:wstats:direct-109": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "0",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "0",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341879699"
+                }
+            }
+        },
+        "C_api_heavy_protection_own_ns": {
+            "name": "C_api_heavy_protection_own_ns",
+            "policy_ns": {
+                "api_heavy_protection": "rl-api"
+            },
+            "intake_close": {
+                "accepted_at_close": "135",
+                "rejected_at_close": "0",
+                "accepted_later": "135",
+                "rejected_later": "35"
+            },
+            "k4_representability": {
+                "api_heavy_protection": {
+                    "census": {
+                        "families": {
+                            "score": 0,
+                            "block": 0,
+                            "budget": 0,
+                            "cycle": 0,
+                            "pause": 0,
+                            "watch": 0,
+                            "distinct": 0
+                        },
+                        "k4_block_max_expiry_ms": "0"
+                    },
+                    "reader_k4_score_hot_account": 0,
+                    "block_keys_in_ns_all_scopes": 16
+                }
+            },
+            "synthetic_blocks": {
+                "rl-api": {
+                    "key": "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0",
+                    "duration_s": 20,
+                    "pexpiretime_raw": "1795341900739",
+                    "redis_now_ms": "1795341880739"
+                }
+            },
+            "synthetic_previous_generation_block": {
+                "key": "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514",
+                "pexpiretime_raw": "1795341905752"
+            },
+            "timeline_redis_ms": {
+                "load_end": "1795341885740",
+                "intake_closed": "1795341885753",
+                "drained": "1795341887408",
+                "barrier_start": "1795341887409",
+                "barrier_applied": "1795341887410",
+                "connections_killed": "1795341888394",
+                "probes_done": "1795341888396",
+                "gate_while_block_active": "1795341888895",
+                "first_scan_done": "1795341888897",
+                "max_block_expiry_ms": "1795341942644",
+                "natural_expiry_passed": "1795341944025",
+                "final_scan_done": "1795341944551",
+                "activation_signal_set": "1795341948054",
+                "reopen_requested": "1795341950928",
+                "first_success_after_reopen": "1795341951137"
+            },
+            "measured": {
+                "drain_ms": "1655",
+                "barrier_and_probes_ms": "988",
+                "first_scan_ms": "501",
+                "wait_for_natural_expiry_ms": "55128",
+                "final_scan_and_gate_ms": "526",
+                "validity_hold_to_signal_ms": "3503",
+                "reopen_to_all_policies_verified_ms": "209",
+                "total_stop_to_all_policies_verified_ms": "65384",
+                "per_policy_reopen_to_verified_result_ms": {
+                    "api_heavy_protection": "38"
+                }
+            },
+            "probes": {
+                "per_user": {
+                    "w_direct": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_deferred": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_retry": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_legacy": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    }
+                },
+                "admin_per_user": {
+                    "w_direct": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    },
+                    "w_deferred": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    },
+                    "w_retry": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    },
+                    "w_legacy": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    }
+                },
+                "digest_before": "a917b83db9553dd488915b5efb172dc3abc929ed:170",
+                "digest_after": "a917b83db9553dd488915b5efb172dc3abc929ed:170",
+                "ctl_user_still_exists": true,
+                "acl_log_entries_new": 57
+            },
+            "user_profiles_after_barrier": {
+                "ctl": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all",
+                    "keys": "~*"
+                },
+                "default": {
+                    "flags": [
+                        "off",
+                        "nopass"
+                    ],
+                    "commands": "-@all",
+                    "keys": ""
+                },
+                "feeder": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "~rehearsal:*"
+                },
+                "w_deferred": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                },
+                "w_direct": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                },
+                "w_legacy": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                },
+                "w_retry": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                }
+            },
+            "killed_connections": {
+                "w_direct": 3,
+                "w_deferred": 2,
+                "w_retry": 2,
+                "w_legacy": 2
+            },
+            "gate_while_block_active": {
+                "ok": false,
+                "reasons": [
+                    "BLOCK_ACTIVE"
+                ],
+                "detail": {
+                    "intake": "closed",
+                    "accepted": [
+                        "135",
+                        "135"
+                    ],
+                    "rejected": [
+                        "62",
+                        "69"
+                    ],
+                    "drain_snapshots": [
+                        [
+                            0,
+                            [],
+                            []
+                        ],
+                        [
+                            0,
+                            [],
+                            []
+                        ]
+                    ],
+                    "queues_nonempty": [],
+                    "inflight_workers": [],
+                    "barrier_holes": [],
+                    "open_connections_of_unsafe_users": [],
+                    "user_profiles": {
+                        "ctl": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all",
+                            "keys": "~*"
+                        },
+                        "default": {
+                            "flags": [
+                                "off",
+                                "nopass"
+                            ],
+                            "commands": "-@all",
+                            "keys": ""
+                        },
+                        "feeder": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "~rehearsal:*"
+                        },
+                        "w_deferred": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_direct": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_legacy": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_retry": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        }
+                    },
+                    "continuity": {
+                        "run_id_same": true,
+                        "uptime_monotonic": true,
+                        "evicted_same": true,
+                        "sentinel_intact": true,
+                        "policy_noeviction": true
+                    },
+                    "redis_now_ms": "1795341888893",
+                    "block_keys_present": 17,
+                    "block_keys_seen_then_gone": 0,
+                    "active_remaining_ms": {
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:c90644deaef70f4215370cce984661b85d1f5bc0c67a453ec6c66c07a2955deb": "51315",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:9ecb64677fcb77bcca90fce3a0464698418ddd6057fb26f8680e685c4c59c104": "51389",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:9c871126198a5be0fe298ba1f9174e352d6e6e16398f5e96d06079596fd1c8da": "51865",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:cf7fa51d31528da339ba17b88925dc490025d16ae10ee65f6515b857c093334e": "53751",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:0c0f4ff82c9919b6730797c6b2235d86a7e3e8ab252e1af54412c986cd95be06": "51455",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:251f145087a67f4aa0c1c5abc037fe01a1a9147603d3a356b6d16d8b8a4ab6c7": "51828",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:3e2f97e45389eb0ba2f6f1343ec2369f72b1d629a1272e98c63f27f2066d23f6": "51489",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "11846",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:b7e36762f34da43770679358d9e9826760805b9c0db2a007efb0c608d1c08e23": "51334",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:a99faa33b24a70c1524ca16289ac7f195bc7c355ee71885f66a3ab200cd3e371": "52363",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:625811478460d8549782d4718ecb19f652ff90022c980d6da71cea261d4ca64a": "51298",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "16859",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:e88ae599582e273efaa8abe645f57024dd4e9cc1ab4baffdf2c42911c4c76b94": "51429",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:4501e5d44165de4b71cbf5d3eb2780e112f3cdbb9556fa5c35fc832652e55596": "51613",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:52f9b5416e622b10fc9c580d01e56200b47cc4259c3eca99a49a698a340b1a35": "51526",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:4d838394d38a7ab1d43931c4aab4ad61bb559aec9722eaefc93eaac8469fe642": "51386",
+                        "maatify:rate-limiter:v1:e8bfcd0111a4bb5a416a3795bebaddd711ad1176ea9e611b911f3e00d46dfdd9:block:99e9da1a72a478781c1c335a7ca2359090b2fa43757196fc4e665035f04a14af": "51555"
+                    },
+                    "unknown_expiry": [],
+                    "expired_but_present": 0,
+                    "ledger_violations": [],
+                    "event_violations": []
+                }
+            },
+            "gate_final": {
+                "ok": true,
+                "reasons": [],
+                "detail": {
+                    "intake": "closed",
+                    "accepted": [
+                        "135",
+                        "135"
+                    ],
+                    "rejected": [
+                        "1334",
+                        "1341"
+                    ],
+                    "drain_snapshots": [
+                        [
+                            0,
+                            [],
+                            []
+                        ],
+                        [
+                            0,
+                            [],
+                            []
+                        ]
+                    ],
+                    "queues_nonempty": [],
+                    "inflight_workers": [],
+                    "barrier_holes": [],
+                    "open_connections_of_unsafe_users": [],
+                    "user_profiles": {
+                        "ctl": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all",
+                            "keys": "~*"
+                        },
+                        "default": {
+                            "flags": [
+                                "off",
+                                "nopass"
+                            ],
+                            "commands": "-@all",
+                            "keys": ""
+                        },
+                        "feeder": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "~rehearsal:*"
+                        },
+                        "w_deferred": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_direct": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_legacy": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_retry": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        }
+                    },
+                    "continuity": {
+                        "run_id_same": true,
+                        "uptime_monotonic": true,
+                        "evicted_same": true,
+                        "sentinel_intact": true,
+                        "policy_noeviction": true
+                    },
+                    "redis_now_ms": "1795341944551",
+                    "block_keys_present": 0,
+                    "block_keys_seen_then_gone": 0,
+                    "active_remaining_ms": [],
+                    "unknown_expiry": [],
+                    "expired_but_present": 0,
+                    "unexplained_absence": [],
+                    "new_since_first_scan": [],
+                    "ledger_violations": [],
+                    "event_violations": []
+                }
+            },
+            "activation_permitted": true,
+            "reopen_per_policy": {
+                "api_heavy_protection": {
+                    "result": {
+                        "policy": "api_heavy_protection",
+                        "ok": true,
+                        "ms": "1795341950966",
+                        "allowed": false,
+                        "blocked": true,
+                        "class": "Maatify\\RateLimiter\\DTO\\RateLimitResultDTO"
+                    },
+                    "ns_keys_before": 153,
+                    "ns_keys_after": 164,
+                    "k4_census_for_the_account": {
+                        "score": 0,
+                        "block": 0,
+                        "budget": 0,
+                        "cycle": 0,
+                        "pause": 0,
+                        "watch": 0,
+                        "distinct": 0
+                    },
+                    "return_ms": "38",
+                    "verified": true
+                }
+            },
+            "worker_stats": {
+                "rehearsal:wstats:retry-116": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "13",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795341886986",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341888382"
+                },
+                "rehearsal:wstats:retry-122": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "0",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "0",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341951137"
+                },
+                "rehearsal:wstats:deferred-115": {
+                    "role": "deferred",
+                    "user": "w_deferred",
+                    "done": "14",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795341886482",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341888367"
+                },
+                "rehearsal:wstats:legacy-117": {
+                    "role": "legacy",
+                    "user": "w_legacy",
+                    "done": "114",
+                    "errors": "16",
+                    "noperm": "16",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795341887379",
+                    "first_noperm_ms": "1795341887448",
+                    "ts": "1795341888374"
+                },
+                "rehearsal:wstats:deferred-121": {
+                    "role": "deferred",
+                    "user": "w_deferred",
+                    "done": "0",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "0",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341951137"
+                },
+                "rehearsal:wstats:direct-113": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "45",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795341885764",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341888368"
+                },
+                "rehearsal:wstats:direct-120": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "0",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "0",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341951120"
+                },
+                "rehearsal:wstats:direct-119": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "1",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795341950966",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341951112"
+                },
+                "rehearsal:wstats:direct-114": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "75",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795341885708",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341888382"
+                }
+            }
+        },
+        "D_login_and_otp_shared_ns": {
+            "name": "D_login_and_otp_shared_ns",
+            "policy_ns": {
+                "login_protection": "rl-shared",
+                "otp_protection": "rl-shared"
+            },
+            "intake_close": {
+                "accepted_at_close": "272",
+                "rejected_at_close": "0",
+                "accepted_later": "272",
+                "rejected_later": "70"
+            },
+            "k4_representability": {
+                "login_protection": {
+                    "census": {
+                        "families": {
+                            "score": 6,
+                            "block": 0,
+                            "budget": 6,
+                            "cycle": 0,
+                            "pause": 0,
+                            "watch": 0,
+                            "distinct": 0
+                        },
+                        "k4_block_max_expiry_ms": "0"
+                    },
+                    "reader_k4_score_hot_account": 3,
+                    "block_keys_in_ns_all_scopes": 36
+                },
+                "otp_protection": {
+                    "census": {
+                        "families": {
+                            "score": 9,
+                            "block": 5,
+                            "budget": 9,
+                            "cycle": 3,
+                            "pause": 0,
+                            "watch": 0,
+                            "distinct": 0
+                        },
+                        "k4_block_max_expiry_ms": "1795342252198"
+                    },
+                    "reader_k4_score_hot_account": 10,
+                    "block_keys_in_ns_all_scopes": 36
+                }
+            },
+            "synthetic_blocks": {
+                "rl-shared": {
+                    "key": "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0",
+                    "duration_s": 40,
+                    "pexpiretime_raw": "1795341992163",
+                    "redis_now_ms": "1795341952163"
+                }
+            },
+            "synthetic_previous_generation_block": {
+                "key": "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514",
+                "pexpiretime_raw": "1795341997191"
+            },
+            "timeline_redis_ms": {
+                "load_end": "1795341957165",
+                "intake_closed": "1795341957192",
+                "drained": "1795341959452",
+                "barrier_start": "1795341959453",
+                "barrier_applied": "1795341959454",
+                "connections_killed": "1795341960487",
+                "probes_done": "1795341960488",
+                "gate_while_block_active": "1795341961011",
+                "first_scan_done": "1795341961016",
+                "max_block_expiry_ms": "1795342252198",
+                "natural_expiry_passed": "1795342253559",
+                "final_scan_done": "1795342254104",
+                "reopen_requested": "1795342257110",
+                "first_success_after_reopen": "1795342257328"
+            },
+            "measured": {
+                "drain_ms": "2260",
+                "barrier_and_probes_ms": "1036",
+                "first_scan_ms": "528",
+                "wait_for_natural_expiry_ms": "292543",
+                "final_scan_and_gate_ms": "545",
+                "validity_hold_to_signal_ms": "n/a",
+                "reopen_to_all_policies_verified_ms": "218",
+                "total_stop_to_all_policies_verified_ms": "300136",
+                "per_policy_reopen_to_verified_result_ms": {
+                    "login_protection": "45",
+                    "otp_protection": "45"
+                }
+            },
+            "probes": {
+                "per_user": {
+                    "w_direct": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_deferred": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_retry": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    },
+                    "w_legacy": {
+                        "incrementAt": "DENIED",
+                        "setAt": "DENIED",
+                        "blockAt": "DENIED",
+                        "replaceScoreAt": "DENIED",
+                        "incrementBudgetAt": "DENIED",
+                        "addDistinctAt": "DENIED",
+                        "incrementWatchFlagAt": "DENIED",
+                        "bumpBindingEpoch": "DENIED",
+                        "claimPostPunishmentReentryAt": "DENIED",
+                        "limit_recordFailure": "DENIED",
+                        "raw_SET": "DENIED",
+                        "raw_EVAL_HSET": "DENIED"
+                    }
+                },
+                "admin_per_user": {
+                    "w_direct": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    },
+                    "w_deferred": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    },
+                    "w_retry": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    },
+                    "w_legacy": {
+                        "ACL_SETUSER_self_allkeys": "DENIED",
+                        "CONFIG_SET": "DENIED",
+                        "FLUSHALL": "DENIED",
+                        "FLUSHDB": "DENIED",
+                        "DEBUG_SLEEP": "DENIED",
+                        "ACL_DELUSER_ctl": "DENIED"
+                    }
+                },
+                "digest_before": "56a7c8d1774f63c36a6bea3a1b35a70d596b7d0d:359",
+                "digest_after": "56a7c8d1774f63c36a6bea3a1b35a70d596b7d0d:359",
+                "ctl_user_still_exists": true,
+                "acl_log_entries_new": 57
+            },
+            "user_profiles_after_barrier": {
+                "ctl": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all",
+                    "keys": "~*"
+                },
+                "default": {
+                    "flags": [
+                        "off",
+                        "nopass"
+                    ],
+                    "commands": "-@all",
+                    "keys": ""
+                },
+                "feeder": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "~rehearsal:*"
+                },
+                "w_deferred": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                },
+                "w_direct": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                },
+                "w_legacy": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                },
+                "w_retry": {
+                    "flags": [
+                        "on",
+                        "sanitize-payload"
+                    ],
+                    "commands": "+@all -@dangerous -function",
+                    "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                }
+            },
+            "killed_connections": {
+                "w_direct": 3,
+                "w_deferred": 2,
+                "w_retry": 2,
+                "w_legacy": 2
+            },
+            "gate_while_block_active": {
+                "ok": false,
+                "reasons": [
+                    "BLOCK_ACTIVE"
+                ],
+                "detail": {
+                    "intake": "closed",
+                    "accepted": [
+                        "272",
+                        "272"
+                    ],
+                    "rejected": [
+                        "154",
+                        "168"
+                    ],
+                    "drain_snapshots": [
+                        [
+                            0,
+                            [],
+                            []
+                        ],
+                        [
+                            0,
+                            [],
+                            []
+                        ]
+                    ],
+                    "queues_nonempty": [],
+                    "inflight_workers": [],
+                    "barrier_holes": [],
+                    "open_connections_of_unsafe_users": [],
+                    "user_profiles": {
+                        "ctl": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all",
+                            "keys": "~*"
+                        },
+                        "default": {
+                            "flags": [
+                                "off",
+                                "nopass"
+                            ],
+                            "commands": "-@all",
+                            "keys": ""
+                        },
+                        "feeder": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "~rehearsal:*"
+                        },
+                        "w_deferred": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_direct": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_legacy": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_retry": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        }
+                    },
+                    "continuity": {
+                        "run_id_same": true,
+                        "uptime_monotonic": true,
+                        "evicted_same": true,
+                        "sentinel_intact": true,
+                        "policy_noeviction": true
+                    },
+                    "redis_now_ms": "1795341961006",
+                    "block_keys_present": 37,
+                    "block_keys_seen_then_gone": 0,
+                    "active_remaining_ms": {
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:85fe03e89870b24a5abc8d69646ddf43439dfa9e40fe49f613e8e85b21c46718": "51035",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:d1e72600dba4dcf56ef2f884a3979c8c43f9489832baf58a79946a08b4827867": "50668",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:b51800ddc2b8eca08a5562eccc18f35ea0e8f5ed4e6ec3fedc634acaa14c30aa": "50796",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:731f9034e85acd314b5db3df9177554f84d90f31cddaa39aa76ef8757f45eeac": "50701",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:2afd9023d17e8f4bf6051332ed96dae157b5dd88bea23ac787b57d0a9a78e62a": "5424",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:8102d3ada5e7610d298ad10adbab401f29092218d39b990c8d8ef42539ae02b4": "51170",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:4be2f258add60ca5e1446159c5f264a4e1a5123d6d38346dacd71651b37c81a3": "51191",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:5e65df1ccb48635b6868d20fde702aea35add130a0df93d5125375d5f954e33a": "52091",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:4ed739bbea82b6d24055d94c9f52264e0a3a778bfc5112692537584034b2da12": "50537",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:ee2e757ccdebb5fe47f3f7f4ee547b40e1039d48c34dac99f0029c93b9e19096": "51747",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:d34b14db185770c6e46d325cbb98a8d57900f7fbff107e9125d80e5a27b8ad4e": "50898",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:5167288a046e60fa081449195a02ca8392707dd1eef7488b6befb5be3747f696": "51342",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:3af420d471508bbf925960a44f4d8dd3baf565717c84a334f499754cd4a0f659": "51214",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:6cea39243ad9da79f3a68f3036d772311e9acf88426b48a60c114597e1a89b54": "51622",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:39fd96914910c5cc6dfcc2e355001d3f85321adac4cb66f088759c7e56547313": "52188",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:94ca7e37bd8edd733a63d73b727837604abb1f534f71a1b7a6d2fe260c089895": "50893",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:0843d9c86cb8cadc88b4b305b8b3d6607ae291addcb74c78e5dc60bf20c4c548": "51255",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:ef6a761c1b2edeec5d4155a047f3473f38c205203bb07121e39f1514727b8e89": "51090",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:02bc27226a4bfadd60f801d92dd022a40ce6dbbe8d4db6836d1579b86d11f345": "50761",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:fac2edd4a49bdd68e7b55c2e22b13543e4f6d43c89867297cc96a60eab324514": "36185",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:ea1051a4fb71d14d9ace6e9e7c08cb6b90b3ca68ead8e42e8d0cc16f2c492ecc": "5671",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:6e254cc752eaf710fe8b0d0e76228ffdc5a0be6a578f7461aa87afadeabefebe": "50559",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:c6154e8da71e9047339f7dc53f7063bf5dbbacb3142746a05d9ac3b1996a570e": "51317",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:2b9deb21a4f34e868dc558a65ce9964c896516f7660fc76a043e9c4a233c06fe": "51243",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:c1c293c45515b01cc30293d5e8e381c0475b6e9ae96913c8b5a451307833ad64": "291192",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:51d68dd16c94ce045f46d2d6a0b9f406c2379454f3a9e906d3d59f5b3cca1a28": "51341",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:1cfdcdeb78aec573fe2416708db337e7ef2bc78275eb1310198adf9fef12046a": "51016",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:bba0fb06eb0903c44d9831a793d36101435f0eff08436a2674f205a15a927d67": "50629",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:8bf5ad06ba2249e8275f088f7c4e5c5b5676eb873466dbd29110b75a66653c48": "52064",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:500906416fde75e3336b2fd7cea9c81ed92397bfe7e47d634e117f65fdc7051b": "50797",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:3ad4deb3a2b6ebf6c31fde6647df5c5591e1a9981b1a85f2c6da81b85a508986": "50926",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:217c7c3c775535f8e4bff4d51def7b4fea9b3ac1f9111520ee37a0875688d9c0": "31157",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:d4f7f363bf03461d9883ca9373f7c57f796602098a8e3baa4da1a3e84284d6b6": "290926",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:587a1c4ab70c7ff0afb49de8e810f88f4ac601dd79ce3bf62f43c6fbcd4b4929": "52354",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:4a515e386cbac19e0cd5943a4d886a5f793b62cc0ef3c572cf7efe3a4a77e321": "50706",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:6a3d0bb46ed70dc1200f439a37f65dd489c21b7d3d766a57671ab61909fd4923": "290762",
+                        "maatify:rate-limiter:v1:99882cea8ff361b1d0292a9c4763b2e9a3696e31fb03fb32d493a99c6a3d70b6:block:aad26d88ce63ee98861573b9ac2f30a3924aa254f27b6c82c528e7d394ebaaab": "50571"
+                    },
+                    "unknown_expiry": [],
+                    "expired_but_present": 0,
+                    "ledger_violations": [],
+                    "event_violations": []
+                }
+            },
+            "gate_final": {
+                "ok": false,
+                "reasons": [
+                    "BLOCK_EARLY_ABSENCE_OR_CHANGE"
+                ],
+                "detail": {
+                    "intake": "closed",
+                    "accepted": [
+                        "272",
+                        "272"
+                    ],
+                    "rejected": [
+                        "13096",
+                        "13108"
+                    ],
+                    "drain_snapshots": [
+                        [
+                            0,
+                            [],
+                            []
+                        ],
+                        [
+                            0,
+                            [],
+                            []
+                        ]
+                    ],
+                    "queues_nonempty": [],
+                    "inflight_workers": [],
+                    "barrier_holes": [],
+                    "open_connections_of_unsafe_users": [],
+                    "user_profiles": {
+                        "ctl": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all",
+                            "keys": "~*"
+                        },
+                        "default": {
+                            "flags": [
+                                "off",
+                                "nopass"
+                            ],
+                            "commands": "-@all",
+                            "keys": ""
+                        },
+                        "feeder": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "~rehearsal:*"
+                        },
+                        "w_deferred": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_direct": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_legacy": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        },
+                        "w_retry": {
+                            "flags": [
+                                "on",
+                                "sanitize-payload"
+                            ],
+                            "commands": "+@all -@dangerous -function",
+                            "keys": "%R~maatify:rate-limiter:v1:* ~rehearsal:*"
+                        }
+                    },
+                    "continuity": {
+                        "run_id_same": true,
+                        "uptime_monotonic": true,
+                        "evicted_same": true,
+                        "sentinel_intact": true,
+                        "policy_noeviction": true
+                    },
+                    "redis_now_ms": "1795342254103",
+                    "block_keys_present": 0,
+                    "block_keys_seen_then_gone": 0,
+                    "active_remaining_ms": [],
+                    "unknown_expiry": [],
+                    "expired_but_present": 0,
+                    "unexplained_absence": [],
+                    "new_since_first_scan": [],
+                    "ledger_violations": [
+                        {
+                            "key": "60bf20c4c548",
+                            "recorded": "1795342012261",
+                            "observed": "-2",
+                            "redis_ms": "1795342012260"
+                        }
+                    ],
+                    "event_violations": []
+                }
+            },
+            "activation_permitted": false,
+            "reopen_per_policy": {
+                "login_protection": {
+                    "result": {
+                        "policy": "login_protection",
+                        "ok": true,
+                        "ms": "1795342257155",
+                        "allowed": false,
+                        "blocked": true,
+                        "class": "Maatify\\RateLimiter\\DTO\\RateLimitResultDTO"
+                    },
+                    "ns_keys_before": 322,
+                    "ns_keys_after": 343,
+                    "k4_census_for_the_account": {
+                        "score": 1,
+                        "block": 0,
+                        "budget": 1,
+                        "cycle": 0,
+                        "pause": 0,
+                        "watch": 0,
+                        "distinct": 0
+                    },
+                    "return_ms": "45",
+                    "verified": true
+                },
+                "otp_protection": {
+                    "result": {
+                        "policy": "otp_protection",
+                        "ok": true,
+                        "ms": "1795342257155",
+                        "allowed": false,
+                        "blocked": true,
+                        "class": "Maatify\\RateLimiter\\DTO\\RateLimitResultDTO"
+                    },
+                    "ns_keys_before": 322,
+                    "ns_keys_after": 343,
+                    "k4_census_for_the_account": {
+                        "score": 1,
+                        "block": 0,
+                        "budget": 1,
+                        "cycle": 0,
+                        "pause": 0,
+                        "watch": 0,
+                        "distinct": 0
+                    },
+                    "return_ms": "45",
+                    "verified": true
+                }
+            },
+            "worker_stats": {
+                "rehearsal:wstats:direct-130": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "1",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795342257155",
+                    "first_noperm_ms": "0",
+                    "ts": "1795342257328"
+                },
+                "rehearsal:wstats:deferred-132": {
+                    "role": "deferred",
+                    "user": "w_deferred",
+                    "done": "0",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "0",
+                    "first_noperm_ms": "0",
+                    "ts": "1795342257329"
+                },
+                "rehearsal:wstats:direct-125": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "130",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795341957195",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341960467"
+                },
+                "rehearsal:wstats:direct-124": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "111",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795341957195",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341960480"
+                },
+                "rehearsal:wstats:legacy-128": {
+                    "role": "legacy",
+                    "user": "w_legacy",
+                    "done": "123",
+                    "errors": "16",
+                    "noperm": "16",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795341959447",
+                    "first_noperm_ms": "1795341959519",
+                    "ts": "1795341960442"
+                },
+                "rehearsal:wstats:deferred-126": {
+                    "role": "deferred",
+                    "user": "w_deferred",
+                    "done": "25",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795341959164",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341960478"
+                },
+                "rehearsal:wstats:retry-127": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "35",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795341959105",
+                    "first_noperm_ms": "0",
+                    "ts": "1795341960467"
+                },
+                "rehearsal:wstats:retry-133": {
+                    "role": "retry",
+                    "user": "w_retry",
+                    "done": "0",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "0",
+                    "first_noperm_ms": "0",
+                    "ts": "1795342257313"
+                },
+                "rehearsal:wstats:direct-131": {
+                    "role": "direct",
+                    "user": "w_direct",
+                    "done": "1",
+                    "errors": "0",
+                    "noperm": "0",
+                    "conn_lost": "0",
+                    "last_ok_ms": "1795342257155",
+                    "first_noperm_ms": "0",
+                    "ts": "1795342257309"
+                }
+            }
+        }
+    },
+    "negative": {
+        "N1_hung_request_blocks_gate": {
+            "denied": [
+                "NOT_DRAINED"
+            ],
+            "after": []
+        },
+        "N1b_request_between_pull_and_inflight_registration": {
+            "held_snapshot": [
+                1,
+                [
+                    "rehearsal:q:proc:direct-139=1"
+                ],
+                []
+            ],
+            "denied": [
+                "NOT_DRAINED",
+                "WRITE_BARRIER_HOLE",
+                "OPEN_CONNECTION_OF_UNSAFE_USER"
+            ]
+        },
+        "N2_pending_retry_and_delayed_jobs_block_gate": {
+            "denied": [
+                "NOT_DRAINED"
+            ]
+        },
+        "N3_unrevoked_writer_and_off_user_with_open_connection": {
+            "holes": [
+                "w_legacy:SET",
+                "w_legacy:DEL",
+                "w_legacy:HSET",
+                "w_legacy:EXPIRE",
+                "w_legacy:PEXPIREAT",
+                "w_legacy:INCRBY",
+                "w_legacy:ZADD"
+            ],
+            "after_off": [
+                "OPEN_CONNECTION_OF_UNSAFE_USER"
+            ],
+            "after_kill": []
+        },
+        "N4_unknown_expiry": {
+            "reasons": [
+                "BLOCK_UNKNOWN_EXPIRY"
+            ]
+        },
+        "N4b_early_delete_is_unexplained_absence": {
+            "reasons": [
+                "BLOCK_UNEXPLAINED_ABSENCE"
+            ]
+        },
+        "N4cd_ledger_and_events_catch_early_delete_and_truncation": {
+            "reasons": [
+                "BLOCK_EARLY_ABSENCE_OR_CHANGE",
+                "BLOCK_EVENT_VIOLATION"
+            ],
+            "ledger": [
+                {
+                    "key": "bb8604049276",
+                    "recorded": "1795342292034",
+                    "observed": "-2",
+                    "redis_ms": "1795342278242"
+                },
+                {
+                    "key": "b5fdd9a74b98",
+                    "recorded": "1795342294035",
+                    "observed": "1795342279039",
+                    "redis_ms": "1795342278242"
+                }
+            ],
+            "events": [
+                "del@1795342278039 key=bb8604049276 recorded_expiry=1795342292034",
+                "expire@1795342278039 key=b5fdd9a74b98 recorded_expiry=1795342294035",
+                "expired@1795342279130 key=b5fdd9a74b98 recorded_expiry=1795342294035"
+            ]
+        },
+        "N4e_last_moment_delete_caught_by_events": {
+            "left_ms_at_delete": "115",
+            "events": [
+                "del@1795342306231 key=fcee24a4a6c6 recorded_expiry=1795342306346"
+            ],
+            "reasons": [
+                "BLOCK_EVENT_VIOLATION"
+            ]
+        },
+        "N5_data_continuity_break_sentinel_lost": {
+            "reasons": [
+                "DATA_CONTINUITY_BROKEN"
+            ]
+        },
+        "N6_late_writer_after_barrier_denied_and_gate_holds": {
+            "legacy_noperm": 25,
+            "acl_log_legacy": 1,
+            "gate": [
+                "BLOCK_ACTIVE"
+            ]
+        },
+        "N8_request_at_commit_when_barrier_lands": {
+            "held_gate": [
+                "NOT_DRAINED",
+                "WRITE_BARRIER_HOLE",
+                "OPEN_CONNECTION_OF_UNSAFE_USER"
+            ],
+            "result": {
+                "policy": "login_protection",
+                "ok": false,
+                "error": "NOPERM this user has no permissions to access one of the keys used as arguments"
+            },
+            "after": []
+        },
+        "N8b_connection_cut_while_commit_pending": {
+            "killed": {
+                "w_direct": 2,
+                "w_deferred": 1,
+                "w_retry": 1,
+                "w_legacy": 0
+            },
+            "census_after": {
+                "score": 0,
+                "block": 0,
+                "budget": 0,
+                "cycle": 0,
+                "pause": 0,
+                "watch": 0,
+                "distinct": 0
+            }
+        },
+        "N5b_eviction_breaks_continuity": {
+            "evicted_keys": 3284,
+            "reasons": [
+                "INTAKE_NOT_CLOSED",
+                "DATA_CONTINUITY_BROKEN"
+            ]
+        },
+        "N7_redis_restart_breaks_continuity_and_barrier": {
+            "reasons": [
+                "INTAKE_NOT_CLOSED",
+                "WRITE_BARRIER_HOLE",
+                "OPEN_CONNECTION_OF_UNSAFE_USER",
+                "DATA_CONTINUITY_BROKEN"
+            ]
+        }
+    },
+    "control_failures": 2
+}
