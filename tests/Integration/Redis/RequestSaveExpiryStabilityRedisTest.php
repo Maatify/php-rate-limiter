@@ -7,6 +7,7 @@ namespace Maatify\RateLimiter\Tests\Integration\Redis;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
 use Maatify\RateLimiter\DTO\GenerationBoundScoreStateDTO;
+use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
@@ -129,6 +130,7 @@ final class RequestSaveExpiryStabilityRedisTest extends TestCase
             'one above the exact limit' => ['9007199254740993'],
             'three above the exact limit' => ['9007199254740995'],
             'far above' => ['9223372036854775000'],
+            'the Redis maximum' => ['9223372036854775807'],
         ];
     }
 
@@ -177,7 +179,9 @@ final class RequestSaveExpiryStabilityRedisTest extends TestCase
 
         self::assertSame($before, $this->observed(), 'Nothing was written: the value and the expiry are unchanged.');
         self::assertInstanceOf(RateLimiterException::class, $caught);
-        self::assertStringContainsString('expiry', $caught->getMessage());
+        self::assertStringContainsString('expiry beyond the exactly readable range', $caught->getMessage());
+        self::assertStringNotContainsString('malformed plan', $caught->getMessage(), 'The exactness guard comes before the validation of a plan derived from a rounded value (F294-04).');
+        self::assertStringNotContainsString($this->rawKey(), $caught->getMessage(), 'No key name in the refusal.');
     }
 
     public function testARivalThatMovesOnlyTheExpiryByOneMillisecondIsDetectedAndTheRequestIsCalculatedAgain(): void
@@ -253,5 +257,77 @@ final class RequestSaveExpiryStabilityRedisTest extends TestCase
         }
         self::assertSame($before, $this->executor->execute(['DUMP', $key]));
         self::assertSame('9007199254740995', $this->expiryOf($key), 'A read changes nothing.');
+    }
+
+    private function scoreKey(): string
+    {
+        return 'maatify:rate-limiter:v1:' . hash('sha256', self::NAMESPACE) . ':score:' . hash('sha256', 'a');
+    }
+
+    private function seedReadOnlyKey(string $expiry): void
+    {
+        $this->executor->execute(['HSET', $this->scoreKey(), 'value', '5', 'updatedAt', '1']);
+        self::assertSame(1, $this->executor->execute(['PEXPIREAT', $this->scoreKey(), $expiry]));
+    }
+
+    public function testAReadOnlyKeyOfAWritingRequestMustBeProvablyUnchangedOrTheSaveIsRefused(): void
+    {
+        // F294-03: A is only read; a rival moves its expiry from ...995 to ...996, which Lua sees as the same double. The request writes B, so it is refused.
+        $this->seed((string) ((time() + 86400) * 1000 + 123));
+        $this->seedReadOnlyKey('9007199254740995');
+        $rival = '9007199254740996';
+
+        $caught = null;
+        try {
+            $this->store->transactRequest(function () use ($rival): BudgetStateDTO {
+                $this->store->get('a');
+                $state = $this->increment();
+                self::assertSame(1, $this->executor->execute(['PEXPIREAT', $this->scoreKey(), $rival]));
+
+                return $state;
+            });
+        } catch (\Throwable $exception) {
+            $caught = $exception;
+        }
+
+        self::assertInstanceOf(RateLimiterException::class, $caught);
+        self::assertStringContainsString('expiry beyond the exactly readable range', $caught->getMessage());
+        self::assertSame('1', $this->storedCount(), 'B was not written.');
+        self::assertSame($rival, $this->expiryOf($this->scoreKey()), 'The rival expiry of A is untouched.');
+    }
+
+    public function testAReadOnlyRequestOverAnUnreadableExpiryIsNotRefused(): void
+    {
+        // DEC-040: reading alone stays as it was.
+        $this->seedReadOnlyKey('9007199254740995');
+
+        $state = $this->store->transactRequest(fn(): ?RateLimitStateDTO => $this->store->get('a'));
+
+        self::assertNotNull($state);
+        self::assertSame(5, $state->value);
+        self::assertSame('9007199254740995', $this->expiryOf($this->scoreKey()));
+    }
+
+    public function testADirectCallCanCreateAnExpiryAboveTheRangeAndARequestSaveOverItIsRefused(): void
+    {
+        // F294-05: the direct call accepts a TTL the policies never use; the expiry it creates is beyond 2^53 ms.
+        if (PHP_INT_SIZE < 8) {
+            self::markTestSkipped('A 32-bit build cannot pass a TTL that large; the other cases reach the range with PEXPIREAT.');
+        }
+        $this->store->incrementAt('big', 9_007_199_254_741, 1, time());
+        $key = 'maatify:rate-limiter:v1:' . hash('sha256', self::NAMESPACE) . ':score:' . hash('sha256', 'big');
+        self::assertGreaterThanOrEqual(self::EXACT_LIMIT, $this->expiryOf($key));
+        $before = $this->expiryOf($key);
+
+        $caught = null;
+        try {
+            $this->store->transactRequest(fn(): int => $this->store->incrementAt('big', 9_007_199_254_741, 1, time()));
+        } catch (\Throwable $exception) {
+            $caught = $exception;
+        }
+
+        self::assertInstanceOf(RateLimiterException::class, $caught);
+        self::assertStringContainsString('expiry beyond the exactly readable range', $caught->getMessage());
+        self::assertSame($before, $this->expiryOf($key));
     }
 }

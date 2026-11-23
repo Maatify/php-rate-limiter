@@ -1,4 +1,4 @@
-# DEC-045 — Request Save Refuses a Rewritten Key Whose Expiry Lua Cannot Read Exactly
+# DEC-045 — A Writing Request Is Refused When a Key It Read Has an Expiry Lua Cannot Read Exactly
 
 ## Decision ID
 
@@ -18,7 +18,7 @@
 
 ## Scope / Concern
 
-What the commit of `transactRequest()` on the official Redis store (`RedisRequestOverlay::commitScript()`) does with a key whose **physical expiry** is at or above 2^53 milliseconds, the first integer a Lua number (an IEEE double) can no longer tell from its neighbour. It concerns the save and its conflict check only.
+What the commit of `transactRequest()` on the official Redis store (`RedisRequestOverlay::commitScript()`) does with a request that **writes** when any key it read has a **physical expiry** at or above 2^53 milliseconds, the first integer a Lua number (an IEEE double) can no longer tell from its neighbour. It concerns the save and its conflict check only.
 
 ## Context
 
@@ -26,11 +26,12 @@ Lua receives the integer reply of `PEXPIRETIME` as a double. Below 2^53 the valu
 
 ## Decision
 
-1. **A save that would rewrite a key whose live expiry is at or above 2^53 ms is refused before its first write.** The commit script answers an error reply `request commit: a key to be saved has an expiry beyond the exactly readable range (2^53 ms); nothing was saved`. It is a server reply classified as every other commit refusal (DEC-042's `NOPERM request commit`); it is never retried and nothing is saved.
+1. **A request that writes is refused before its first write when any key it read has a live expiry at or above 2^53 ms.** The commit script answers an error reply `request commit: a key of the request has an expiry beyond the exactly readable range (2^53 ms); nothing was saved`, which never names a key. It is a server reply classified as every other commit refusal (DEC-042's `NOPERM request commit`); it is never retried and nothing is saved. The guard covers every key the request read, not only those it rewrites: a key it only read cannot be proven unchanged either (a rival that moves such an expiry to a neighbouring value is invisible to Lua), and a save over an unproven read would break the all-or-nothing contract.
 2. **A changed state is a conflict first (DEC-037).** The refusal is evaluated after the fingerprint comparison of every key of the request. A key whose state moved between the read and the save, including an expiry that moved from below 2^53 to or above it (the fingerprint of an exactly read value never equals that of a rounded one), makes the commit answer "not current", so the request is evaluated again within its bounds. The refusal then applies to the evaluation that reads the value Lua cannot hold.
-3. **Reads are unchanged (DEC-040).** The overlay's live read keeps its historical behavior at every expiry, including the legacy lifecycle read inside `transactRequest()` and its refusal on a 32-bit build. The refusal never fires for a request that rewrites no key, or for a key the request only read.
-4. **Below 2^53 ms, and for a key without an expiry, nothing changes.** The expiry is saved to the millisecond, or the key stays without one, and a rival that moves it by one millisecond is a conflict.
-5. **The ACL check of the write plan is unchanged (DEC-042),** and the new check issues no command beyond the `PEXPIRETIME` the commit already uses.
+3. **The guard comes before the validation of the write plan.** A plan derived from a rounded expiry (for example the Redis maximum, whose rounded value exceeds the maximum) must be refused by this guard with its own message, not judged `malformed plan`.
+4. **Reads are unchanged (DEC-040).** The overlay's live read keeps its historical behavior at every expiry, including the legacy lifecycle read inside `transactRequest()` and its refusal on a 32-bit build. A request that writes nothing is never refused by this decision, whatever the expiries it read.
+5. **Below 2^53 ms, and for a key without an expiry, nothing changes.** The expiry is saved to the millisecond, or the key stays without one, and a rival that moves it by one millisecond is a conflict.
+6. **The ACL check of the write plan is unchanged (DEC-042),** and the guard issues no command beyond the `PEXPIRETIME` the commit's read already uses.
 
 ## Rationale
 
@@ -39,7 +40,8 @@ Lua receives the integer reply of `PEXPIRETIME` as a double. Below 2^53 the valu
 
 ## Consequences
 
-- A request that rewrites a key whose expiry is at or above 2^53 ms (about the year 285,000) is refused instead of saved a few hundred milliseconds off. No package-owned key carries such an expiry; a Host-written one is outside the contract.
+- **Policy durations versus direct calls.** The default policies and the package's own state use durations whose expiry is far below 2^53 ms (about the year 285,000), so no package-owned key reaches this range through them. A **direct** store call is not bound by the policies: on a 64-bit build `incrementAt()` accepts a TTL such as 9,007,199,254,741 seconds and creates an expiry above 2^53 ms (measured in `RequestSaveExpiryStabilityRedisTest`), and a Host-written key can carry one as well. A request that writes while it holds such a key is refused as above; the same key read or written directly keeps working. A 32-bit build cannot pass such a TTL, but can meet the range through a key written by another client.
+- A request that wrote nothing keeps its answer; only a writing request pays the refusal.
 - The `RequestSaveExpiryStabilityRedisTest` suite (groups `integration`, `php32`, `request-expiry-stability`) is the before/after verification.
 
 ## Relationship to Other Decisions

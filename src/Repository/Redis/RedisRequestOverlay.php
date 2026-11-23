@@ -617,6 +617,21 @@ for index, entry in ipairs(__entries) do
   __unreadable[index] = rounded
 end
 if ARGV[2] == 'verify' then return 1 end
+-- #287 (DEC-045): Lua reads a key's expiry as a double, exact only below 2^53 ms, so such an expiry can neither be saved back to the millisecond nor
+-- proven unchanged by the fingerprint above. When the request writes anything, every key it read must be provably unchanged: one whose expiry is at or
+-- above that range refuses the save here, after the fingerprints matched (a changed state is a conflict first, DEC-037), before the plan is validated (a
+-- plan derived from a rounded value must not be judged) and before the first write. A request that writes nothing is not refused (reads, DEC-040).
+local __writes = false
+for _, entry in ipairs(__entries) do
+  if entry[2].d == 1 then __writes = true end
+end
+if __writes then
+  for index in ipairs(__entries) do
+    if __unreadable[index] then
+      return redis.error_reply('request commit: a key of the request has an expiry beyond the exactly readable range (2^53 ms); nothing was saved')
+    end
+  end
+end
 -- The whole plan is validated before the first write: a script error after a write has started cannot be undone.
 for _, entry in ipairs(__entries) do
   local e = entry[2]
@@ -647,14 +662,6 @@ for _, entry in ipairs(__entries) do
     end
     if valid and e.x ~= nil and (type(e.x) ~= 'string' or string.match(e.x, '^[1-9]%d*$') == nil or #e.x > 19 or (#e.x == 19 and e.x > '9223372036854775807')) then valid = false end
     if not valid then return redis.error_reply('request commit: malformed plan for ' .. entry[1]) end
-  end
-end
--- #287 (DEC-045): Lua reads a key's expiry as a double, exact only below 2^53 ms. A key this save is about to rewrite whose live expiry is at or above
--- that cannot be saved back to the millisecond, nor proven unchanged by the fingerprint above, so the save is refused here, after the fingerprints
--- matched (a changed state is a conflict first, DEC-037) and before the first write. Reads and entries that are not rewritten are not affected.
-for index, entry in ipairs(__entries) do
-  if entry[2].d == 1 and __unreadable[index] then
-    return redis.error_reply('request commit: a key to be saved has an expiry beyond the exactly readable range (2^53 ms); nothing was saved')
   end
 end
 -- The write plan: the exact command sequence the save will issue, with its real keys, arguments, order and batches. It is built first, from the
