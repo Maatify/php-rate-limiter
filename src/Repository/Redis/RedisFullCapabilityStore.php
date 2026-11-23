@@ -3176,10 +3176,11 @@ LUA;
      * save that was applied in full. The outcome is then unknown to the caller; it is never a partial save
      * (`RequestAtomicityRecoveryOutageRedisTest` covers both cases).
      *
-     * A key whose physical expiry is at or above 2^53 milliseconds is refused with an `ERR request expiry beyond the exactly readable range` error
-     * reply, never saved: Lua reads `PEXPIRETIME` as a double, which cannot hold that expiry to the millisecond, so neither a literal save nor an
-     * exact comparison with a rival's change is possible. The refusal happens while the key is read and again before the commit's first write,
-     * so nothing is saved (#287). Any smaller expiry, and a key without one, is saved exactly as it was.
+     * A save that would rewrite a key whose physical expiry is at or above 2^53 milliseconds is refused with a `request commit: … expiry beyond the
+     * exactly readable range …` error reply and nothing is saved (DEC-045): Lua reads `PEXPIRETIME` as a double, which cannot hold that expiry to the
+     * millisecond, so it can neither be saved back literally nor compared exactly. The refusal comes after the fingerprint comparison, so a key whose
+     * state changed is still a conflict first (DEC-037), and before the commit's first write. Reads, including the legacy lifecycle read (DEC-040), and
+     * keys the save does not rewrite are not affected. Any smaller expiry, and a key without one, is saved exactly as it was.
      *
      * A Redis ACL refusal of a command of the save is raised before the first write as a `NOPERM request commit: …` error reply (DEC-042): a
      * server error reply, not a `BackendFailureException`, never retried here, with nothing saved.

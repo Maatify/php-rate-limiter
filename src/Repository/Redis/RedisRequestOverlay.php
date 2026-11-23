@@ -49,16 +49,11 @@ local function __ser(t, v, x)
   return table.concat(parts, '\0')
 end
 local function __loadLive(key)
-  if __real.call('EXISTS', key) == 0 then return {t = 'n', o = 'n'} end
+  if __real.call('EXISTS', key) == 0 then return {t = 'n', o = 'n'}, false end
   local kind = __real.call('TYPE', key)
   if type(kind) == 'table' then kind = kind.ok end
   local e = {}
   local ms = __real.call('PEXPIRETIME', key)
-  -- #287: Lua receives the integer reply as a double, exact only below 2^53. An expiry at or above it cannot be read, fingerprinted or saved
-  -- back to the millisecond, so the request is refused here, before anything is written (the overlay only reads; the commit re-reads first).
-  if ms >= 9007199254740992 then
-    error({err = 'ERR request expiry beyond the exactly readable range: the key expiry is not below 2^53 milliseconds, nothing was saved'})
-  end
   if ms >= 0 then e.x = string.format('%.0f', ms) end
   if kind == 'string' then
     e.t = 's'
@@ -85,7 +80,8 @@ local function __loadLive(key)
     error({err = 'WRONGTYPE Operation against a key holding the wrong kind of value'})
   end
   e.o = __real.sha1hex(__ser(e.t, e.v, e.x))
-  return e
+  -- The second value tells whether the expiry reached Lua as a double that may be rounded (>= 2^53 ms): the commit refuses to rewrite such a key (DEC-045).
+  return e, ms >= 9007199254740992
 end
 LUA;
 
@@ -614,8 +610,11 @@ for _, pair in ipairs(__payload) do
   if not __declared[pair[1]] then return redis.error_reply('request commit: key is not declared in KEYS') end
   __entries[#__entries + 1] = {pair[1], cjson.decode(pair[2])}
 end
-for _, entry in ipairs(__entries) do
-  if __loadLive(entry[1]).o ~= entry[2].o then return 0 end
+local __unreadable = {}
+for index, entry in ipairs(__entries) do
+  local live, rounded = __loadLive(entry[1])
+  if live.o ~= entry[2].o then return 0 end
+  __unreadable[index] = rounded
 end
 if ARGV[2] == 'verify' then return 1 end
 -- The whole plan is validated before the first write: a script error after a write has started cannot be undone.
@@ -648,6 +647,14 @@ for _, entry in ipairs(__entries) do
     end
     if valid and e.x ~= nil and (type(e.x) ~= 'string' or string.match(e.x, '^[1-9]%d*$') == nil or #e.x > 19 or (#e.x == 19 and e.x > '9223372036854775807')) then valid = false end
     if not valid then return redis.error_reply('request commit: malformed plan for ' .. entry[1]) end
+  end
+end
+-- #287 (DEC-045): Lua reads a key's expiry as a double, exact only below 2^53 ms. A key this save is about to rewrite whose live expiry is at or above
+-- that cannot be saved back to the millisecond, nor proven unchanged by the fingerprint above, so the save is refused here, after the fingerprints
+-- matched (a changed state is a conflict first, DEC-037) and before the first write. Reads and entries that are not rewritten are not affected.
+for index, entry in ipairs(__entries) do
+  if entry[2].d == 1 and __unreadable[index] then
+    return redis.error_reply('request commit: a key to be saved has an expiry beyond the exactly readable range (2^53 ms); nothing was saved')
   end
 end
 -- The write plan: the exact command sequence the save will issue, with its real keys, arguments, order and batches. It is built first, from the

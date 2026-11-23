@@ -6,6 +6,7 @@ namespace Maatify\RateLimiter\Tests\Integration\Redis;
 
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
+use Maatify\RateLimiter\DTO\GenerationBoundScoreStateDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
@@ -82,6 +83,27 @@ final class RequestSaveExpiryStabilityRedisTest extends TestCase
         return (string) $expiry;
     }
 
+    /** The counter as Redis holds it after the call, read from outside the store. */
+    private function storedCount(): string
+    {
+        $count = $this->executor->execute(['HGET', $this->rawKey(), 'count']);
+        self::assertIsString($count);
+
+        return $count;
+    }
+
+    /** @param callable(): ?GenerationBoundScoreStateDTO $call */
+    private function outcome(callable $call): string
+    {
+        try {
+            $state = $call();
+
+            return 'answer:' . ($state === null ? 'null' : $state->value . ':' . $state->expiresAt);
+        } catch (RateLimiterException $exception) {
+            return 'refusal:' . $exception->getMessage();
+        }
+    }
+
     private function increment(): BudgetStateDTO
     {
         return $this->store->incrementBudgetAt('b', 86400, 1, self::NOW + 5);
@@ -118,6 +140,7 @@ final class RequestSaveExpiryStabilityRedisTest extends TestCase
         $state = $this->store->transactRequest(fn(): BudgetStateDTO => $this->increment());
 
         self::assertSame(2, $state->count);
+        self::assertSame('2', $this->storedCount(), 'The save reached Redis: the counter is measured there, not in the reply.');
         self::assertSame($expiry, $this->observed()[1], 'The expiry is kept to the millisecond.');
     }
 
@@ -159,8 +182,9 @@ final class RequestSaveExpiryStabilityRedisTest extends TestCase
 
     public function testARivalThatMovesOnlyTheExpiryByOneMillisecondIsDetectedAndTheRequestIsCalculatedAgain(): void
     {
-        $expiry = (string) ((time() + 86400) * 1000 + 123);
-        $rival = (string) ((time() + 86400) * 1000 + 124);
+        $base = (time() + 86400) * 1000 + 123; // one time sample: the rival differs from the seeded expiry by exactly 1 ms
+        $expiry = (string) $base;
+        $rival = (string) ($base + 1);
         $this->seed($expiry);
 
         $evaluations = 0;
@@ -177,20 +201,26 @@ final class RequestSaveExpiryStabilityRedisTest extends TestCase
 
         self::assertSame(2, $evaluations, 'The moved expiry is a conflict: the request is read and calculated again.');
         self::assertSame(2, $state->count);
+        self::assertSame('2', $this->storedCount());
         self::assertSame($rival, $this->observed()[1], 'The rival expiry is preserved, not overwritten by the first read.');
     }
 
-    public function testARivalThatMovesTheExpiryToAnUnreadableValueBeforeTheSaveIsNeverOverwritten(): void
+    public function testARivalThatCrossesIntoTheUnreadableRangeIsAConflictFirstAndTheSaveIsThenRefused(): void
     {
-        $this->seed((string) ((time() + 86400) * 1000 + 123));
+        // F294-02: the transition from 2^53-1 (exact) to 2^53+1 proves the state changed, so DEC-037's conflict path applies: the request is
+        // evaluated again. The second evaluation reads an expiry that cannot be saved back exactly, so the save is refused before any write.
+        $this->seed('9007199254740991');
         $rival = '9007199254740993';
 
+        $evaluations = 0;
         $caught = null;
         try {
-            $this->store->transactRequest(function () use ($rival): BudgetStateDTO {
+            $this->store->transactRequest(function () use (&$evaluations, $rival): BudgetStateDTO {
+                $evaluations++;
                 $state = $this->increment();
-                // Between the read (exact) and the save, a rival moves only the expiry to a value Lua cannot compare exactly.
-                self::assertSame(1, $this->executor->execute(['PEXPIREAT', $this->rawKey(), $rival]));
+                if ($evaluations === 1) {
+                    self::assertSame(1, $this->executor->execute(['PEXPIREAT', $this->rawKey(), $rival]));
+                }
 
                 return $state;
             });
@@ -198,9 +228,30 @@ final class RequestSaveExpiryStabilityRedisTest extends TestCase
             $caught = $exception;
         }
 
-        self::assertInstanceOf(RateLimiterException::class, $caught, 'An expiry that cannot be compared exactly refuses the save.');
-        self::assertSame($rival, $this->observed()[1], 'The rival expiry is untouched and the count was not saved.');
-        $dump = $this->executor->execute(['HGET', $this->rawKey(), 'count']);
-        self::assertSame('1', $dump);
+        self::assertSame(2, $evaluations, 'The crossing is a conflict: the request is evaluated again before it is refused.');
+        self::assertInstanceOf(RateLimiterException::class, $caught);
+        self::assertStringContainsString('expiry', $caught->getMessage());
+        self::assertSame($rival, $this->observed()[1], 'The rival expiry is untouched.');
+        self::assertSame('1', $this->storedCount(), 'Nothing was saved.');
+    }
+
+    public function testAReadInsideARequestAnswersAsTheDirectReadDoesWhenTheExpiryIsUnreadable(): void
+    {
+        // F294-01 (DEC-040): the guard concerns the save only. A legacy lifecycle read keeps its answer, or its own refusal, inside transactRequest().
+        $key = 'maatify:rate-limiter:v1:' . hash('sha256', self::NAMESPACE) . ':score:' . hash('sha256', 'k');
+        $this->executor->execute(['HSET', $key, 'value', '8', 'updatedAt', '1']);
+        self::assertSame(1, $this->executor->execute(['PEXPIREAT', $key, '9007199254740995']));
+        $before = $this->executor->execute(['DUMP', $key]);
+        $read = fn(): ?GenerationBoundScoreStateDTO => $this->store->readGenerationBoundScoreStateAtMilliseconds('k', null, '1800000000000');
+
+        $direct = $this->outcome($read);
+        $inside = $this->outcome(fn(): ?GenerationBoundScoreStateDTO => $this->store->transactRequest($read));
+
+        self::assertSame($direct, $inside, 'Inside transactRequest() the read answers exactly as the direct read does.');
+        if (PHP_INT_SIZE === 8) {
+            self::assertStringStartsWith('answer:8:', $direct, 'On a 64-bit build the legacy read of this expiry succeeds.');
+        }
+        self::assertSame($before, $this->executor->execute(['DUMP', $key]));
+        self::assertSame('9007199254740995', $this->expiryOf($key), 'A read changes nothing.');
     }
 }

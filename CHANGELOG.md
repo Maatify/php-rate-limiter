@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
-### Fixed (#287) — A request commit never rewrites an inherited Redis expiry
+### Fixed (#287) — A request commit never rewrites an inherited Redis expiry (DEC-045)
 
-- `transactRequest()` read a key's physical expiry through Lua, which holds integers exactly only below 2^53. An expiry at or above 2^53 milliseconds was therefore saved up to hundreds of milliseconds off, and a rival that changed only that expiry between the read and the save went unnoticed and was overwritten. The request is now refused (`ERR request expiry beyond the exactly readable range`) while such a key is read, and again before the commit's first write, with nothing saved. Expiries below 2^53 ms, and keys without an expiry, are saved exactly as before; the DEC-040 read answer, the DEC-037 compare-before-write and the DEC-042 ACL check of the write plan are unchanged.
+- `transactRequest()` read a key's physical expiry through Lua, which holds integers exactly only below 2^53. A save that rewrote a key whose expiry was at or above 2^53 milliseconds wrote it up to hundreds of milliseconds off, and a rival that changed only that expiry went unnoticed and was overwritten. Such a save is now refused (`request commit: … expiry beyond the exactly readable range …`) before its first write, after the fingerprint comparison, so a changed state is still a conflict first and the request is evaluated again. Reads (DEC-040) and keys the save does not rewrite are unchanged; expiries below 2^53 ms, and keys without an expiry, are saved exactly as before; the ACL check of the write plan (DEC-042) is unchanged.
 
 ### Fixed (#285) — Local fallback `Retry-After` stays exact on PHP 32-bit
 
