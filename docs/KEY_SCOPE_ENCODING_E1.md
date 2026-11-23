@@ -305,11 +305,21 @@ invariants, and the mechanism that satisfies them is an implementation choice (D
    `distinct` and `distinct-meta` hold only Set B hashes) throws `RateLimiterException` before any Redis command. It is a
    defect in the E1 runtime, not a legacy path, because only the E1 runtime can hold a carrier.
 
-Two admissible mechanisms, recommended order: **(a)** the E1-capable store capability exposes a handle bound to the E1
-layout (no change to the existing methods; the pipeline already knows per key whether it is a K1 or a K4 key and uses the
-matching handle; both handles share one executor, so one request commit still saves both layouts); **(b)** a typed key
-object accepted by a new E1 capability whose methods mirror the ones the pipeline uses. (b) cannot reuse the existing
-`string`-typed methods under `strict_types` and so widens the new surface; D-4 chooses.
+**The two layouts must be one transaction.** On `main@35398c11` the held request state (`$this->requestState`), the
+exclusive request ownership of DEC-041 (`guarded()`) and the evaluation in the overlay (`eval()` → `evalInRequest()`) live
+**inside the store object**, and `transactRequest()` commits that one state. Sharing a Redis executor between two store
+objects does not join them: each would hold its own overlay and its own ownership, and a request that writes a K1 key
+(`v1`) and a K4 key (`e1`) would commit twice, so it could be saved in one layout and refused or lost in the other. That
+would break DEC-037's all-or-none save for exactly the requests E1 is for.
+
+Two admissible mechanisms, recommended order: **(a)** the E1-capable store exposes a **view bound to the E1 layout of the
+same store instance**: it is not a second store. It delegates every call to the same object, so it uses the same
+`requestState` overlay, the same ownership guard and the same `transactRequest()`; only the physical-key function differs.
+The pipeline already knows per key whether it is a K1 or a K4 key and uses the matching view. **(b)** a typed key object
+accepted by a new E1 capability whose methods mirror the ones the pipeline uses; it also runs on the one store object, but
+it cannot reuse the existing `string`-typed methods under `strict_types` and so widens the new surface. D-4 chooses, and
+**either choice is admissible only if a view or key never owns separate request state.** A mechanism that constructs an
+independent store (or a second overlay, or a second ownership claim) is refused by this contract. Acceptance is AC-9.
 
 Consequences that the acceptance tests check (§9, AC-5): with the same inputs, every physical key of §5.3 families and every
 K1–K3 key is identical in an E1 runtime and a V2 runtime; every Set A key exists only under `…:e1:…`; no Set A key exists
@@ -320,13 +330,15 @@ shows that plain strings, including `e1.`-prefixed and 64-hex ones in each of th
 
 ### 6.3 Consequences for the Host
 
-- **ACL.** A Redis account restricted to `~maatify:rate-limiter:v1:*` must also be granted `~maatify:rate-limiter:e1:*`
-  before E1 is selected. What a missing grant does depends on the path, and E1 adds no promise beyond the two existing
-  records:
-  - **Request save.** The `commit` script checks its actual write plan with `redis.acl_check_cmd` after the state
-    comparison and before the first write; a refusal is `NOPERM request commit: …`, raised before any write, deletion or
-    expiry change, and the keyspace is unchanged (DEC-042). Refusals of a read command, of `EVAL` or of the key scope also
-    happen before any write (DEC-042, Context).
+- **ACL.** A Redis account restricted to `~maatify:rate-limiter:v1:*` must be granted the `e1` key prefix before E1 is
+  selected, **for reads as well as writes**. Two different guards act, and they must not be confused:
+  - **Entry guard (before the save).** A refusal of a read command, of `EVAL` itself or of the key scope happens before any
+    write and leaves everything unchanged (DEC-042, Context). With only the `v1` grant, an E1 request is refused here, at
+    the read or script entry, and never reaches `commit`. This is not the DEC-042 preflight.
+  - **Save guard (DEC-042).** Only when the account can read the E1 keys and run the evaluation, but lacks a write command
+    or permission of the plan, does `commit` check its actual write plan with `redis.acl_check_cmd` after the state
+    comparison and before the first write; the refusal is `NOPERM request commit: …`, raised before any write, deletion or
+    expiry change, with the keyspace unchanged.
   - **Direct scripts.** A refused **expiry** command is classified `NOPERM` and the script deletes the keys *that call
     created*; it does not restore a key the branch had already deleted or rewritten, and an unchanged keyspace is evidenced
     only for the states DEC-043 measured (DEC-043, Decision 2). E1 makes no wider claim for direct calls.
@@ -346,21 +358,25 @@ cycle rule, a lifecycle rule or a rotation rule. Therefore, for E1 runtimes:
   atomically into Current; `max()` and Cartesian merges stay forbidden for budget state; at most one Previous generation.
   A Previous E1 key is an E1 key derived with the previous secret or material. **A V2 key is never a Previous generation of
   an E1 key** and is never read.
-- **Expiry.** Physical lifetimes and logical deadlines are the ones the existing scripts set. Evidence is taken from outside
-  Lua with `PEXPIRETIME`, and it must distinguish **three cases**, because two absolute expiries from two separate runs are
-  not comparable unless the clock they derive from is the same:
-  1. **Inherited expiry** (an operation that must keep the expiry the key already had, such as a counter update on an
-     existing key, or the request save of an unchanged lifetime). Compared **literally, in one run**: the absolute
-     `PEXPIRETIME` read before the operation equals the one read after it. This is the case #287 measured.
-  2. **Deadline derived from caller-supplied time** (DEC-016: the capability receives the time). With the same injected
-     time and TTL the absolute expiry is deterministic, so the E1 key and the V2 key are compared **exactly** across layouts.
-  3. **New expiry built from a TTL against Redis time.** The absolute value depends on the `TIME` of that run, so it is
-     **not** compared between a V2 run and an E1 run. Each run samples Redis `TIME` immediately before and after the
-     operation and asserts `expiry − TIME` lies inside the bracket the TTL implies; parity is judged on that delta (and on
-     the bracket width recorded with it), never on the absolute timestamps.
+- **Expiry.** The **logical** deadline and the **physical** lifetime are different things and are evidenced separately
+  (DEC-016: logical deadlines are the caller's time plus a TTL; physical key lifetimes stay relative on the Redis clock;
+  the request overlay and commit use Redis `TIME` for physical expiry bookkeeping, DEC-037). E1 changes neither. Physical
+  evidence is taken from outside Lua with `PEXPIRETIME`; logical evidence is the stored deadline value read with `DUMP`
+  or the family's own read. Three cases:
+  1. **Logical deadline from caller-supplied time.** With the same injected time and TTL the stored `expiresAt` is
+     deterministic: the E1 key and the V2 key are compared **exactly** across layouts. This says nothing about the
+     physical TTL of the same key.
+  2. **Physical expiry that the path must preserve** (an operation that keeps the physical lifetime the key already had,
+     such as the request save of an unchanged lifetime, which is the path #287 measured). Compared **literally, in one
+     run**: `PEXPIRETIME` before the operation equals `PEXPIRETIME` after it. The literal comparison is attached **only**
+     to a path that actually pins the physical expiry; it is not applied to a path whose expiry is re-derived from a TTL.
+  3. **New physical TTL built from a relative TTL on the Redis clock.** The absolute value depends on the `TIME` of that
+     run and is **not** compared between a V2 run and an E1 run. Each run samples Redis `TIME` immediately before and after
+     the operation and asserts `PEXPIRETIME − TIME` lies inside the bracket the TTL implies; parity is judged on that
+     delta and on the recorded bracket width, never on absolute timestamps.
 
   **The request path is blocked on #287** (a counter update inside `transactRequest()` moved the inherited absolute expiry by
-  1 ms in Docker evidence on PHP32 and PHP64). Acceptance of E1 on the atomic request save requires case 1 to hold on that
+  1 ms in Docker evidence on PHP32 and PHP64). Acceptance of E1 on the atomic request save requires case 2 to hold on that
   path: #287 is resolved, or its measured effect is explicitly accepted by the Owner. The E1 design does not depend on how
   #287 is fixed.
 - **Atomicity.** Every write remains one Lua script on the direct path or one overlay commit for a request (DEC-037, with
@@ -396,13 +412,14 @@ asserted before anything runs and the raw outputs kept. Synthetic data only.
 | ID | Evidence |
 |---|---|
 | AC-1 | The §3.7 vectors, the golden V2 values from `main@35398c11`, and the hex preimage reproduce byte for byte on both widths. |
-| AC-2 | Injectivity of the E1 encoding: a generated corpus over fields with `:`, NUL, multibyte, empty and long values; a decoder that parses every preimage back to the exact tuple; distinct tuples never give equal preimages or equal keys. E1 only; no state is created under V2 ambiguity. The length bound of §3.2 is shown through a seam that supplies the length (a field of `2^32` bytes is not allocated): a length above `0xFFFFFFFF` is refused before `pack()`, before any HMAC and before any store command, on both widths; `0xFFFFFFFF` itself and `0` encode. |
+| AC-2 | Injectivity of the E1 encoding, **per integer width**. Both widths: a generated corpus over fields with `:`, NUL, multibyte, empty and long values; a decoder that parses every preimage back to the exact tuple; distinct tuples never give equal preimages or equal keys; the shared vectors of §3.7 identical on both. The corpus and the key comparison are evidence **on the sample**, not a proof; the proof is the length-prefix argument of §3.2. Length bound through a seam that supplies the length (no `2^32`-byte string is allocated): **PHP64** tests `0`, `1`, `0xFFFFFFFE`, `0xFFFFFFFF` (all encode, prefix equals the supplied length), `0x100000000` and `PHP_INT_MAX` (refused before `pack()`, before any HMAC and before any store command). **PHP32** tests every representable length (`0`, `1`, `2^24`, `PHP_INT_MAX = 2^31 − 1`, all encode, none refused) and records that the refusal is unreachable on that width because `strlen` cannot exceed `PHP_INT_MAX`. `PHP_INT_SIZE` is asserted first and the raw output kept. |
 | AC-3 | Writer and reader share one derivation source: a parity matrix (lane U/P, with and without an instance id, one secret and a rotation with Current and Previous) for every §3.4 purpose, plus a source guard that no `hash_hmac` of an account-bearing preimage remains outside the component. Generalises `FamilyReaderParityTest`. |
 | AC-4 | Rotation: Current-only, previous secret, previous material, both, equal-key de-duplication; writes only to Current; Previous never written; budget seeding atomic; no `max()`; **a V2 key for the same account is never read and no V2 key is written for a Set A identity by an E1 runtime**. |
 | AC-5 | Stability and separation: differential run of the same traffic on a V2 runtime and an E1 runtime in the same Redis; physical keys, values and expiries of §5.3 families and K1–K3 are identical; Set A keys exist only under `…:e1:…` and never under `…:v1:…`; Set B differences are exactly the documented set; an E1 carrier in a foreign family throws before any command; **direct-call differential**: plain strings, including `e1.`-prefixed, exact `e1.`+64-hex and malformed ones, passed to the existing store methods in each of the ten families, give the `main@35398c11` physical keys and are not refused, with E1 selected and unselected. |
-| AC-6 | Expiry, rotation and lifecycle on E1 keys: the existing suites run against both encodings (DEC-003 cycle and pause, DEC-007 lifecycle and claim, budget rotation continuity, device-generation rotation), with expiry compared by `PEXPIRETIME` **per the three cases of §7** (inherited: literal before/after in one run; caller-time deadline: exact across layouts; Redis-time TTL: bracketed by `TIME`, never absolute across runs); the request path as stated in §7 (#287). |
-| AC-7 | Request atomic save on E1 (DEC-037/041/042): conflict recalculation; interruption leaves no partial prefix; an account with only the `v1` key grant gets the DEC-042 `NOPERM` from `commit` with an unchanged keyspace and succeeds once `e1` is granted. For direct scripts the evidence is limited to DEC-043: a refused expiry command is `NOPERM`, with the cleanup bounds that record states. |
+| AC-6 | Expiry, rotation and lifecycle on E1 keys: the existing suites run against both encodings (DEC-003 cycle and pause, DEC-007 lifecycle and claim, budget rotation continuity, device-generation rotation), with expiry compared by `PEXPIRETIME` **per the three cases of §7** (logical deadline from caller time: stored `expiresAt` exact across layouts; preserved physical expiry: literal before/after in one run, only on a path that pins it; new Redis-clock TTL: bracketed by `TIME`, never absolute across runs); the request path as stated in §7 (#287). |
+| AC-7 | Request atomic save on E1 (DEC-037/041/042): conflict recalculation; interruption leaves no partial prefix. ACL, two scenarios: **(i)** an account with only the `v1` grant is refused at the read/`EVAL`/key-scope entry with an unchanged keyspace (the entry guard; no `commit` is reached); **(ii)** an account that **can read** the E1 keys and run the evaluation but lacks a write command of the plan receives the DEC-042 `NOPERM request commit` from `commit`, before the first write, with an unchanged keyspace, and the same request succeeds once the grant is complete. Direct scripts: limited to DEC-043 (a refused expiry command is `NOPERM`, with its cleanup bounds). |
 | AC-8 | Compatibility: with E1 unselected the full suite passes and the physical keys equal `main@35398c11`; E1 over a store without the capability fails at composition; a V2 reader cannot read E1 state and an E1 reader cannot read V2 state, each shown explicitly. |
+| AC-9 | One transaction for both layouts: a request that **writes a V2-layout key and an E1-layout key** (for example a K1 hard-block and a K4 score in the same request) is saved by **one** `commit` through the one store instance; it is saved in both layouts together or refused in both together (a forced conflict, a forced `NOPERM` in each layout, and an interruption each leave both unchanged or both written). Evidence shows a single held `requestState`, a single ownership claim (DEC-041: an independent call during the request is refused on either view) and a single `commit` script call, on PHP32 and PHP64. A view or key that owns separate request state fails this item. |
 
 ## 10. Decisions pending the Owner
 
@@ -413,7 +430,7 @@ None of these is taken by this document.
 | D-1 | Activate DEC-044 (the encoding, the key domain and the storage identity of §3 and §6) | Activate. |
 | D-2 | Confirm Set A as the E1 scope, Set B as derivative, and §5.3/§5.4 as separate decisions (K1–K3, admission NUL join, the `binding_epoch` documentation mismatch) | Confirm; handle the §5.4 findings as their own issues. |
 | D-3 | Selection surface: explicit, once per builder, default V2; its name | As §8.1. |
-| D-4 | The E1-capable store capability (public interface addition) and how the layout is carried (§6.2): a layout-bound store handle (a) or a typed key object (b). Plain-string behaviour is fixed by invariant 1 in either case | (a): no change to existing methods, smallest new surface. |
+| D-4 | The E1-capable store capability (public interface addition) and how the layout is carried (§6.2): a view bound to the E1 layout **of the same store instance** (a) or a typed key object (b). Plain-string behaviour (invariant 1) and the single request transaction (AC-9) are fixed in either case | (a), as a view of the same instance: no change to existing methods, smallest new surface. |
 | D-5 | Host duties: grant the `e1` key prefix before selecting E1 (§6.3) | Document it in the Host guide at implementation. |
 | D-6 | Amend `KEY_STRATEGY.md` on activation (§3.4, §3.5, §4.2, §4.4, §4.5, §4.6, §10) and the Package Reference, with the security review §10 of KEY_STRATEGY requires | Same PR as the implementation, after D-1. |
 | D-7 | Migration of existing traffic, V2 block reading, seeding, window policy, retirement of V2 | Separate decisions; E1 does not wait for them. |

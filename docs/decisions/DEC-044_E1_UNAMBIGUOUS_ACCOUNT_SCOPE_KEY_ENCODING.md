@@ -49,7 +49,7 @@ admission layer.
 2. **Key domain.** `digest = HMAC-SHA256(HMAC-SHA256(secret, "maatify.rate-limiter.key-domain.e1"), preimage)`.
 3. **Logical key and storage identity.** The textual form of the key is `"e1." ‖ digest`, but the layout is **carried
    explicitly** from the derivation to the store (a layout-bound handle or a typed key), never inferred from the string.
-   In the eight families that hold in-scope keys an explicit E1 key is stored under `maatify:rate-limiter:e1:…`. Every
+   In the eight families that hold in-scope keys an explicit E1 key is stored under `maatify:rate-limiter:e1:…`. The two layouts are served by **one store instance** (a layout-bound view of it, or a typed key): one held request state, one ownership claim and one `commit`, so a request that writes both layouts is saved in both or refused in both. A mechanism that creates a second store or overlay is excluded. Every
    plain string given to an existing store method, including one that starts with `e1.`, keeps its V2 physical key byte for
    byte and is never refused; an E1 key in a foreign family is refused before any command.
 4. **One source.** One derivation component per encoding serves the writer, the operational reader and every future
@@ -79,8 +79,7 @@ The full derivation contract, the key map by family, the vectors and the accepta
 ## Consequences
 
 - Opt-in hosts get unambiguous account identities; V2 hosts see no change.
-- A Host with a key-pattern ACL must grant the `e1` prefix before selecting E1. On the request save a missing grant is the
-  DEC-042 `NOPERM` from `commit`, raised before the first write. For direct scripts only DEC-043 applies: a refused expiry
+- A Host with a key-pattern ACL must grant the `e1` prefix, for reads and writes, before selecting E1. With only the `v1` grant the request is refused at the read or script entry, before any write (the entry guard, not the DEC-042 preflight). The DEC-042 `NOPERM` from `commit`, raised before the first write, is what an account that can read E1 keys but lacks a write permission of the plan receives. For direct scripts only DEC-043 applies: a refused expiry
   command is `NOPERM`, with its recorded cleanup bounds; E1 claims nothing wider.
 - An E1 runtime starts every Set A identity empty; E1 does not carry V2 scores, budgets, cooldowns or blocks.
 - Requires a new E1 store capability (public interface addition) and, on activation, amendments to `KEY_STRATEGY.md`
@@ -106,7 +105,7 @@ No `ACTIVE` decision closes the encoding choice. Read and bound by this proposal
 - **DEC-026:** `k4p`, `k5p`, the `_p` purposes and the K5 material keep their meaning; they are distinct purpose tokens.
 - **DEC-037, DEC-041, DEC-042, DEC-043:** the request save, exclusive ownership and permission preflight apply to E1 keys
   unchanged. `#287` (preserve an inherited expiry on commit) gates E1 acceptance on the request path, judged by a literal
-  before/after comparison of the inherited expiry; Redis-time TTLs are bracketed by `TIME`, not compared across runs.
+  before/after comparison of the **physical** expiry on a path that pins it. The logical deadline (caller time plus TTL, DEC-016) is compared separately, and new Redis-clock TTLs are bracketed by `TIME`, never compared across runs.
 - **DEC-006 (superseded by DEC-016; its unaffected boundaries remain in force):** physical keys stay package-prefixed,
   namespace-isolated, deterministic and opaque.
 - **#291 rehearsal:** evidence for one operational cut-over option, outside this decision.
