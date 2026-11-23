@@ -45,11 +45,13 @@ admission layer.
 
 1. **Encoding.** E1 hashes `MAGIC ‖ u32be(N) ‖ enc(purpose) ‖ enc(policy) ‖ enc(env) ‖ enc(account) [‖ enc(material)]`, with
    `enc(f) = u32be(strlen f) ‖ f`. Fields are opaque byte strings; no field is optional (an absent input yields no key, or a
-   different purpose token).
+   different purpose token). A field longer than `0xFFFFFFFF` bytes is refused before `pack()`, never truncated.
 2. **Key domain.** `digest = HMAC-SHA256(HMAC-SHA256(secret, "maatify.rate-limiter.key-domain.e1"), preimage)`.
-3. **Logical key and storage identity.** The logical key is `"e1." ‖ digest`. In the eight families that hold in-scope keys,
-   a key matching that grammar is stored under `maatify:rate-limiter:e1:…`; every other key keeps its V2 physical key byte
-   for byte; a malformed or misplaced E1 key is refused before any command.
+3. **Logical key and storage identity.** The textual form of the key is `"e1." ‖ digest`, but the layout is **carried
+   explicitly** from the derivation to the store (a layout-bound handle or a typed key), never inferred from the string.
+   In the eight families that hold in-scope keys an explicit E1 key is stored under `maatify:rate-limiter:e1:…`. Every
+   plain string given to an existing store method, including one that starts with `e1.`, keeps its V2 physical key byte for
+   byte and is never refused; an E1 key in a foreign family is refused before any command.
 4. **One source.** One derivation component per encoding serves the writer, the operational reader and every future
    reader, for Current and Previous, created once by the builder. The V2 component returns byte-identical keys to today's.
 5. **Scope.** Set A (re-derived): K4/K4P, K5/K5p, micro-cap, budget cooldown, the `aux` purposes. Set B (derivative, not
@@ -66,19 +68,22 @@ The full derivation contract, the key map by family, the vectors and the accepta
 
 ## Rationale
 
-- Length-prefixed bytes make the preimage injective whatever the fields contain, without restricting `env`/`accountId`
+- Length-prefixed bytes make the preimage injective (within the `u32` bound) whatever the fields contain, without restricting `env`/`accountId`
   (which the package does not control) and without breaking a deployment that already uses `:`.
 - The key domain, the encoding and the storage identity solve three different problems and are kept separate.
-- Routing storage by the key's own tag leaves every out-of-scope physical key untouched, which a prefix change could not.
+- Carrying the layout explicitly leaves every out-of-scope physical key and every existing direct call untouched, which a
+  prefix change or routing by string shape could not. Key separation after the HMAC rests on HMAC-SHA256, not on the
+  encoding.
 - A shared derivation source removes the writer/reader drift risk that READER-PARITY only detects.
 
 ## Consequences
 
 - Opt-in hosts get unambiguous account identities; V2 hosts see no change.
-- A Host with a key-pattern ACL must grant the `e1` prefix before selecting E1 (the refusal is `NOPERM` before any write,
-  DEC-042/043).
+- A Host with a key-pattern ACL must grant the `e1` prefix before selecting E1. On the request save a missing grant is the
+  DEC-042 `NOPERM` from `commit`, raised before the first write. For direct scripts only DEC-043 applies: a refused expiry
+  command is `NOPERM`, with its recorded cleanup bounds; E1 claims nothing wider.
 - An E1 runtime starts every Set A identity empty; E1 does not carry V2 scores, budgets, cooldowns or blocks.
-- Requires a new store capability marker (public interface addition) and, on activation, amendments to `KEY_STRATEGY.md`
+- Requires a new E1 store capability (public interface addition) and, on activation, amendments to `KEY_STRATEGY.md`
   and the Package Reference with the security review §10 of KEY_STRATEGY requires.
 - Adjacent findings recorded, not decided here: the admission layer joins fields with NUL (same ambiguity class), and
   KEY_STRATEGY §4.6 and the source disagree on the `binding_epoch` preimage.
@@ -100,7 +105,8 @@ No `ACTIVE` decision closes the encoding choice. Read and bound by this proposal
 - **DEC-016:** time authority unchanged.
 - **DEC-026:** `k4p`, `k5p`, the `_p` purposes and the K5 material keep their meaning; they are distinct purpose tokens.
 - **DEC-037, DEC-041, DEC-042, DEC-043:** the request save, exclusive ownership and permission preflight apply to E1 keys
-  unchanged. `#287` (preserve an inherited expiry on commit) gates E1 acceptance on the request path.
+  unchanged. `#287` (preserve an inherited expiry on commit) gates E1 acceptance on the request path, judged by a literal
+  before/after comparison of the inherited expiry; Redis-time TTLs are bracketed by `TIME`, not compared across runs.
 - **DEC-006 (superseded by DEC-016; its unaffected boundaries remain in force):** physical keys stay package-prefixed,
   namespace-isolated, deterministic and opaque.
 - **#291 rehearsal:** evidence for one operational cut-over option, outside this decision.

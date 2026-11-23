@@ -62,12 +62,21 @@ u32be(n) = pack('N', n)                                   (4 bytes, big-endian, 
 - `f₁ = purpose`, `f₂ = policy`, `f₃ = env`, `f₄ = account`, `f₅ = material` (only for the purposes that have one).
 - `N` is the field count the registry fixes for the purpose. The deriver rejects a different count.
 - `pack('N', strlen)` is the primitive KEY_STRATEGY §4.7 already locks for simple fixed-window keys, so E1 does not
-  introduce a second length convention. The length is 4 bytes, so 32-bit PHP needs no special case (`strlen` never exceeds
-  `2^31 − 1`).
-- The encoding is **injective** on tuples of byte strings: `MAGIC` and `N` are constants for a purpose, and each field is
-  read as exactly the number of bytes its length prefix states, so no content (`:`, NUL, multibyte, empty) can move a
-  boundary. Two different `(purpose, policy, env, account[, material])` tuples therefore never give the same preimage.
-  The acceptance evidence for this claim is §9, AC-2.
+  introduce a second length convention.
+- **Length bound.** `u32be` represents `0 … 2^32 − 1` only, and `pack('N', n)` silently reduces a larger `n` modulo `2^32`,
+  which would let two different fields share a prefix. The deriver therefore **refuses** any field whose `strlen` exceeds
+  `0xFFFFFFFF`, with a `RateLimiterException` raised **before** `pack()`, before any HMAC and before any store command; it
+  never truncates, clamps or hashes the field instead. The bound is reachable only on 64-bit PHP (a 32-bit `strlen` cannot
+  exceed `2^31 − 1`, so the check never fires there) and the check is performed on both widths so one rule holds everywhere.
+  The refusal is part of the contract; a smaller practical cap on `env`/`accountId` is not proposed here and would be a
+  separate Owner decision.
+- The encoding is **injective** on tuples of byte strings **within the bound above**: `MAGIC` and `N` are constants for a
+  purpose, and each field is read as exactly the number of bytes its length prefix states, so no content (`:`, NUL,
+  multibyte, empty) can move a boundary. Two different `(purpose, policy, env, account[, material])` tuples therefore never
+  give the same preimage. This is a statement about the **preimage**, and it is unconditional. Distinct preimages giving
+  distinct *keys* (and a key separated from every other key space) is **not** unconditional: it rests on the collision
+  resistance and PRF security of HMAC-SHA256 under the secret. §3.5 and the storage identity (§6) separate key spaces on
+  that cryptographic assumption, not by construction. The acceptance evidence for the injectivity claim is §9, AC-2.
 
 ### 3.3 Optional values
 
@@ -124,12 +133,19 @@ E1Key = "e1." ‖ digest              (67 ASCII characters: "e1." then [0-9a-f]{
 V2Key = digest                     (64 characters, today)
 ```
 
-The pipeline and the stores pass keys around as plain strings, and some of them must survive as plain strings: the
+The pipeline and the stores pass keys around as plain strings, and some of them must survive as strings: the
 distributed-account snapshot returns K5 keys as set members that are later blocked directly
 (`EvaluationPipeline.php:777-785`, where each snapshot member becomes the `key` of a persisted block), and the hard-block
-script receives the logical keys as arguments (`HARD_BLOCK` does not read them). The `e1.` tag keeps the key's storage identity inside the string so every path routes it the same way
-without a second argument or a new type. A search of `src/` finds no length, hex or `ctype_xdigit` test on a key, and no member-size limit in the
-distinct-set scripts; the acceptance evidence for this is AC-5/AC-6, not the search.
+script receives the logical keys as arguments (`HARD_BLOCK` does not read them). The `e1.` prefix is the **textual form**
+of an E1 key: it makes an E1 digest distinguishable from a V2 digest in logs, snapshots and members, and it is what a
+snapshot member is stored as.
+
+**The prefix is not a routing signal.** `RateLimitStoreInterface` and the correlation store accept any `string`, and the
+package reserves no `e1.` prefix, so an existing direct caller may already pass a key that starts with `e1.` (or equals the
+64-hex shape). A store that decided *by the shape of the string* would move or refuse such a key after a plain package
+update. Storage identity is therefore carried **explicitly** (§6.2), from the derivation to the store, and the string shape
+never selects a layout in a store entry point. A search of `src/` finds no length, hex or `ctype_xdigit` test on a key, and
+no member-size limit in the distinct-set scripts; the acceptance evidence for this is AC-5/AC-6, not the search.
 
 ### 3.7 Synthetic vectors
 
@@ -267,31 +283,58 @@ E1 physical key = "maatify:rate-limiter:e1:" ‖ sha256(namespace) ‖ ":" ‖ f
 V2 physical key = "maatify:rate-limiter:v1:" ‖ sha256(namespace) ‖ ":" ‖ family ‖ ":" ‖ sha256(logical)    (unchanged)
 ```
 
-Routing in the store's key function:
+**The layout is carried explicitly; it is never inferred from the key string.** `RateLimitStoreInterface::increment/get/set/block`
+and the correlation store accept any `string`, and the package reserves no `e1.` prefix (`src/Repository/RateLimitStoreInterface.php:39-62`
+on `main@35398c11`). A direct caller may already pass `e1.…`-shaped or 64-hex keys today. Routing by string shape would
+change or refuse such a call after a plain package update, even with E1 unselected. The contract is therefore four
+invariants, and the mechanism that satisfies them is an implementation choice (D-4):
 
-1. if `family ∈ {score, block, budget, cycle, pause, reentry-claim, watch, watch-meta}` (the eight families that hold Set A
-   keys; `distinct` and `distinct-meta` hold only Set B hashes) **and**
-   `logical` matches `^e1\.[0-9a-f]{64}$` exactly → E1 physical key;
-2. if `logical` begins with `e1.` and does not match exactly, or an E1 key reaches any other family → throw
-   `RateLimiterException` before any Redis command (never store it under `v1`);
-3. otherwise → today's key, byte for byte.
+1. **Plain strings are untouched.** For every `string` passed to an existing store method, in every family, including one
+   that begins with `e1.`, equals `e1.` plus 64 hex characters, or is malformed in any way, the physical key is the
+   `v1` key of `main@35398c11` byte for byte, and no refusal is added. This holds with E1 selected and unselected.
+2. **E1 identity travels with the key.** The derivation component returns an E1 key as a distinct value (a typed key, or a
+   store handle bound to the E1 layout that only E1 keys are given). The store derives the `e1` physical key **only** from
+   that explicit carrier. The textual form `e1.‹digest›` is for logs, snapshots and members, not for routing.
+3. **Carrier creation is closed.** An E1 carrier is created only by the E1 derivation component, and by the E1 runtime's own
+   re-wrapping of a member it previously stored (a snapshot member that is later blocked,
+   `EvaluationPipeline.php:777-785`). That re-wrap validates the exact grammar `^e1\.[0-9a-f]{64}$` and throws on anything
+   else. It lives inside an E1-selected runtime, so a legacy caller can never reach it; no store entry point parses a string
+   to find a layout.
+4. **Foreign families are refused.** An E1 carrier given to a family outside
+   `{score, block, budget, cycle, pause, reentry-claim, watch, watch-meta}` (the eight families that hold Set A keys;
+   `distinct` and `distinct-meta` hold only Set B hashes) throws `RateLimiterException` before any Redis command. It is a
+   defect in the E1 runtime, not a legacy path, because only the E1 runtime can hold a carrier.
 
-Consequences that the acceptance tests check (§9, AC-5): every physical key of §5.3 families and every K1–K3 key is
-identical in an E1 runtime and a V2 runtime for the same inputs; every Set A key exists only under `…:e1:…`; no Set A key
-exists under `…:v1:…`. The Set B keys differ by design (§5.2) and stay under `v1`. A policy name can never route a key to
-`e1`: the only logical keys that match the exact grammar are E1 digests, and `circuit`/`probe` are outside the family set.
+Two admissible mechanisms, recommended order: **(a)** the E1-capable store capability exposes a handle bound to the E1
+layout (no change to the existing methods; the pipeline already knows per key whether it is a K1 or a K4 key and uses the
+matching handle; both handles share one executor, so one request commit still saves both layouts); **(b)** a typed key
+object accepted by a new E1 capability whose methods mirror the ones the pipeline uses. (b) cannot reuse the existing
+`string`-typed methods under `strict_types` and so widens the new surface; D-4 chooses.
+
+Consequences that the acceptance tests check (§9, AC-5): with the same inputs, every physical key of §5.3 families and every
+K1–K3 key is identical in an E1 runtime and a V2 runtime; every Set A key exists only under `…:e1:…`; no Set A key exists
+under `…:v1:…`; the Set B keys differ by design (§5.2) and stay under `v1`; and a direct-call differential (invariant 1)
+shows that plain strings, including `e1.`-prefixed and 64-hex ones in each of the ten families, keep the physical keys of
+`main@35398c11` and are not refused. A policy name can never route a key to `e1`: a string never selects a layout, and
+`circuit`/`probe` are outside the family set.
 
 ### 6.3 Consequences for the Host
 
 - **ACL.** A Redis account restricted to `~maatify:rate-limiter:v1:*` must also be granted `~maatify:rate-limiter:e1:*`
-  before E1 is selected. A missing grant is the existing refusal, not a new failure mode: the request save checks its actual
-  write plan before the first write (DEC-042, `NOPERM`, nothing written) and direct scripts classify a refused expiry as
-  `NOPERM` (DEC-043).
+  before E1 is selected. What a missing grant does depends on the path, and E1 adds no promise beyond the two existing
+  records:
+  - **Request save.** The `commit` script checks its actual write plan with `redis.acl_check_cmd` after the state
+    comparison and before the first write; a refusal is `NOPERM request commit: …`, raised before any write, deletion or
+    expiry change, and the keyspace is unchanged (DEC-042). Refusals of a read command, of `EVAL` or of the key scope also
+    happen before any write (DEC-042, Context).
+  - **Direct scripts.** A refused **expiry** command is classified `NOPERM` and the script deletes the keys *that call
+    created*; it does not restore a key the branch had already deleted or rewritten, and an unchanged keyspace is evidenced
+    only for the states DEC-043 measured (DEC-043, Decision 2). E1 makes no wider claim for direct calls.
 - **Inventory and cleanup.** The two prefixes make "is this key E1 or V2" a prefix test for scans, metrics and operational
   tooling.
 - **Single node.** The same Redis 7+, single-node scope as DEC-037/042 applies; Redis Cluster is not studied.
-- **Custom stores.** A store or correlation store that is not E1-aware would treat `e1.…` as an opaque string and store it
-  under its own layout. Selecting E1 therefore requires an E1-capable store, and composition fails early otherwise (§8).
+- **Custom stores.** A store or correlation store that is not E1-aware stores whatever string it receives under its own
+  layout. Selecting E1 therefore requires an E1-capable store, and composition fails early otherwise (§8).
 
 ## 7. Rotation, expiry and atomicity
 
@@ -303,12 +346,23 @@ cycle rule, a lifecycle rule or a rotation rule. Therefore, for E1 runtimes:
   atomically into Current; `max()` and Cartesian merges stay forbidden for budget state; at most one Previous generation.
   A Previous E1 key is an E1 key derived with the previous secret or material. **A V2 key is never a Previous generation of
   an E1 key** and is never read.
-- **Expiry.** Physical lifetimes and logical deadlines are the ones the existing scripts set. The single acceptance rule is
-  parity: for the same operations, the absolute expiry of an E1 key read with `PEXPIRETIME` from outside Lua equals that of
-  the V2 key, on the direct path and on the request path. **The request path is blocked on #287** (a counter update inside
-  `transactRequest()` moved the absolute expiry by 1 ms in Docker evidence on PHP32 and PHP64). E1 is not accepted on that
-  path until #287 is resolved or its measured effect is explicitly accepted by the Owner; the E1 design does not depend on
-  how #287 is fixed.
+- **Expiry.** Physical lifetimes and logical deadlines are the ones the existing scripts set. Evidence is taken from outside
+  Lua with `PEXPIRETIME`, and it must distinguish **three cases**, because two absolute expiries from two separate runs are
+  not comparable unless the clock they derive from is the same:
+  1. **Inherited expiry** (an operation that must keep the expiry the key already had, such as a counter update on an
+     existing key, or the request save of an unchanged lifetime). Compared **literally, in one run**: the absolute
+     `PEXPIRETIME` read before the operation equals the one read after it. This is the case #287 measured.
+  2. **Deadline derived from caller-supplied time** (DEC-016: the capability receives the time). With the same injected
+     time and TTL the absolute expiry is deterministic, so the E1 key and the V2 key are compared **exactly** across layouts.
+  3. **New expiry built from a TTL against Redis time.** The absolute value depends on the `TIME` of that run, so it is
+     **not** compared between a V2 run and an E1 run. Each run samples Redis `TIME` immediately before and after the
+     operation and asserts `expiry − TIME` lies inside the bracket the TTL implies; parity is judged on that delta (and on
+     the bracket width recorded with it), never on the absolute timestamps.
+
+  **The request path is blocked on #287** (a counter update inside `transactRequest()` moved the inherited absolute expiry by
+  1 ms in Docker evidence on PHP32 and PHP64). Acceptance of E1 on the atomic request save requires case 1 to hold on that
+  path: #287 is resolved, or its measured effect is explicitly accepted by the Owner. The E1 design does not depend on how
+  #287 is fixed.
 - **Atomicity.** Every write remains one Lua script on the direct path or one overlay commit for a request (DEC-037, with
   the ACL preflight of DEC-042 and the exclusive ownership of DEC-041). The overlay requires every key in `KEYS`; E1 keys
   are declared like V2 keys. One request commit saves keys of both layouts together (K1 under `v1`, K4 under `e1`); this
@@ -342,12 +396,12 @@ asserted before anything runs and the raw outputs kept. Synthetic data only.
 | ID | Evidence |
 |---|---|
 | AC-1 | The §3.7 vectors, the golden V2 values from `main@35398c11`, and the hex preimage reproduce byte for byte on both widths. |
-| AC-2 | Injectivity of the E1 encoding: a generated corpus over fields with `:`, NUL, multibyte, empty and long values; a decoder that parses every preimage back to the exact tuple; distinct tuples never give equal preimages or equal keys. E1 only; no state is created under V2 ambiguity. |
+| AC-2 | Injectivity of the E1 encoding: a generated corpus over fields with `:`, NUL, multibyte, empty and long values; a decoder that parses every preimage back to the exact tuple; distinct tuples never give equal preimages or equal keys. E1 only; no state is created under V2 ambiguity. The length bound of §3.2 is shown through a seam that supplies the length (a field of `2^32` bytes is not allocated): a length above `0xFFFFFFFF` is refused before `pack()`, before any HMAC and before any store command, on both widths; `0xFFFFFFFF` itself and `0` encode. |
 | AC-3 | Writer and reader share one derivation source: a parity matrix (lane U/P, with and without an instance id, one secret and a rotation with Current and Previous) for every §3.4 purpose, plus a source guard that no `hash_hmac` of an account-bearing preimage remains outside the component. Generalises `FamilyReaderParityTest`. |
 | AC-4 | Rotation: Current-only, previous secret, previous material, both, equal-key de-duplication; writes only to Current; Previous never written; budget seeding atomic; no `max()`; **a V2 key for the same account is never read and no V2 key is written for a Set A identity by an E1 runtime**. |
-| AC-5 | Stability and separation: differential run of the same traffic on a V2 runtime and an E1 runtime in the same Redis; physical keys, values and expiries of §5.3 families and K1–K3 are identical; Set A keys exist only under `…:e1:…` and never under `…:v1:…`; Set B differences are exactly the documented set; a malformed `e1.` key and an E1 key in a foreign family throw before any command. |
-| AC-6 | Expiry, rotation and lifecycle on E1 keys: the existing suites run against both encodings (DEC-003 cycle and pause, DEC-007 lifecycle and claim, budget rotation continuity, device-generation rotation), with absolute expiry compared by `PEXPIRETIME`; the request path as stated in §7 (#287). |
-| AC-7 | Request atomic save on E1 (DEC-037/041/042): conflict recalculation; interruption leaves no partial prefix; an account with only the `v1` key grant gets `NOPERM` with an unchanged keyspace and succeeds once `e1` is granted. |
+| AC-5 | Stability and separation: differential run of the same traffic on a V2 runtime and an E1 runtime in the same Redis; physical keys, values and expiries of §5.3 families and K1–K3 are identical; Set A keys exist only under `…:e1:…` and never under `…:v1:…`; Set B differences are exactly the documented set; an E1 carrier in a foreign family throws before any command; **direct-call differential**: plain strings, including `e1.`-prefixed, exact `e1.`+64-hex and malformed ones, passed to the existing store methods in each of the ten families, give the `main@35398c11` physical keys and are not refused, with E1 selected and unselected. |
+| AC-6 | Expiry, rotation and lifecycle on E1 keys: the existing suites run against both encodings (DEC-003 cycle and pause, DEC-007 lifecycle and claim, budget rotation continuity, device-generation rotation), with expiry compared by `PEXPIRETIME` **per the three cases of §7** (inherited: literal before/after in one run; caller-time deadline: exact across layouts; Redis-time TTL: bracketed by `TIME`, never absolute across runs); the request path as stated in §7 (#287). |
+| AC-7 | Request atomic save on E1 (DEC-037/041/042): conflict recalculation; interruption leaves no partial prefix; an account with only the `v1` key grant gets the DEC-042 `NOPERM` from `commit` with an unchanged keyspace and succeeds once `e1` is granted. For direct scripts the evidence is limited to DEC-043: a refused expiry command is `NOPERM`, with the cleanup bounds that record states. |
 | AC-8 | Compatibility: with E1 unselected the full suite passes and the physical keys equal `main@35398c11`; E1 over a store without the capability fails at composition; a V2 reader cannot read E1 state and an E1 reader cannot read V2 state, each shown explicitly. |
 
 ## 10. Decisions pending the Owner
@@ -359,7 +413,7 @@ None of these is taken by this document.
 | D-1 | Activate DEC-044 (the encoding, the key domain and the storage identity of §3 and §6) | Activate. |
 | D-2 | Confirm Set A as the E1 scope, Set B as derivative, and §5.3/§5.4 as separate decisions (K1–K3, admission NUL join, the `binding_epoch` documentation mismatch) | Confirm; handle the §5.4 findings as their own issues. |
 | D-3 | Selection surface: explicit, once per builder, default V2; its name | As §8.1. |
-| D-4 | The E1-capable store marker (public interface addition) and the `e1.` tagged-string key (rather than a typed key object) | Tagged string plus marker: it keeps `RateLimitStoreInterface` source-compatible. |
+| D-4 | The E1-capable store capability (public interface addition) and how the layout is carried (§6.2): a layout-bound store handle (a) or a typed key object (b). Plain-string behaviour is fixed by invariant 1 in either case | (a): no change to existing methods, smallest new surface. |
 | D-5 | Host duties: grant the `e1` key prefix before selecting E1 (§6.3) | Document it in the Host guide at implementation. |
 | D-6 | Amend `KEY_STRATEGY.md` on activation (§3.4, §3.5, §4.2, §4.4, §4.5, §4.6, §10) and the Package Reference, with the security review §10 of KEY_STRATEGY requires | Same PR as the implementation, after D-1. |
 | D-7 | Migration of existing traffic, V2 block reading, seeding, window policy, retirement of V2 | Separate decisions; E1 does not wait for them. |
