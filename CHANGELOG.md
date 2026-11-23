@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
+### Fixed (#285) — Local fallback `Retry-After` stays exact on PHP 32-bit
+
+- The local fallback no longer forms the end instant of a fixed window. A window that ends beyond `PHP_INT_MAX` (for example a 600-second window at `2147483647` on a 32-bit build) turned the end into a float, so the evaluation failed with a `TypeError` instead of returning `Retry-After`. Each counter now keeps the instant it was created and the seconds that were left in its window then, so neither window bound is formed (this also covers a window that starts below the 32-bit `int` minimum) and `Retry-After` and cleanup always follow the counter's own window, exactly as before. The remaining time is an exact integer on both integer widths (353 seconds in that example). Counter cleanup, new windows at the limit, the largest wait among rejecting rules and the single charge per evaluation are unchanged; 64-bit results are identical.
+
 ### Fixed (#283) — Local fallback never allows a request that no rule applied to (DEC-011, DEC-015)
 
 - A degraded or fail-open evaluation now grants the local fallback allowance only after at least one rule of the policy's fallback configuration has been applied to the request context. When none applies (for example an `ACCOUNT`-only configuration and a request without an account) the existing conservative windowless refusal is returned (`HARD_BLOCK`, level 2, `retryAfter` 60) and no fallback counter is consumed; before, that request was allowed. Policies with an applicable rule, the official presets and their values, the `Retry-After` of an exhausted allowance and the single charge per final answer are unchanged.

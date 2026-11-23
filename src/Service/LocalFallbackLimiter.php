@@ -33,13 +33,21 @@ class LocalFallbackLimiter
      */
     private const UNWINDOWED_DENIAL_RETRY_AFTER = 60;
 
-    /** @var array<string, array{count: int, expiresAt: int}> */
+    /**
+     * A counter's lifetime is kept as the instant it was created plus the seconds that were left in its window at that
+     * moment, never as a window start or end instant: either bound can lie outside the platform `int` range (a 32-bit
+     * build near 2147483647 or -2147483648), while the lifetime and the elapsed time are always bounded by the window.
+     * The lifetime belongs to the counter itself, so every later read (Retry-After, cleanup) uses that same window even
+     * when another configuration of the same policy name shares the counter.
+     *
+     * @var array<string, array{count: int, createdAt: int, lifetime: int}>
+     */
     private static array $counters = [];
 
     /** @var array<string, array<string, true>> */
     private static array $trackedSubjects = [];
 
-    /** @var array<string, int> */
+    /** @var array<string, array{createdAt: int, lifetime: int}> */
     private static array $trackedSubjectExpiries = [];
 
     /**
@@ -147,7 +155,8 @@ class LocalFallbackLimiter
     private static function incrementAndCheck(ClockInterface $clock, string $population, string $subject, int $limit, int $window): ?int
     {
         $now = $clock->now()->getTimestamp();
-        $bucket = (int) floor($now / $window);
+        $bucket = self::bucketOf($now, $window);
+        $lifetime = self::remainingInWindow($now, $window);
         $populationKey = "{$population}:{$bucket}";
         $tracked = self::$trackedSubjects[$populationKey] ?? [];
         if (isset($tracked[$subject])) {
@@ -155,7 +164,7 @@ class LocalFallbackLimiter
         } elseif (count($tracked) < self::MAX_TRACKED_SUBJECTS) {
             $tracked[$subject] = true;
             self::$trackedSubjects[$populationKey] = $tracked;
-            self::$trackedSubjectExpiries[$populationKey] = ($bucket + 1) * $window;
+            self::$trackedSubjectExpiries[$populationKey] = ['createdAt' => $now, 'lifetime' => $lifetime];
             $bucketKey = "{$populationKey}:subject:" . hash('sha256', $subject);
         } else {
             $bucketKey = "{$populationKey}:overflow";
@@ -164,7 +173,8 @@ class LocalFallbackLimiter
         if (!isset(self::$counters[$bucketKey])) {
             self::$counters[$bucketKey] = [
                 'count' => 0,
-                'expiresAt' => ($bucket + 1) * $window,
+                'createdAt' => $now,
+                'lifetime' => $lifetime,
             ];
         }
         self::$counters[$bucketKey]['count']++;
@@ -172,19 +182,48 @@ class LocalFallbackLimiter
             return null;
         }
 
-        return max(1, self::$counters[$bucketKey]['expiresAt'] - $now);
+        return max(1, self::$counters[$bucketKey]['lifetime'] - ($now - self::$counters[$bucketKey]['createdAt']));
+    }
+
+    /**
+     * Index of the fixed window containing `$now` (floor division), exact for negative instants and never leaving the `int` range.
+     */
+    private static function bucketOf(int $now, int $window): int
+    {
+        $bucket = intdiv($now, $window);
+
+        return $now % $window < 0 ? $bucket - 1 : $bucket;
+    }
+
+    /**
+     * Seconds from `$now` to the end of its fixed window, in 1..`$window`, without forming the window start or end.
+     */
+    private static function remainingInWindow(int $now, int $window): int
+    {
+        $position = $now % $window;
+        if ($position < 0) {
+            $position += $window;
+        }
+
+        return $window - $position;
+    }
+
+    private static function hasExpired(int $now, int $createdAt, int $lifetime): bool
+    {
+        return $now - $createdAt >= $lifetime;
     }
 
     private static function gc(ClockInterface $clock): void
     {
         $now = $clock->now()->getTimestamp();
         foreach (self::$counters as $bucketKey => $counter) {
-            if ($counter['expiresAt'] <= $now) {
+            if (self::hasExpired($now, $counter['createdAt'], $counter['lifetime'])) {
                 unset(self::$counters[$bucketKey]);
             }
         }
         foreach (self::$trackedSubjects as $populationKey => $_subjects) {
-            if ((self::$trackedSubjectExpiries[$populationKey] ?? 0) <= $now) {
+            $expiry = self::$trackedSubjectExpiries[$populationKey] ?? null;
+            if ($expiry === null || self::hasExpired($now, $expiry['createdAt'], $expiry['lifetime'])) {
                 unset(self::$trackedSubjects[$populationKey]);
                 unset(self::$trackedSubjectExpiries[$populationKey]);
             }
