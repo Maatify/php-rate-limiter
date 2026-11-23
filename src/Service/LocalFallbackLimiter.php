@@ -33,13 +33,18 @@ class LocalFallbackLimiter
      */
     private const UNWINDOWED_DENIAL_RETRY_AFTER = 60;
 
-    /** @var array<string, array{count: int, expiresAt: int}> */
+    /**
+     * Window bounds are kept as a start plus a duration, never as an end instant: the end of a window near the top of the
+     * platform `int` range does not fit a 32-bit `int`, while `now - startedAt` is always smaller than the window.
+     *
+     * @var array<string, array{count: int, startedAt: int, window: int}>
+     */
     private static array $counters = [];
 
     /** @var array<string, array<string, true>> */
     private static array $trackedSubjects = [];
 
-    /** @var array<string, int> */
+    /** @var array<string, array{startedAt: int, window: int}> */
     private static array $trackedSubjectExpiries = [];
 
     /**
@@ -147,7 +152,8 @@ class LocalFallbackLimiter
     private static function incrementAndCheck(ClockInterface $clock, string $population, string $subject, int $limit, int $window): ?int
     {
         $now = $clock->now()->getTimestamp();
-        $bucket = (int) floor($now / $window);
+        $startedAt = self::windowStart($now, $window);
+        $bucket = intdiv($startedAt, $window);
         $populationKey = "{$population}:{$bucket}";
         $tracked = self::$trackedSubjects[$populationKey] ?? [];
         if (isset($tracked[$subject])) {
@@ -155,7 +161,7 @@ class LocalFallbackLimiter
         } elseif (count($tracked) < self::MAX_TRACKED_SUBJECTS) {
             $tracked[$subject] = true;
             self::$trackedSubjects[$populationKey] = $tracked;
-            self::$trackedSubjectExpiries[$populationKey] = ($bucket + 1) * $window;
+            self::$trackedSubjectExpiries[$populationKey] = ['startedAt' => $startedAt, 'window' => $window];
             $bucketKey = "{$populationKey}:subject:" . hash('sha256', $subject);
         } else {
             $bucketKey = "{$populationKey}:overflow";
@@ -164,7 +170,8 @@ class LocalFallbackLimiter
         if (!isset(self::$counters[$bucketKey])) {
             self::$counters[$bucketKey] = [
                 'count' => 0,
-                'expiresAt' => ($bucket + 1) * $window,
+                'startedAt' => $startedAt,
+                'window' => $window,
             ];
         }
         self::$counters[$bucketKey]['count']++;
@@ -172,19 +179,36 @@ class LocalFallbackLimiter
             return null;
         }
 
-        return max(1, self::$counters[$bucketKey]['expiresAt'] - $now);
+        return max(1, $window - ($now - self::$counters[$bucketKey]['startedAt']));
+    }
+
+    /**
+     * Start of the fixed window containing `$now`, computed without forming the window end so no intermediate value
+     * can leave the `int` range on a 32-bit build.
+     */
+    private static function windowStart(int $now, int $window): int
+    {
+        $remainder = $now % $window;
+
+        return $remainder < 0 ? $now - $remainder - $window : $now - $remainder;
+    }
+
+    private static function hasExpired(int $now, int $startedAt, int $window): bool
+    {
+        return $now - $startedAt >= $window;
     }
 
     private static function gc(ClockInterface $clock): void
     {
         $now = $clock->now()->getTimestamp();
         foreach (self::$counters as $bucketKey => $counter) {
-            if ($counter['expiresAt'] <= $now) {
+            if (self::hasExpired($now, $counter['startedAt'], $counter['window'])) {
                 unset(self::$counters[$bucketKey]);
             }
         }
         foreach (self::$trackedSubjects as $populationKey => $_subjects) {
-            if ((self::$trackedSubjectExpiries[$populationKey] ?? 0) <= $now) {
+            $window = self::$trackedSubjectExpiries[$populationKey] ?? null;
+            if ($window === null || self::hasExpired($now, $window['startedAt'], $window['window'])) {
                 unset(self::$trackedSubjects[$populationKey]);
                 unset(self::$trackedSubjectExpiries[$populationKey]);
             }
