@@ -49,7 +49,7 @@ admission layer.
 2. **Key domain.** `digest = HMAC-SHA256(HMAC-SHA256(secret, "maatify.rate-limiter.key-domain.e1"), preimage)`.
 3. **Logical key and storage identity.** The textual form of the key is `"e1." ‖ digest`, but the layout is **carried
    explicitly** from the derivation to the store (a layout-bound handle or a typed key), never inferred from the string.
-   In the eight families that hold in-scope keys an explicit E1 key is stored under `maatify:rate-limiter:e1:…`. The two layouts are served by **one store instance** (a layout-bound view of it, or a typed key): one held request state, one ownership claim and one `commit`, so a request that writes both layouts is saved in both or refused in both. A mechanism that creates a second store or overlay is excluded. Every
+   In the eight families that hold in-scope keys an explicit E1 key is stored under `maatify:rate-limiter:e1:…`. The two layouts are served by **one store instance** (a layout-bound view of it, or a typed key): one held request state, one ownership claim and one `commit` per attempt. A conflicting attempt saves nothing in either layout and DEC-037 re-evaluation applies; the successful attempt saves both layouts together. A mechanism that creates a second store or overlay is excluded. Every
    plain string given to an existing store method, including one that starts with `e1.`, keeps its V2 physical key byte for
    byte and is never refused; an E1 key in a foreign family is refused before any command.
 4. **One source.** One derivation component per encoding serves the writer, the operational reader and every future
@@ -104,7 +104,7 @@ No `ACTIVE` decision closes the encoding choice. Read and bound by this proposal
 - **DEC-016:** time authority unchanged.
 - **DEC-026:** `k4p`, `k5p`, the `_p` purposes and the K5 material keep their meaning; they are distinct purpose tokens.
 - **DEC-037, DEC-041, DEC-042, DEC-043:** the request save, exclusive ownership and permission preflight apply to E1 keys
-  unchanged. `#287` (preserve an inherited expiry on commit) gates E1 acceptance on the request path, judged by a literal
+  unchanged. `#287` (preserve an inherited expiry on commit) stops E1 acceptance on the atomic request save until it is resolved (its measured effect is not accepted instead; the contract itself may proceed). Once resolved, it is judged by a literal
   before/after comparison of the **physical** expiry on a path that pins it. The logical deadline (caller time plus TTL, DEC-016) is compared separately, and new Redis-clock TTLs are bracketed by `TIME`, never compared across runs.
 - **DEC-006 (superseded by DEC-016; its unaffected boundaries remain in force):** physical keys stay package-prefixed,
   namespace-isolated, deterministic and opaque.
