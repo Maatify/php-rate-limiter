@@ -119,6 +119,39 @@ final class FallbackWindowIntegerRangeTest extends TestCase
         $this->assertSame([2, 2, 2], $this->counterValues(), 'one evaluation charges each applied rule exactly once');
     }
 
+    public function testWindowStartBelowTheIntRangeStillAnswersTheExactRemainingTime(): void
+    {
+        // F293-01: at -2147483648 a 3-second window starts at -2147483649, below the 32-bit int range; its end (-2147483646) fits.
+        $policy = $this->policy([[FailureFallbackDimensionEnum::ACCOUNT, 1, 3]]);
+        $clock = new FixedClock('@-2147483648');
+
+        $this->assertNull(LocalFallbackLimiter::evaluate($clock, $policy, 'DEGRADED_MODE', self::IP, 'acct', self::UA));
+        $this->assertSame(2, LocalFallbackLimiter::evaluate($clock, $policy, 'DEGRADED_MODE', self::IP, 'acct', self::UA));
+        $this->assertSame([2], $this->counterValues());
+
+        // The next window is a new bucket: the old counter is collected and the allowance starts again.
+        $clock->setNow(new \DateTimeImmutable('@-2147483645'));
+        $this->assertNull(LocalFallbackLimiter::evaluate($clock, $policy, 'DEGRADED_MODE', self::IP, 'acct', self::UA));
+        $this->assertSame([1], $this->counterValues());
+    }
+
+    public function testRetryAfterFollowsTheSharedCounterOwnWindowNotTheCurrentRule(): void
+    {
+        // F293-02: two configurations of one policy name (windows 60 and 90) reach the same bucket-0 counter.
+        $first = $this->policy([[FailureFallbackDimensionEnum::ACCOUNT, 1, 60]]);
+        $second = $this->policy([[FailureFallbackDimensionEnum::ACCOUNT, 1, 90]]);
+        $clock = new FixedClock('@10');
+
+        $this->assertNull(LocalFallbackLimiter::evaluate($clock, $first, 'DEGRADED_MODE', self::IP, 'acct', self::UA));
+        $clock->setNow(new \DateTimeImmutable('@40'));
+
+        // The counter was created for the 60-second window (ends at 60), so 20 seconds remain whichever rule reads it.
+        $this->assertSame(20, LocalFallbackLimiter::evaluate($clock, $second, 'DEGRADED_MODE', self::IP, 'acct', self::UA));
+        $this->assertSame([2], $this->counterValues());
+        $clock->setNow(new \DateTimeImmutable('@60'));
+        $this->assertNull(LocalFallbackLimiter::evaluate($clock, $second, 'DEGRADED_MODE', self::IP, 'acct', self::UA), 'the counter is collected at its own window end');
+    }
+
     /**
      * @param list<array{FailureFallbackDimensionEnum, int, int}> $rules
      */

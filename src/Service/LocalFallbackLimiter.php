@@ -34,17 +34,20 @@ class LocalFallbackLimiter
     private const UNWINDOWED_DENIAL_RETRY_AFTER = 60;
 
     /**
-     * Window bounds are kept as a start plus a duration, never as an end instant: the end of a window near the top of the
-     * platform `int` range does not fit a 32-bit `int`, while `now - startedAt` is always smaller than the window.
+     * A counter's lifetime is kept as the instant it was created plus the seconds that were left in its window at that
+     * moment, never as a window start or end instant: either bound can lie outside the platform `int` range (a 32-bit
+     * build near 2147483647 or -2147483648), while the lifetime and the elapsed time are always bounded by the window.
+     * The lifetime belongs to the counter itself, so every later read (Retry-After, cleanup) uses that same window even
+     * when another configuration of the same policy name shares the counter.
      *
-     * @var array<string, array{count: int, startedAt: int, window: int}>
+     * @var array<string, array{count: int, createdAt: int, lifetime: int}>
      */
     private static array $counters = [];
 
     /** @var array<string, array<string, true>> */
     private static array $trackedSubjects = [];
 
-    /** @var array<string, array{startedAt: int, window: int}> */
+    /** @var array<string, array{createdAt: int, lifetime: int}> */
     private static array $trackedSubjectExpiries = [];
 
     /**
@@ -152,8 +155,8 @@ class LocalFallbackLimiter
     private static function incrementAndCheck(ClockInterface $clock, string $population, string $subject, int $limit, int $window): ?int
     {
         $now = $clock->now()->getTimestamp();
-        $startedAt = self::windowStart($now, $window);
-        $bucket = intdiv($startedAt, $window);
+        $bucket = self::bucketOf($now, $window);
+        $lifetime = self::remainingInWindow($now, $window);
         $populationKey = "{$population}:{$bucket}";
         $tracked = self::$trackedSubjects[$populationKey] ?? [];
         if (isset($tracked[$subject])) {
@@ -161,7 +164,7 @@ class LocalFallbackLimiter
         } elseif (count($tracked) < self::MAX_TRACKED_SUBJECTS) {
             $tracked[$subject] = true;
             self::$trackedSubjects[$populationKey] = $tracked;
-            self::$trackedSubjectExpiries[$populationKey] = ['startedAt' => $startedAt, 'window' => $window];
+            self::$trackedSubjectExpiries[$populationKey] = ['createdAt' => $now, 'lifetime' => $lifetime];
             $bucketKey = "{$populationKey}:subject:" . hash('sha256', $subject);
         } else {
             $bucketKey = "{$populationKey}:overflow";
@@ -170,8 +173,8 @@ class LocalFallbackLimiter
         if (!isset(self::$counters[$bucketKey])) {
             self::$counters[$bucketKey] = [
                 'count' => 0,
-                'startedAt' => $startedAt,
-                'window' => $window,
+                'createdAt' => $now,
+                'lifetime' => $lifetime,
             ];
         }
         self::$counters[$bucketKey]['count']++;
@@ -179,36 +182,48 @@ class LocalFallbackLimiter
             return null;
         }
 
-        return max(1, $window - ($now - self::$counters[$bucketKey]['startedAt']));
+        return max(1, self::$counters[$bucketKey]['lifetime'] - ($now - self::$counters[$bucketKey]['createdAt']));
     }
 
     /**
-     * Start of the fixed window containing `$now`, computed without forming the window end so no intermediate value
-     * can leave the `int` range on a 32-bit build.
+     * Index of the fixed window containing `$now` (floor division), exact for negative instants and never leaving the `int` range.
      */
-    private static function windowStart(int $now, int $window): int
+    private static function bucketOf(int $now, int $window): int
     {
-        $remainder = $now % $window;
+        $bucket = intdiv($now, $window);
 
-        return $remainder < 0 ? $now - $remainder - $window : $now - $remainder;
+        return $now % $window < 0 ? $bucket - 1 : $bucket;
     }
 
-    private static function hasExpired(int $now, int $startedAt, int $window): bool
+    /**
+     * Seconds from `$now` to the end of its fixed window, in 1..`$window`, without forming the window start or end.
+     */
+    private static function remainingInWindow(int $now, int $window): int
     {
-        return $now - $startedAt >= $window;
+        $position = $now % $window;
+        if ($position < 0) {
+            $position += $window;
+        }
+
+        return $window - $position;
+    }
+
+    private static function hasExpired(int $now, int $createdAt, int $lifetime): bool
+    {
+        return $now - $createdAt >= $lifetime;
     }
 
     private static function gc(ClockInterface $clock): void
     {
         $now = $clock->now()->getTimestamp();
         foreach (self::$counters as $bucketKey => $counter) {
-            if (self::hasExpired($now, $counter['startedAt'], $counter['window'])) {
+            if (self::hasExpired($now, $counter['createdAt'], $counter['lifetime'])) {
                 unset(self::$counters[$bucketKey]);
             }
         }
         foreach (self::$trackedSubjects as $populationKey => $_subjects) {
-            $window = self::$trackedSubjectExpiries[$populationKey] ?? null;
-            if ($window === null || self::hasExpired($now, $window['startedAt'], $window['window'])) {
+            $expiry = self::$trackedSubjectExpiries[$populationKey] ?? null;
+            if ($expiry === null || self::hasExpired($now, $expiry['createdAt'], $expiry['lifetime'])) {
                 unset(self::$trackedSubjects[$populationKey]);
                 unset(self::$trackedSubjectExpiries[$populationKey]);
             }
