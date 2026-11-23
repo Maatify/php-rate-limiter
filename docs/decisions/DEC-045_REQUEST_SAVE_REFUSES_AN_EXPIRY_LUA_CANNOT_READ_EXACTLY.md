@@ -6,7 +6,7 @@
 
 ## Status
 
-`PROPOSED` — decided by the Lead in the review of [PR #294](https://github.com/Maatify/php-rate-limiter/pull/294) ("adopt refusal before the first write when the exactness of the comparison in the save cannot be proven"), and recorded in the same Draft. It becomes `ACTIVE` when that PR is accepted; until then it is not implementation authority beyond that PR. Refs [#287](https://github.com/Maatify/php-rate-limiter/issues/287).
+`ACTIVE` — approved by the Lead in [PR #294](https://github.com/Maatify/php-rate-limiter/pull/294) on implementation commit [`d622791d`](https://github.com/Maatify/php-rate-limiter/commit/d622791d5353323f5f589fc7eed239c0482d1a0b). Refs [#287](https://github.com/Maatify/php-rate-limiter/issues/287).
 
 ## Date
 
