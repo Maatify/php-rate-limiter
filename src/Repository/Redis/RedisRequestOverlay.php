@@ -54,6 +54,11 @@ local function __loadLive(key)
   if type(kind) == 'table' then kind = kind.ok end
   local e = {}
   local ms = __real.call('PEXPIRETIME', key)
+  -- #287: Lua receives the integer reply as a double, exact only below 2^53. An expiry at or above it cannot be read, fingerprinted or saved
+  -- back to the millisecond, so the request is refused here, before anything is written (the overlay only reads; the commit re-reads first).
+  if ms >= 9007199254740992 then
+    error({err = 'ERR request expiry beyond the exactly readable range: the key expiry is not below 2^53 milliseconds, nothing was saved'})
+  end
   if ms >= 0 then e.x = string.format('%.0f', ms) end
   if kind == 'string' then
     e.t = 's'
