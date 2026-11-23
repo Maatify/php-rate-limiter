@@ -49,7 +49,7 @@ local function __ser(t, v, x)
   return table.concat(parts, '\0')
 end
 local function __loadLive(key)
-  if __real.call('EXISTS', key) == 0 then return {t = 'n', o = 'n'} end
+  if __real.call('EXISTS', key) == 0 then return {t = 'n', o = 'n'}, false end
   local kind = __real.call('TYPE', key)
   if type(kind) == 'table' then kind = kind.ok end
   local e = {}
@@ -80,7 +80,8 @@ local function __loadLive(key)
     error({err = 'WRONGTYPE Operation against a key holding the wrong kind of value'})
   end
   e.o = __real.sha1hex(__ser(e.t, e.v, e.x))
-  return e
+  -- The second value tells whether the expiry reached Lua as a double that may be rounded (>= 2^53 ms): the commit refuses to rewrite such a key (DEC-045).
+  return e, ms >= 9007199254740992
 end
 LUA;
 
@@ -609,10 +610,28 @@ for _, pair in ipairs(__payload) do
   if not __declared[pair[1]] then return redis.error_reply('request commit: key is not declared in KEYS') end
   __entries[#__entries + 1] = {pair[1], cjson.decode(pair[2])}
 end
-for _, entry in ipairs(__entries) do
-  if __loadLive(entry[1]).o ~= entry[2].o then return 0 end
+local __unreadable = {}
+for index, entry in ipairs(__entries) do
+  local live, rounded = __loadLive(entry[1])
+  if live.o ~= entry[2].o then return 0 end
+  __unreadable[index] = rounded
 end
 if ARGV[2] == 'verify' then return 1 end
+-- #287 (DEC-045): Lua reads a key's expiry as a double, exact only below 2^53 ms, so such an expiry can neither be saved back to the millisecond nor
+-- proven unchanged by the fingerprint above. When the request writes anything, every key it read must be provably unchanged: one whose expiry is at or
+-- above that range refuses the save here, after the fingerprints matched (a changed state is a conflict first, DEC-037), before the plan is validated (a
+-- plan derived from a rounded value must not be judged) and before the first write. A request that writes nothing is not refused (reads, DEC-040).
+local __writes = false
+for _, entry in ipairs(__entries) do
+  if entry[2].d == 1 then __writes = true end
+end
+if __writes then
+  for index in ipairs(__entries) do
+    if __unreadable[index] then
+      return redis.error_reply('request commit: a key of the request has an expiry beyond the exactly readable range (2^53 ms); nothing was saved')
+    end
+  end
+end
 -- The whole plan is validated before the first write: a script error after a write has started cannot be undone.
 for _, entry in ipairs(__entries) do
   local e = entry[2]

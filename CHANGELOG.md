@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
+### Fixed (#287) — A request commit never rewrites an inherited Redis expiry (DEC-045)
+
+- `transactRequest()` read a key's physical expiry through Lua, which holds integers exactly only below 2^53. A save over a key with an expiry at or above 2^53 milliseconds wrote it up to hundreds of milliseconds off, and a rival that changed only that expiry went unnoticed. A request that writes is now refused (`request commit: … expiry beyond the exactly readable range …`) before its first write when any key it read has such an expiry, after the fingerprint comparison, so a changed state is still a conflict first and the request is evaluated again, and before the write plan is validated. Reads (DEC-040), a request that writes nothing, expiries below 2^53 ms and keys without an expiry are unchanged; the ACL check of the write plan (DEC-042) is unchanged. A direct `incrementAt()` can create an expiry above the range on a 64-bit build (policy durations never do).
+
 ### Fixed (#285) — Local fallback `Retry-After` stays exact on PHP 32-bit
 
 - The local fallback no longer forms the end instant of a fixed window. A window that ends beyond `PHP_INT_MAX` (for example a 600-second window at `2147483647` on a 32-bit build) turned the end into a float, so the evaluation failed with a `TypeError` instead of returning `Retry-After`. Each counter now keeps the instant it was created and the seconds that were left in its window then, so neither window bound is formed (this also covers a window that starts below the 32-bit `int` minimum) and `Retry-After` and cleanup always follow the counter's own window, exactly as before. The remaining time is an exact integer on both integer widths (353 seconds in that example). Counter cleanup, new windows at the limit, the largest wait among rejecting rules and the single charge per evaluation are unchanged; 64-bit results are identical.
