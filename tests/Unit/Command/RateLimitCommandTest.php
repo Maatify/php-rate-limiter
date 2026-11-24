@@ -6,6 +6,8 @@ namespace Maatify\RateLimiter\Tests\Unit\Command;
 
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Exception\RateLimiterException;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 class RateLimitCommandTest extends TestCase
@@ -76,6 +78,46 @@ class RateLimitCommandTest extends TestCase
         $this->assertFalse($command->isPreCheck);
         $this->assertFalse($command->isFailure);
         $this->assertTrue($command->isSuccess);
+    }
+
+    #[Group('php32')]
+    #[DataProvider('invalidPermits')]
+    public function testInvalidPermitIsRejected(bool $isPreCheck, bool $isFailure, bool $isSuccess, string $permit): void
+    {
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('A command permit must be non-blank and may accompany only a recorded outcome.');
+
+        new RateLimitCommand('test_policy', isPreCheck: $isPreCheck, isFailure: $isFailure, isSuccess: $isSuccess, permit: $permit);
+    }
+
+    /** @return array<string, array{bool, bool, bool, string}> */
+    public static function invalidPermits(): array
+    {
+        return [
+            'ordinary command' => [false, false, false, 'synthetic-permit'],
+            'pre-check' => [true, false, false, 'synthetic-permit'],
+            'empty failure permit' => [false, true, false, ''],
+            'blank success permit' => [false, false, true, " \t"],
+        ];
+    }
+
+    #[Group('php32')]
+    #[DataProvider('outcomeIntents')]
+    public function testOutcomePreservesPermit(bool $isFailure, bool $isSuccess): void
+    {
+        $permit = ' synthetic-permit ';
+        $command = new RateLimitCommand('test_policy', isFailure: $isFailure, isSuccess: $isSuccess, permit: $permit);
+
+        $this->assertSame($permit, $command->permit);
+    }
+
+    /** @return array<string, array{bool, bool}> */
+    public static function outcomeIntents(): array
+    {
+        return [
+            'failure' => [true, false],
+            'success' => [false, true],
+        ];
     }
 
     public function testContradictoryPreCheckAndFailureRejected(): void

@@ -25,7 +25,8 @@ final readonly class RateLimitCommand
      *
      * @throws RateLimiterException When more than one intent flag is enabled,
      *                               the policy name is empty or whitespace-only,
-     *                               or the cost is not a positive integer.
+     *                               the cost is not a positive integer, or a permit
+     *                               is blank or supplied without an outcome intent.
      */
     public function __construct(
         public string $policyName,
@@ -48,7 +49,7 @@ final readonly class RateLimitCommand
             throw new RateLimiterException('Rate-limit command cost must be a positive integer.');
         }
 
-        if ($this->permit !== null && (trim($this->permit) === '' || $this->isPreCheck)) {
+        if ($this->permit !== null && (trim($this->permit) === '' || (!$this->isFailure && !$this->isSuccess))) {
             throw new RateLimiterException('A command permit must be non-blank and may accompany only a recorded outcome.');
         }
     }
