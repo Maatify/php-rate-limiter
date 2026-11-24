@@ -95,7 +95,7 @@ final class QualificationEvidenceSchemaTest extends TestCase
         yield 'not active at qualification' => ['not ACTIVE and indexed', ['source_only_decision', 'status_at_qualification'], 'PROPOSED'];
         yield 'index not active' => ['not ACTIVE and indexed', ['source_only_decision', 'index_status_at_qualification'], 'SUPERSEDED'];
         yield 'no owner approval' => ['Owner approval', ['source_only_decision', 'owner_approval'], []];
-        yield 'effective after start' => ['does not predate', ['source_only_decision', 'effective_at'], '2999-01-01T00:00:00Z'];
+        yield 'effective after start' => ['does not predate', ['source_only_decision', 'effective_at'], '2026-10-06T20:00:01Z'];
         yield 'channel mismatch' => ['channel differs', ['source_only_decision', 'approved_distribution_channel'], 'https://other.example.test'];
         yield 'wrong package' => ['package_name mismatch', ['source_only_decision', 'package_name'], 'other/pkg'];
         yield 'scope does not cover' => ['version scope does not cover', ['source_only_decision', 'version_scope'], '2.x'];
