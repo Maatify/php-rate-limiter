@@ -357,7 +357,13 @@ final class Lcg
 
     public function pct(): int
     {
-        $this->state = ($this->state * 1103515245 + 12345) & 0x7fffffff;
+        // Multiply by 0x41c64e6d modulo 2^31 using 16-bit parts.
+        // The partial products and their sums fit in a signed 32-bit integer.
+        $stateLow = $this->state & 0xffff;
+        $stateHigh = ($this->state >> 16) & 0x7fff;
+        $low = $stateLow * 0x4e6d + 12345;
+        $high = $stateHigh * 0x4e6d + $stateLow * 0x41c6 + ($low >> 16);
+        $this->state = (($high & 0x7fff) << 16) | ($low & 0xffff);
 
         return ($this->state >> 8) % 100 + 1;
     }
