@@ -11,8 +11,11 @@ function microtime(bool $asFloat = false): float|string
         return \microtime(false);
     }
 
-    static $samples = 0;
+    static $hasSampled = false;
 
     // Let a wall-clock deadline be set, then simulate a step before it is checked.
-    return \microtime(true) + (++$samples === 1 ? 0.0 : 1_000.0);
+    $offset = $hasSampled ? 1_000.0 : 0.0;
+    $hasSampled = true;
+
+    return \microtime(true) + $offset;
 }

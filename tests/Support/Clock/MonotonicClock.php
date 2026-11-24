@@ -9,6 +9,7 @@ final class MonotonicClock
 {
     public static function nanoseconds(): int|float
     {
+        /** @var int|float|false $sample hrtime() documents false when the clock is unavailable. */
         $sample = hrtime(true);
         if ($sample === false) {
             throw new \RuntimeException('The monotonic clock is unavailable.');
