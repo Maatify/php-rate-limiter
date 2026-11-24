@@ -41,12 +41,12 @@ final class FamilyLifecycleTest extends TestCase
 
     private static function k4pKey(): string
     {
-        return hash_hmac('sha256', 'login_protection:rate_limiter:k4p:v2:prod:acct-life', FamilyLab::SECRET);
+        return FamilyLab::deriver()->derive('k4p', 'login_protection', 'acct-life', FamilyLab::SECRET);
     }
 
     private static function k4Key(): string
     {
-        return hash_hmac('sha256', 'login_protection:rate_limiter:k4:v2:prod:acct-life', FamilyLab::SECRET);
+        return FamilyLab::deriver()->derive('k4', 'login_protection', 'acct-life', FamilyLab::SECRET);
     }
 
     /** Three failures from an unknown device on the proven lane: the third is the hard block. */

@@ -26,7 +26,7 @@ use Maatify\RateLimiter\Repository\CallerTimeSnapshotFencedScoreStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeScoreReplaceStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeOperationalReadOnlyStoreInterface;
 
-class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLifecycleStoreInterface, CallerTimeBudgetSeedStoreInterface, CallerTimePunishmentLifecycleStoreInterface, CallerTimeDecimalMillisecondsPunishmentLifecycleStoreInterface, CallerTimeSnapshotFencedScoreStoreInterface, CallerTimeScoreReplaceStoreInterface, CallerTimeOperationalReadOnlyStoreInterface
+class InMemoryRateLimitStore implements \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface, BudgetSeedStoreInterface, PunishmentLifecycleStoreInterface, CallerTimeBudgetSeedStoreInterface, CallerTimePunishmentLifecycleStoreInterface, CallerTimeDecimalMillisecondsPunishmentLifecycleStoreInterface, CallerTimeSnapshotFencedScoreStoreInterface, CallerTimeScoreReplaceStoreInterface, CallerTimeOperationalReadOnlyStoreInterface
 {
     public bool $available = true;
     private const PAUSE_HISTORY_RETENTION_SECONDS = 86400;
@@ -60,6 +60,12 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
     private static ?\WeakMap $callerTimes = null;
 
     public function __construct(private readonly ClockInterface $clock) {}
+
+    /** DEC-044: the in-memory store keys by the plain logical string, which already differs between V2 and E1; its view is itself. */
+    public function e1Keyspace(): static
+    {
+        return $this;
+    }
 
     public function increment(string $key, int $ttlSeconds, int $amount = 1): int
     {

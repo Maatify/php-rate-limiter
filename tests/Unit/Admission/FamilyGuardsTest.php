@@ -107,7 +107,7 @@ final class FamilyGuardsTest extends TestCase
 
     public function testG3ProvenLaneStopsTheDeviceCapObservationFloodAndK1ToK3(): void
     {
-        $key = hash_hmac('sha256', 'login_protection:rate_limiter:aux:flood_stage:v1:prod:acct-f', self::SECRET);
+        $key = FamilyLab::deriver()->derive('aux.flood_stage', 'login_protection', 'acct-f', self::SECRET);
         $incrementsOf = function (?AdmissionLaneEnum $lane) use ($key): int {
             $lab = $this->lab($lane);
             for ($i = 0; $i < 7; $i++) {
@@ -170,7 +170,7 @@ final class FamilyGuardsTest extends TestCase
         self::assertStringContainsString('H', $decisions(null, $none), 'Without a lane an account hard block is issued.');
         self::assertSame(str_repeat('A', 25), $decisions(AdmissionLaneEnum::U, $u), 'U refuses nothing at account scope, budget included.');
 
-        $k4 = hash_hmac('sha256', 'login_protection:rate_limiter:k4:v2:prod:acct-d', self::SECRET);
+        $k4 = FamilyLab::deriver()->derive('k4', 'login_protection', 'acct-d', self::SECRET);
         self::assertNull($u->store->checkBlock($k4));
         $score = $u->store->get($k4);
         self::assertNotNull($score, 'The account score is still written and readable.');
@@ -183,8 +183,8 @@ final class FamilyGuardsTest extends TestCase
         $lab->at(0);
         $lab->run(self::context('198.51.100.7', 'acct-e', 'dev-e'), 'fail');
 
-        $k4p = hash_hmac('sha256', 'login_protection:rate_limiter:k4p:v2:prod:acct-e', self::SECRET);
-        $k4 = hash_hmac('sha256', 'login_protection:rate_limiter:k4:v2:prod:acct-e', self::SECRET);
+        $k4p = FamilyLab::deriver()->derive('k4p', 'login_protection', 'acct-e', self::SECRET);
+        $k4 = FamilyLab::deriver()->derive('k4', 'login_protection', 'acct-e', self::SECRET);
 
         self::assertNotNull($lab->store->get($k4p));
         self::assertNull($lab->store->get($k4));
@@ -227,7 +227,7 @@ final class FamilyGuardsTest extends TestCase
     public function testDetectorProvenLaneFlagBreaksG3(): void
     {
         $mutant = PipelineMutant::pipeline(methodBodies: ['isProvenLane' => 'return false;']);
-        $key = hash_hmac('sha256', 'login_protection:rate_limiter:aux:flood_stage:v1:prod:acct-f', self::SECRET);
+        $key = FamilyLab::deriver()->derive('aux.flood_stage', 'login_protection', 'acct-f', self::SECRET);
 
         $lab = $this->lab(AdmissionLaneEnum::P, $mutant);
         for ($i = 0; $i < 7; $i++) {

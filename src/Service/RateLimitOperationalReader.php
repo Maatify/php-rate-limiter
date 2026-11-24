@@ -18,6 +18,8 @@ use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 use Maatify\RateLimiter\Enum\AdmissionLaneEnum;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
+use Maatify\RateLimiter\Enum\KeyScopeEncodingEnum;
+use Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface;
 use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
@@ -36,6 +38,11 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
 {
     /** @var list<object> DEC-041: the resources every independent call of this entry owns. */
     private readonly array $resources;
+
+    private readonly AccountScopeKeyDeriverInterface $accountKeys;
+
+    /** The store of the account-bearing keys: the E1 view under E1, otherwise the store itself. */
+    private readonly RateLimitStoreInterface $accountStore;
 
     /** DEC-041: the context domain they are bound to; holds its provider for the lifetime of this object. */
     private readonly ContextDomain $domain;
@@ -68,6 +75,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         private readonly string $keySecret,
         private readonly string $envScope,
         private readonly ?string $previousKeySecret = null,
+        ?AccountScopeKeyDeriverInterface $accountKeys = null,
     ) {
         if (trim($keySecret) === '') {
             throw new RateLimiterException('Active key secret must not be empty or whitespace-only.');
@@ -77,6 +85,16 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         }
         if ($previousKeySecret !== null && trim($previousKeySecret) === '') {
             throw new RateLimiterException('Previous key secret must not be empty or whitespace-only.');
+        }
+        // DEC-044: the same derivation source as the writer; under E1 the account-bearing keys are read in the E1 layout of this very store.
+        $this->accountKeys = $accountKeys ?? new V2AccountScopeKeyDeriver($this->envScope);
+        if ($this->accountKeys->encoding() === KeyScopeEncodingEnum::E1) {
+            if (! $this->store instanceof E1KeyspaceStoreInterface) {
+                throw new RateLimiterException('The E1 key encoding requires a store implementing E1KeyspaceStoreInterface (DEC-044).');
+            }
+            $this->accountStore = $this->store->e1Keyspace();
+        } else {
+            $this->accountStore = $this->store;
         }
         $this->resources = OwnershipRegistry::collect([$this->store, $this->circuitBreakerStore], [], [$this->clock]);
         $this->domain = OwnershipRegistry::adopt($this->resources, $this);
@@ -180,23 +198,24 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
             throw new \LogicException('Required operational scope key is unavailable.');
         }
 
-        $score = $this->store->get($currentKey);
+        $store = $keyType === 'k4' || $keyType === 'k5' ? $this->accountStore : $this->store;
+        $score = $store->get($currentKey);
         $scoreFromPreviousGeneration = false;
         if ($score === null && $previousKey !== null) {
-            $score = $this->store->get($previousKey);
+            $score = $store->get($previousKey);
             $scoreFromPreviousGeneration = $score !== null;
         }
 
         // Use the active logical block level across Current/Previous, matching
         // the pipeline's rotation-aware decay semantics.
         $now = $this->hostNow()->getTimestamp();
-        $currentBlock = CallerTimeStore::operationalBlock($this->store, $currentKey, $this->hostNow());
+        $currentBlock = CallerTimeStore::operationalBlock($store, $currentKey, $this->hostNow());
         $activeHardBlock = $this->activeHardBlock($currentBlock, $now);
         $blockFromPreviousGeneration = false;
         $previousBlock = null;
 
         if ($activeHardBlock === null && $previousKey !== null) {
-            $previousBlock = CallerTimeStore::operationalBlock($this->store, $previousKey, $this->hostNow());
+            $previousBlock = CallerTimeStore::operationalBlock($store, $previousKey, $this->hostNow());
             $activeHardBlock = $this->activeHardBlock($previousBlock, $now);
             $blockFromPreviousGeneration = $activeHardBlock !== null;
         }
@@ -209,8 +228,8 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
                 'k3', 'k5' => 'device',
                 default => 'ip',
             };
-            $pauseState = $this->store instanceof HardBlockCycleStoreInterface
-                ? $this->store->readDecayPauseState($currentKey, $previousKey, $score->updatedAt, $now)
+            $pauseState = $store instanceof HardBlockCycleStoreInterface
+                ? $store->readDecayPauseState($currentKey, $previousKey, $score->updatedAt, $now)
                 : new DecayPauseStateDTO(0, 0);
             $decayAmount = $this->decayCalculator->calculateDecay(
                 $score->value,
@@ -321,14 +340,14 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
     private function resolveBudgetState(?string $currentKey, ?string $previousKey): array
     {
         if ($currentKey !== null) {
-            $current = CallerTimeStore::operationalBudget($this->store, $currentKey, $this->hostNow());
+            $current = CallerTimeStore::operationalBudget($this->accountStore, $currentKey, $this->hostNow());
             if ($current !== null) {
                 return [$current, false];
             }
         }
 
         if ($previousKey !== null) {
-            $previous = CallerTimeStore::operationalBudget($this->store, $previousKey, $this->hostNow());
+            $previous = CallerTimeStore::operationalBudget($this->accountStore, $previousKey, $this->hostNow());
             if ($previous !== null) {
                 return [$previous, true];
             }
@@ -343,7 +362,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
     private function resolveCooldown(string $policyName, string $accountId, DeviceIdentityDTO $device, ?AdmissionLaneEnum $lane): array
     {
         $currentKey = $this->budgetCooldownKey($policyName, $accountId, $this->keySecret, $lane);
-        $current = $this->store->get($currentKey);
+        $current = $this->accountStore->get($currentKey);
         if ($current !== null) {
             return [$current, false];
         }
@@ -356,7 +375,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
                 $lane,
             );
             if ($previousKey !== $currentKey) {
-                $previous = $this->store->get($previousKey);
+                $previous = $this->accountStore->get($previousKey);
                 if ($previous !== null) {
                     return [$previous, true];
                 }
@@ -377,18 +396,12 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
             return null;
         }
 
-        return $this->hashKey(
-            "{$policyName}:rate_limiter:microcap:{$this->k5KeyType($lane)}:v1:{$this->envScope}:{$accountId}:{$k5Material}",
-            $secret,
-        );
+        return $this->accountKeys->derive($lane === AdmissionLaneEnum::P ? AccountScopePurpose::MICROCAP_K5P : AccountScopePurpose::MICROCAP_K5, $policyName, $accountId, $secret, $k5Material);
     }
 
     private function budgetCooldownKey(string $policyName, string $accountId, string $secret, ?AdmissionLaneEnum $lane): string
     {
-        return $this->hashKey(
-            "{$policyName}:rate_limiter:{$this->laneAuxiliaryPurpose($lane, 'budget_cooldown')}:v1:{$this->envScope}:{$accountId}",
-            $secret,
-        );
+        return $this->accountKeys->derive($this->laneAuxiliaryPurpose($lane, 'budget_cooldown'), $policyName, $accountId, $secret);
     }
 
     // The five helpers below are the reader's own copy of the pipeline's lane rules (same names, same meaning);
@@ -460,10 +473,10 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
                 : $this->hashKey("{$base}:k3:{$version}:{$environment}:{$this->getIpPrefix($context->ip)}:{$fingerprintHash}", $secret),
             'k4' => ! IdentityPresence::account($context)
                 ? null
-                : $this->hashKey("{$base}:{$this->k4KeyType($lane)}:{$version}:{$environment}:{$context->accountId}", $secret),
+                : $this->accountKeys->derive($this->k4KeyType($lane), $policyName, $context->accountId, $secret),
             'k5' => ! IdentityPresence::account($context) || ! IdentityPresence::isPresent($fingerprintHash)
                 ? null
-                : $this->hashKey("{$base}:{$this->k5KeyType($lane)}:{$version}:{$environment}:{$context->accountId}:" . ($k5Material ?? $fingerprintHash), $secret),
+                : $this->accountKeys->derive($this->k5KeyType($lane), $policyName, $context->accountId, $secret, $k5Material ?? $fingerprintHash),
         ];
 
         return $keys;

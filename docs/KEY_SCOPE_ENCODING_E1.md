@@ -1,13 +1,14 @@
-# Key Scope Encoding E1 — Derivation Contract and Key Map (PROPOSED)
+# Key Scope Encoding E1 — Derivation Contract and Key Map
 
-> **Status: `PROPOSED` (DEC-044). This is not the current key contract.** `docs/KEY_STRATEGY.md` stays the authoritative,
-> current contract and describes the shipped V2 derivation. Nothing here changes `src/`, a stored key, a default, or a
-> release. E1 becomes a contract only when the Owner activates [DEC-044](decisions/DEC-044_E1_UNAMBIGUOUS_ACCOUNT_SCOPE_KEY_ENCODING.md);
-> activation then amends `KEY_STRATEGY.md` as listed in §10. Issue: #284.
+> **Status: `ACTIVE` ([DEC-044](decisions/DEC-044_E1_UNAMBIGUOUS_ACCOUNT_SCOPE_KEY_ENCODING.md)).** The Lead accepted the
+> opt-in implementation and security review in [PR #295](https://github.com/Maatify/php-rate-limiter/pull/295) at
+> [`ccfb86964159d126d57ca34615ee28f81333ef70`](https://github.com/Maatify/php-rate-limiter/commit/ccfb86964159d126d57ca34615ee28f81333ef70).
+> [KEY_STRATEGY](KEY_STRATEGY.md) is the normative owner. V2 is the default, and E1 is selected explicitly once per
+> builder with `withKeyScopeEncoding(KeyScopeEncodingEnum::E1)`. See §12 for the implementation evidence.
 
 ## 1. Purpose, scope and non-goals
 
-**Gap (merged study #290).** The writer and the operational reader build the account-bearing key preimages by joining
+**Gap (merged study #290).** The V2 writer and operational reader built the account-bearing key preimages by joining
 fields with `:` (for K4: `{policy}:rate_limiter:{k4|k4p}:v2:{env}:{accountId}`). `environmentScope` accepts any
 non-blank string and `accountId` any non-empty string, so two different `(env, accountId)` pairs can produce the same
 preimage, hence the same HMAC and the same stored key. The study proved this from source and did not run any state under
@@ -185,10 +186,9 @@ claim about any deployment.
 
 ## 4. One derivation source
 
-Today the K4/K5 and auxiliary preimages exist in **two independent copies**: the writer (`EvaluationPipeline`) and the
-operational reader (`RateLimitOperationalReader`, whose own comment says READER-PARITY keeps its helpers equal;
-`tests/Unit/Admission/FamilyReaderParityTest.php`). Equal copies are not one source: if both ever drift the same way,
-parity passes and the key is still wrong.
+Before the implementation, the writer (`EvaluationPipeline`) and the operational reader
+(`RateLimitOperationalReader`) each derived the K4/K5 and auxiliary preimages. The old parity tests in
+`tests/Unit/Admission/FamilyReaderParityTest.php` checked that the two copies agreed. They could both drift together.
 
 **Contract:** for the purposes of §3.4 there is exactly one implementation of the derivation per encoding, and the writer,
 the operational reader and every future reader obtain Current **and** Previous keys from it:
@@ -197,13 +197,13 @@ the operational reader and every future reader obtain Current **and** Previous k
    `(previousKeySecret ?? keySecret, previousMaterial ?? material)`, existing only under today's rule
    (`previousKeySecret !== null || device.previousFingerprintHash !== null`, `hasPreviousGeneration()`), and applies the
    existing equal-key de-duplication (a Previous equal to Current is dropped by the consumer);
-2. `RateLimiterBuilder` creates it once and hands the same instance to `EvaluationPipeline` (`:241`) and to
-   `RateLimitOperationalReader` (`:357`), so a runtime and its reader cannot select different encodings;
+2. `RateLimiterBuilder` creates it once and hands the same instance to `EvaluationPipeline` and to
+   `RateLimitOperationalReader`, so a runtime and its reader cannot select different encodings;
 3. no other `hash_hmac` over a preimage that contains `accountId` remains outside it (a source guard, §9 AC-3);
-4. the V2 implementation of the same component returns **byte-identical** keys to today's code, proven against golden
-   values taken from `main` before the refactor, so moving V2 behind the component changes nothing physical.
+4. the V2 implementation returns **byte-identical** keys, proven against golden values taken from `main` before the
+   refactor.
 
-Class and method names are the implementation's choice and need Owner approval only where they are public API (§10, D-4).
+The accepted public capability is recorded in §10 (D-4), with the implementation mapping in §12.
 
 ## 5. Scope bound to the source
 
@@ -287,14 +287,14 @@ V2 physical key = "maatify:rate-limiter:v1:" ‖ sha256(namespace) ‖ ":" ‖ f
 and the correlation store accept any `string`, and the package reserves no `e1.` prefix (`src/Repository/RateLimitStoreInterface.php:39-62`
 on `main@35398c11`). A direct caller may already pass `e1.…`-shaped or 64-hex keys today. Routing by string shape would
 change or refuse such a call after a plain package update, even with E1 unselected. The contract is therefore four
-invariants, and the mechanism that satisfies them is an implementation choice (D-4):
+invariants, implemented by the approved layout-bound view (D-4):
 
 1. **Plain strings are untouched.** For every `string` passed to an existing store method, in every family, including one
    that begins with `e1.`, equals `e1.` plus 64 hex characters, or is malformed in any way, the physical key is the
    `v1` key of `main@35398c11` byte for byte, and no refusal is added. This holds with E1 selected and unselected.
-2. **E1 identity travels with the key.** The derivation component returns an E1 key as a distinct value (a typed key, or a
-   store handle bound to the E1 layout that only E1 keys are given). The store derives the `e1` physical key **only** from
-   that explicit carrier. The textual form `e1.‹digest›` is for logs, snapshots and members, not for routing.
+2. **E1 identity travels with the key.** In an E1 runtime, the pipeline routes the derived Set A key through the
+   layout-bound view. That explicit carrier selects the `e1` physical prefix. The textual form `e1.‹digest›` is retained
+   for logs, snapshots and members.
 3. **Carrier creation is closed.** An E1 carrier is created only by the E1 derivation component, and by the E1 runtime's own
    re-wrapping of a member it previously stored (a snapshot member that is later blocked,
    `EvaluationPipeline.php:777-785`). That re-wrap validates the exact grammar `^e1\.[0-9a-f]{64}$` and throws on anything
@@ -312,14 +312,11 @@ objects does not join them: each would hold its own overlay and its own ownershi
 (`v1`) and a K4 key (`e1`) would commit twice, so it could be saved in one layout and refused or lost in the other. That
 would break DEC-037's all-or-none save for exactly the requests E1 is for.
 
-Two admissible mechanisms, recommended order: **(a)** the E1-capable store exposes a **view bound to the E1 layout of the
-same store instance**: it is not a second store. It delegates every call to the same object, so it uses the same
-`requestState` overlay, the same ownership guard and the same `transactRequest()`; only the physical-key function differs.
-The pipeline already knows per key whether it is a K1 or a K4 key and uses the matching view. **(b)** a typed key object
-accepted by a new E1 capability whose methods mirror the ones the pipeline uses; it also runs on the one store object, but
-it cannot reuse the existing `string`-typed methods under `strict_types` and so widens the new surface. D-4 chooses, and
-**either choice is admissible only if a view or key never owns separate request state.** A mechanism that constructs an
-independent store (or a second overlay, or a second ownership claim) is refused by this contract. Acceptance is AC-9.
+D-4 approved **(a)**, the **view bound to the E1 layout of the same store instance** exposed by
+`E1KeyspaceStoreInterface::e1Keyspace()`. The root and view share `requestState`, the ownership guard and
+`transactRequest()`. The pipeline selects the layout per key. The design also considered **(b)**, a typed key object
+with a new method surface, because the existing methods accept `string` under `strict_types`. AC-9 verifies the shared
+transaction and ownership on the accepted view.
 
 Consequences that the acceptance tests check (§9, AC-5): with the same inputs, every physical key of §5.3 families and every
 K1–K3 key is identical in an E1 runtime and a V2 runtime; every Set A key exists only under `…:e1:…`; no Set A key exists
@@ -375,11 +372,10 @@ cycle rule, a lifecycle rule or a rotation rule. Therefore, for E1 runtimes:
      the operation and asserts `PEXPIRETIME − TIME` lies inside the bracket the TTL implies; parity is judged on that
      delta and on the recorded bracket width, never on absolute timestamps.
 
-  **The request path is blocked on #287** (a counter update inside `transactRequest()` moved the inherited absolute expiry by
-  1 ms in Docker evidence on PHP32 and PHP64). Acceptance of E1 on the atomic request save requires case 2 to hold on that
-  path: **acceptance of E1 on the atomic request save stops until #287 is resolved.** Its measured effect is not accepted in
-  place of a resolution. The E1 contract itself (encoding, key domain, storage identity, key map) is not blocked and may
-  proceed; it does not depend on how #287 is fixed.
+  **The request-path dependency [#287](https://github.com/Maatify/php-rate-limiter/issues/287) was resolved in `main@4c523096`.**
+  [DEC-045](decisions/DEC-045_REQUEST_SAVE_REFUSES_AN_EXPIRY_LUA_CANNOT_READ_EXACTLY.md) applies to both layouts.
+  A writing request is refused before its first write when a key it read has an expiry Lua cannot compare exactly.
+  Below 2^53 ms, a path that preserves the physical expiry saves it literally.
 - **Atomicity.** Every write remains one Lua script on the direct path or one overlay commit for a request (DEC-037, with
   the ACL preflight of DEC-042 and the exclusive ownership of DEC-041). The overlay requires every key in `KEYS`; E1 keys
   are declared like V2 keys. One request commit (one per attempt; a conflicting attempt saves nothing and the next attempt commits again, DEC-037) saves keys of both layouts together (K1 under `v1`, K4 under `e1`); this
@@ -389,59 +385,97 @@ cycle rule, a lifecycle rule or a rotation rule. Therefore, for E1 runtimes:
 ## 8. Compatibility boundaries
 
 1. **Selection is explicit.** E1 is chosen when the runtime is composed, once per `RateLimiterBuilder` (one runtime and its
-   reader), never per request and never inferred. The name and shape of the setting are decided with the implementation (D-3).
+   reader), with `RateLimiterBuilder::withKeyScopeEncoding(KeyScopeEncodingEnum::E1)` (D-3). The runtime and reader
+   share the selection. §12 records when the builder fixes it.
 2. **V2 stays the default.** A configuration that does not select E1 keeps V2 across package updates: no automatic upgrade
    and no behaviour or physical-key change for it (acceptance AC-8 compares it against `main@35398c11`).
 3. **A new isolated space can start on E1.** A space that serves **new** traffic (a store namespace and environment scope
    with no prior V2 state for those accounts) starts on E1 directly. No V2 state exists to carry over.
 4. **Moving the same existing traffic is a migration**, with its own contract. Selecting E1 for accounts that already have V2
-   state makes that state invisible to E1 (E1 never reads V2): scores, budgets, cooldowns and **active blocks** restart. Any
-   migration path that is approved must preserve active blocks.
+   state starts a fresh Set A key space. Scores, budgets, cooldowns and **active blocks** for those identities remain in
+   V2. A separate approved migration path must preserve active blocks.
 5. **Outside this contract:** temporarily reading V2 blocks, seeding V2 into E1, the window policy and `DENY`/`ALLOW`/typed
    fallback during a window, retiring V2, score and budget policy. The #291 rehearsal numbers are evidence for one specific
    operational option and are not part of E1.
 6. **E1-capable store.** A new optional capability marks stores and correlation stores that implement §6.2. The builder
    refuses E1 over a store without it, before the first write, as it already refuses opt-in lifecycle policies over a store
-   without the lifecycle capability (DEC-007). Because this adds public interface surface it needs Owner approval (D-4).
+   without the lifecycle capability (DEC-007). D-4 records the approved public capability.
 
-## 9. Acceptance evidence for the later implementation
+## 9. Acceptance criteria
 
-Each item names what must be shown; none is run by this change. Redis evidence uses the repository's pinned Redis 7.0.15
-service and is taken from outside Lua (`PEXPIRETIME`, `DUMP`, `SCAN`), for **PHP 32-bit and 64-bit**, with `PHP_INT_SIZE`
-asserted before anything runs and the raw outputs kept. Synthetic data only.
+The criteria below define the evidence for the implementation. See §12 and [PR #295](https://github.com/Maatify/php-rate-limiter/pull/295) for the observed coverage and its
+limits. Redis evidence uses the repository's pinned Redis 7.0.15 service and is taken from outside Lua
+(`PEXPIRETIME`, `DUMP`, `SCAN`) for **PHP 32-bit and 64-bit**. The runs record `PHP_INT_SIZE` and use synthetic data.
 
 | ID | Evidence |
 |---|---|
 | AC-1 | The §3.7 vectors, the golden V2 values from `main@35398c11`, and the hex preimage reproduce byte for byte on both widths. |
-| AC-2 | Injectivity of the E1 encoding, **per integer width**. Both widths: a generated corpus over fields with `:`, NUL, multibyte, empty and long values; a decoder that parses every preimage back to the exact tuple; distinct tuples never give equal preimages or equal keys; the shared vectors of §3.7 identical on both. The corpus and the key comparison are evidence **on the sample**, not a proof; the proof is the length-prefix argument of §3.2. Length bound through a seam that supplies the length (no `2^32`-byte string is allocated): **PHP64** tests `0`, `1`, `0xFFFFFFFE`, `0xFFFFFFFF` (all encode, prefix equals the supplied length), `0x100000000` and `PHP_INT_MAX` (refused before `pack()`, before any HMAC and before any store command). **PHP32** tests every representable length (`0`, `1`, `2^24`, `PHP_INT_MAX = 2^31 − 1`, all encode, none refused) and records that the refusal is unreachable on that width because `strlen` cannot exceed `PHP_INT_MAX`. `PHP_INT_SIZE` is asserted first and the raw output kept. |
+| AC-2 | Injectivity of the E1 encoding, **per integer width**. Both widths: a generated corpus over fields with `:`, NUL, multibyte, empty and long values; a decoder that parses every preimage back to the exact tuple; distinct tuples never give equal preimages or equal keys; the shared vectors of §3.7 identical on both. The corpus and the key comparison are evidence **on the sample**, not a proof; the proof is the length-prefix argument of §3.2. Length bound through a seam that supplies the length (no `2^32`-byte string is allocated): **PHP64** tests `0`, `1`, `2^24`, `0xFFFFFFFE`, `0xFFFFFFFF` (all encode, prefix equals the supplied length), `0x100000000` and `PHP_INT_MAX` (refused before `pack()`, before any HMAC and before any store command). **PHP32** tests the representative lengths `0`, `1`, `2^24` and `PHP_INT_MAX = 2^31 − 1` (all encode) and records that the refusal is unreachable on that width because `strlen` cannot exceed `PHP_INT_MAX`. `PHP_INT_SIZE` is asserted first and the raw output kept. |
 | AC-3 | Writer and reader share one derivation source: a parity matrix (lane U/P, with and without an instance id, one secret and a rotation with Current and Previous) for every §3.4 purpose, plus a source guard that no `hash_hmac` of an account-bearing preimage remains outside the component. Generalises `FamilyReaderParityTest`. |
 | AC-4 | Rotation: Current-only, previous secret, previous material, both, equal-key de-duplication; writes only to Current; Previous never written; budget seeding atomic; no `max()`; **a V2 key for the same account is never read and no V2 key is written for a Set A identity by an E1 runtime**. |
 | AC-5 | Stability and separation: differential run of the same traffic on a V2 runtime and an E1 runtime in the same Redis; physical keys, values and expiries of §5.3 families and K1–K3 are identical; Set A keys exist only under `…:e1:…` and never under `…:v1:…`; Set B differences are exactly the documented set; an E1 carrier in a foreign family throws before any command; **direct-call differential**: plain strings, including `e1.`-prefixed, exact `e1.`+64-hex and malformed ones, passed to the existing store methods in each of the ten families, give the `main@35398c11` physical keys and are not refused, with E1 selected and unselected. |
-| AC-6 | Expiry, rotation and lifecycle on E1 keys: the existing suites run against both encodings (DEC-003 cycle and pause, DEC-007 lifecycle and claim, budget rotation continuity, device-generation rotation), with expiry compared by `PEXPIRETIME` **per the three cases of §7** (logical deadline from caller time: stored `expiresAt` exact across layouts; preserved physical expiry: literal before/after in one run, only on a path that pins it; new Redis-clock TTL: bracketed by `TIME`, never absolute across runs); the request path as stated in §7 (#287). |
-| AC-7 | Request atomic save on E1 (DEC-037/041/042): conflict recalculation; interruption has the two outcomes of AC-9 (iii)/(iv): nothing saved if the save never reached Redis, or the whole save with an unknown outcome to the caller if only the reply was lost. ACL, two scenarios: **(i)** an account with only the `v1` grant is refused at the read/`EVAL`/key-scope entry with an unchanged keyspace (the entry guard; no `commit` is reached); **(ii)** an account that **can read** the E1 keys and run the evaluation but lacks a write command of the plan receives the DEC-042 `NOPERM request commit` from `commit`, before the first write, with an unchanged keyspace, and the same request succeeds once the grant is complete. Direct scripts: limited to DEC-043 (a refused expiry command is `NOPERM`, with its cleanup bounds). |
+| AC-6 | Expiry, rotation and lifecycle on E1 keys: evidence in both encodings for DEC-003 cycle and pause, DEC-007 lifecycle and claim, budget rotation continuity and device-generation rotation, with expiry compared by `PEXPIRETIME` **per the three cases of §7** (logical deadline from caller time: stored `expiresAt` exact across layouts; preserved physical expiry: literal before/after in one run, only on a path that pins it; new Redis-clock TTL: bracketed by `TIME`, never absolute across runs); the request path as stated in §7 (DEC-045). |
+| AC-7 | Request atomic save on E1 (DEC-037/041/042/045): conflict recalculation and the physical-expiry guard in either layout; interruption has the two outcomes of AC-9 (iii)/(iv): nothing saved if the save never reached Redis, or the whole save with an unknown outcome to the caller if only the reply was lost. ACL, two scenarios: **(i)** an account with only the `v1` grant is refused at the read/`EVAL`/key-scope entry with an unchanged keyspace (the entry guard; no `commit` is reached); **(ii)** an account that **can read** the E1 keys and run the evaluation but lacks a write command of the plan receives the DEC-042 `NOPERM request commit` from `commit`, before the first write, with an unchanged keyspace, and the same request succeeds once the grant is complete. Direct scripts: limited to DEC-043 (a refused expiry command is `NOPERM`, with its cleanup bounds). |
 | AC-8 | Compatibility: with E1 unselected the full suite passes and the physical keys equal `main@35398c11`; E1 over a store without the capability fails at composition; a V2 reader cannot read E1 state and an E1 reader cannot read V2 state, each shown explicitly. |
 | AC-9 | One transaction **per attempt** for both layouts. A request that **writes a V2-layout key and an E1-layout key** (for example a K1 hard-block and a K4 score) is served by one store instance. Each **attempt** issues at most one `commit`. DEC-037 still allows a conflicting attempt to be evaluated again and saved by a new attempt, so the evidence has two parts: **(i) a conflicting attempt** (a key of either layout changed between read and commit) returns the conflict and saves **none** of the request's writes in **either** layout (keyspace, values and expiries unchanged, read from outside Lua), and the request is re-evaluated within the DEC-037 limits; **(ii) the successful attempt** saves **both** layouts together, in that one `commit`. A forced `NOPERM` in each layout leaves both layouts unchanged. **Interruption has two distinct outcomes, each read from outside Lua and never conflated (DEC-037, Consequences):** **(iii) interrupted before the save reached Redis** (no `commit` delivered) leaves **none** of the request's writes in **either** layout; **(iv) Redis applied the `commit` and the reply was lost** leaves the request's writes stored in **both** layouts together (the save applies in full or not at all) while the caller sees a `BackendFailureException` with an **unknown outcome**, never a partial one, and the lost-reply contract is preserved (no re-evaluation presumes the save failed). Neither case may leave one layout written and the other not. Evidence shows a single held `requestState`, a single ownership claim (DEC-041: an independent call during the request is refused on either view) and, per attempt, a single `commit` script call, on PHP32 and PHP64. A view or key that owns separate request state fails this item. |
 
-## 10. Decisions pending the Owner
+## 10. Decision register
 
-None of these is taken by this document.
+The Lead accepted D-1 through D-6 in [PR #295](https://github.com/Maatify/php-rate-limiter/pull/295) under the Owner's delegation on [#284](https://github.com/Maatify/php-rate-limiter/issues/284). D-7
+remains a separate migration decision.
 
-| ID | Decision | Recommendation |
-|---|---|---|
-| D-1 | Activate DEC-044 (the encoding, the key domain and the storage identity of §3 and §6) | Activate. |
-| D-2 | Confirm Set A as the E1 scope, Set B as derivative, and §5.3/§5.4 as separate decisions (K1–K3, admission NUL join, the `binding_epoch` documentation mismatch) | Confirm; handle the §5.4 findings as their own issues. |
-| D-3 | Selection surface: explicit, once per builder, default V2; its name | As §8.1. |
-| D-4 | The E1-capable store capability (public interface addition) and how the layout is carried (§6.2): a view bound to the E1 layout **of the same store instance** (a) or a typed key object (b). Plain-string behaviour (invariant 1) and the single request transaction (AC-9) are fixed in either case | (a), as a view of the same instance: no change to existing methods, smallest new surface. |
-| D-5 | Host duties: grant the `e1` key prefix before selecting E1 (§6.3) | Document it in the Host guide at implementation. |
-| D-6 | Amend `KEY_STRATEGY.md` on activation (§3.4, §3.5, §4.2, §4.4, §4.5, §4.6, §10) and the Package Reference, with the security review §10 of KEY_STRATEGY requires | Same PR as the implementation, after D-1. |
-| D-7 | Migration of existing traffic, V2 block reading, seeding, window policy, retirement of V2 | Separate decisions; E1 does not wait for them. |
+| ID | Disposition |
+|---|---|
+| D-1 | DEC-044 is active for the encoding, key domain and storage identity of §3 and §6. |
+| D-2 | Set A is the E1 scope. Set B is derivative. The families and findings in §5.3 and §5.4 stay separate. |
+| D-3 | `RateLimiterBuilder::withKeyScopeEncoding()` selects the encoding explicitly once per builder. V2 is the default. |
+| D-4 | Option (a) is accepted. `E1KeyspaceStoreInterface::e1Keyspace()` is the view of the same store (§6.2), retaining the plain-string and single-transaction guarantees. |
+| D-5 | The Host grants read and write access to the `e1` key prefix before selecting E1. See the [Usage Guide](guides/USAGE_GUIDE.md#choosing-the-e1-key-encoding-dec-044). |
+| D-6 | [KEY_STRATEGY](KEY_STRATEGY.md) and the [Package Reference](../RATE_LIMITER_PACKAGE_REFERENCE.md) incorporate the opt-in contract. The security review required by KEY_STRATEGY §10 is accepted in [PR #295](https://github.com/Maatify/php-rate-limiter/pull/295). |
+| D-7 | Existing-traffic migration, V2 block reads, seeding E1 from V2, window policy and retirement of V2 remain separate. Any migration must preserve active blocks (§8). |
 
 ## 11. What this document does not establish
 
 - It does not prove V2 collisions in any deployment; the gap is a source-level proof (#290).
-- No E1 code, store routing, marker interface or test exists; §3.7 is the only computed material and is a reference
-  construction run outside the package.
+- §3.7 was computed outside the package before the implementation; the implementation reproduces it byte for byte on both
+  integer widths (AC-1, `tests/Unit/Service/AccountScopeKeyDeriverTest.php`).
 - It does not show that any Host passes attacker-controlled account identifiers or shares one secret and namespace across
   environment scopes.
 - Redis Cluster, Redis older than 7.0, non-official stores and the admission layer are not covered.
 - It does not decide when, or whether, an existing deployment moves to E1.
+
+## 12. Implementation record
+
+Issue [#284](https://github.com/Maatify/php-rate-limiter/issues/284), base `main@4c523096`. The Lead accepted the implementation in [PR #295](https://github.com/Maatify/php-rate-limiter/pull/295)
+at [`ccfb86964159d126d57ca34615ee28f81333ef70`](https://github.com/Maatify/php-rate-limiter/commit/ccfb86964159d126d57ca34615ee28f81333ef70).
+
+| Item | Choice |
+|---|---|
+| Selection (D-3) | `RateLimiterBuilder::withKeyScopeEncoding(KeyScopeEncodingEnum $encoding)`; `KeyScopeEncodingEnum::{V2, E1}`; default `V2`. The selection is fixed by the first successful build: once a runtime or a reader has been built from a builder, selecting a different encoding on that builder throws (F295-02), so the runtime and the reader it builds always receive the same derivation instance. Only a successful build fixes it: a build that fails at any point (for example a DEC-041 provider mismatch after the derivation was created) leaves the selection free, so the Host can correct the cause and still choose either encoding. The selection also cannot change while a build is running (a Host callback that tries to switch it from inside a build is refused); it is free again only when every attempt failed. A failure never undoes a selection that an earlier or nested successful build already fixed (a reader built inside a Host callback of a build that then fails keeps its selection). |
+| Capability (D-4 a) | `Repository\E1KeyspaceStoreInterface::e1Keyspace(): static`, implemented by `RedisFullCapabilityStore`. The view is a clone of the same store that points back at its root: one request state, one ownership claim, one `transactRequest()`; only `key()` differs. Idempotent. A copy of a store (`clone`) never inherits the view of the original: it creates its own, bound to the copy's own request state, so cancelling a request on a copy leaves no trace in either layout (F295-01). |
+| Plain strings | The store's own methods are unchanged: a string never selects a layout (invariant 1). The view accepts only the exact grammar `^e1\.[0-9a-f]{64}$` and only the families `score`, `block`, `budget`, `cycle`, `pause`, `reentry-claim`, `watch`, `watch-meta`; anything else throws `RateLimiterException` before any command (invariants 3 and 4). |
+| Derivation source | `Service\AccountScopeKeyDeriverInterface` with `V2AccountScopeKeyDeriver` (byte-identical to the shipped text and plain HMAC) and `E1AccountScopeKeyDeriver` (§3). The purpose registry is `Service\AccountScopePurpose`. Current and Previous are the same call with the previous secret and material. |
+| Pipeline routing | `EvaluationPipeline` remembers, per evaluation, the account-bearing keys it derived (`deriveAccountKey()`) or adopted from stored snapshot members (`adoptStoredAccountKey()`, which re-validates the E1 grammar) and reads and writes each in its layout. K1 to K3, Set B and Set C keys stay on the store itself. The registry is reset at the start of every evaluation. |
+| Builder wiring | Under E1 the budget tracker and the anti-equilibrium gate receive the E1 views of the rate-limit and correlation stores. E1 over a store without the capability fails in `build()` and `buildOperationalReader()` with a `RateLimiterException`, before any command. |
+| Selection of the layout of each store call | By the key type of the evaluation (k4, k5, auxiliary, micro-cap, cooldown and the K4 budget), never by the shape of a string. |
+
+**Not changed.** Every TTL, script, score formula, cycle, lifecycle, rotation rule and the admission layer. Set B keys differ
+from V2 only because their K4/K5 input differs. The V2 account state that E1 replaces is not read, seeded or migrated.
+
+**Evidence** (Redis 7.0.15 isolated, `PHP_INT_SIZE` 4 and 8; the PR records the raw outputs):
+
+- AC-1, AC-2, AC-3 source guard: `tests/Unit/Service/AccountScopeKeyDeriverTest.php`.
+- AC-3 parity and AC-4 rotation: the lane, lifecycle, cycle and reader-parity suites (`FamilyGuardsTest`, `FamilyLifecycleTest`, `FamilyCyclesTest`, `FamilyReaderParityTest`: lane U and P, with and without an instance id, one secret and a rotation, K4/K5/micro-cap/cooldown/allowance/flood/last-missing-fingerprint/anti-equilibrium) run unchanged under both encodings; `KEY_SCOPE_ENCODING=e1` selects E1 for the test laboratory and CI runs them both ways. Their expected keys come from the same single derivation component through the laboratory's oracle helpers, so a drift between writer and reader fails them under either encoding.
+- AC-4 to AC-9 on Redis: `tests/Integration/Redis/KeyScopeE1RedisTest.php` (separation and Set B families, reader parity and no cross-reads, Current/Previous rotation, plain strings and the view, capability failure, one commit per attempt, conflict in either layout, interruption before the save and after an applied save, shared request state and ownership, DEC-045, ACL entry and save guards, the three expiry cases of §7).
+- AC-5 direct-call differential on the real store: plain strings, including `e1.`-shaped, exact `e1.`+64 hex, `e1.`+uppercase hex and malformed ones, through every method that writes each of the **ten** families (`score`, `block`, `budget`, `cycle`, `pause`, `reentry-claim`, `watch`, `watch-meta`, `distinct`, `distinct-meta`) give the same physical keys, values and results with E1 selected as with it unselected, and never reach the E1 prefix.
+- AC-6 per-family differential on the real store: the same call sequence (score, block, budget, watch, cycle and pause with a previous key, lifecycle mutation, punishment lifecycle block, post-punishment claim, watch rotation) runs once on the store with v1 keys and once on its E1 view with E1 keys; all eight E1 families are written, every result is identical, and the stored values and minute-rounded expiries are identical per family. This is the routing evidence the in-memory laboratory cannot give (its stores return themselves as the E1 view).
+- AC-7 ACL (ii) per layout: with `hset` granted by a Redis selector on one layout only, the request reaches the commit and receives `NOPERM`, and both layouts are unchanged, once with writes refused in E1 only and once in v1 only.
+- AC-6 lifecycle and rotation through the real composition (runtime built by the builder over `RedisFullCapabilityStore`, one secret and after a rotation): three failures hard-block, the client returns after the block and receives re-entry evidence, `claimPostPunishmentReentry()` claims once and is refused the second time; under V2 no key exists under the E1 prefix, under E1 the families `budget`, `cycle`, `reentry-claim`, `score`, `watch`, `watch-meta` are under the E1 prefix and no claim marker is under v1; both encodings give the same outcomes. Routing the claim to the V2 store fails this test.
+- AC-6 budget rotation through the real composition (runtime over `RedisFullCapabilityStore`, known-device failures so both the K4 and the micro-cap budgets are in play): after a secret rotation and after a device-generation (fingerprint) rotation the rotated runtime seeds a Current budget key from the Previous one (count plus the request's one, the Previous epoch start kept), the Previous budget key is read and never written after a secret rotation, every account-scope budget key is under the selected prefix and none in the other layout, and the saved budget state is identical in both encodings. Routing the seed to the V2 store fails this test.
+- F295-02 (cancelled build): a build suspended inside a Host getter in a Fiber that is then destroyed releases the selection like a failed build (the cleanup is in `finally`, which a Fiber unwind runs and `catch (\Throwable)` does not); the encoding can be changed and the build then succeeds, for `build()` and for `buildOperationalReader()`.
+- F295-02 (switch during a build): a Host callback that selects the other encoding from inside a running `build()` is refused; the runtime keeps its encoding (K4 only under v1 for V2) and its reader agrees; if the only attempt fails, the selection is free again.
+- F295-02 (failed build): after a DEC-041 provider mismatch fails `build()` or `buildOperationalReader()`, either encoding can still be selected; the first successful build fixes it, and a failing outer build does not undo what a nested successful build fixed.
+- F295-01/F295-02: a copy of a store with an existing view gets its own view and a cancelled request leaves neither layout written, on the original and on the copy; the encoding cannot change after the first build, from either order of runtime and reader, and the reader sees what the runtime wrote.
+- AC-8: the existing suites for V2 unchanged.
+
+**Known limits.** The DEC-003 cycle, DEC-007 lifecycle and budget-rotation suites that build their own pipelines or Redis stores are not re-run against E1 one by one; the laboratory suites above cover the evaluation logic under E1 and the per-family differential above covers the Redis routing of every family. Redis Cluster, replicas and non-official stores are not covered.

@@ -87,7 +87,7 @@ final class FamilyReaderParityTest extends TestCase
             new \Maatify\RateLimiter\Service\FingerprintHasher($secret),
             $previous !== null ? new \Maatify\RateLimiter\Service\FingerprintHasher($previous) : null,
         );
-        $arguments = [$resolver, $lab->store, new InMemoryCircuitBreakerStore(), new DecayCalculator($lab->clock), $lab->clock, $secret, 'prod', $previous];
+        $arguments = [$resolver, $lab->store, new InMemoryCircuitBreakerStore(), new DecayCalculator($lab->clock), $lab->clock, $secret, 'prod', $previous, FamilyLab::deriver()];
 
         return $class === null
             ? new RealReaderAdapter(new RateLimitOperationalReader(...$arguments))
@@ -149,8 +149,8 @@ final class FamilyReaderParityTest extends TestCase
         // The account budget of the proven family is one failure short of its threshold; the next unknown-device
         // failure makes the pipeline issue the cooldown, which must land on the `_p` key.
         $lab = new FamilyLab(new OptedLoginPolicy(), AdmissionLaneEnum::P, secret: self::OLD);
-        $k4p = hash_hmac('sha256', 'login_protection:rate_limiter:k4p:v2:prod:acct-read', self::OLD);
-        $key = hash_hmac('sha256', 'login_protection:rate_limiter:budget_cooldown_p:v1:prod:acct-read', self::OLD);
+        $k4p = FamilyLab::deriver()->derive('k4p', 'login_protection', 'acct-read', self::OLD);
+        $key = FamilyLab::deriver()->derive('budget_cooldown_p', 'login_protection', 'acct-read', self::OLD);
         $lab->at(0);
         $lab->store->incrementBudget($k4p, 86400, 19);
         $lab->run(self::context(false, 'i:other'), 'fail');
@@ -217,7 +217,7 @@ final class FamilyReaderParityTest extends TestCase
     public function testDetectorAReaderWithoutTheLaneSuffixMissesTheProvenCooldown(): void
     {
         $lab = new FamilyLab(new OptedLoginPolicy(), AdmissionLaneEnum::P, secret: self::OLD);
-        $k4p = hash_hmac('sha256', 'login_protection:rate_limiter:k4p:v2:prod:acct-read', self::OLD);
+        $k4p = FamilyLab::deriver()->derive('k4p', 'login_protection', 'acct-read', self::OLD);
         $lab->at(0);
         $lab->store->incrementBudget($k4p, 86400, 19);
         $lab->run(self::context(false, 'i:other'), 'fail');

@@ -6,9 +6,10 @@
 
 ## Status
 
-`PROPOSED` — not approved. It is not implementation authority and does not change the current key contract
-(`docs/KEY_STRATEGY.md`), the default derivation, a stored key or any code. Activation is the Owner's decision (D-1 in the
-contract document).
+`ACTIVE` — the Lead approved D-1 through D-6 under the Owner's delegation on [#284](https://github.com/Maatify/php-rate-limiter/issues/284) and accepted
+the implementation and security review required by `KEY_STRATEGY.md` §10 in [PR #295](https://github.com/Maatify/php-rate-limiter/pull/295) at
+[`ccfb86964159d126d57ca34615ee28f81333ef70`](https://github.com/Maatify/php-rate-limiter/commit/ccfb86964159d126d57ca34615ee28f81333ef70).
+The proposed contract was recorded in PR #292. V2 remains the default. D-7 is a separate migration decision.
 
 ## Date
 
@@ -16,9 +17,9 @@ contract document).
 
 ## Decision Authority / Deciders
 
-Proposed by the Executor on [#284](https://github.com/Maatify/php-rate-limiter/issues/284) at the Lead's assignment. The
-Owner decides: the change is a key-format change (`KEY_STRATEGY.md` §10 requires an explicit version and a security
-review), it adds public interface surface, and it is a security and data boundary.
+Proposed by the Executor on [#284](https://github.com/Maatify/php-rate-limiter/issues/284) at the Lead's assignment. The Lead approved the opt-in key format, public
+interface and storage boundary under the Owner's delegation. The security review required by `KEY_STRATEGY.md` §10
+is recorded in [PR #295](https://github.com/Maatify/php-rate-limiter/pull/295).
 
 ## Scope / Concern
 
@@ -48,20 +49,23 @@ admission layer.
    different purpose token). A field longer than `0xFFFFFFFF` bytes is refused before `pack()`, never truncated.
 2. **Key domain.** `digest = HMAC-SHA256(HMAC-SHA256(secret, "maatify.rate-limiter.key-domain.e1"), preimage)`.
 3. **Logical key and storage identity.** The textual form of the key is `"e1." ‖ digest`, but the layout is **carried
-   explicitly** from the derivation to the store (a layout-bound handle or a typed key), never inferred from the string.
-   In the eight families that hold in-scope keys an explicit E1 key is stored under `maatify:rate-limiter:e1:…`. The two layouts are served by **one store instance** (a layout-bound view of it, or a typed key): one held request state, one ownership claim and one `commit` per attempt. A conflicting attempt saves nothing in either layout and DEC-037 re-evaluation applies; the successful attempt saves both layouts together. A mechanism that creates a second store or overlay is excluded. Every
-   plain string given to an existing store method, including one that starts with `e1.`, keeps its V2 physical key byte for
-   byte and is never refused; an E1 key in a foreign family is refused before any command.
+   explicitly** from the derivation to the store by the E1 layout-bound view (`E1KeyspaceStoreInterface::e1Keyspace()`,
+   D-4(a)). In the eight families that hold in-scope keys an explicit E1 key is stored under `maatify:rate-limiter:e1:…`.
+   The view and its root share one held request state, one ownership claim and one `commit` per attempt. A conflicting
+   attempt saves nothing in either layout and DEC-037 re-evaluation applies. The successful attempt saves both layouts
+   together. A plain string given to an existing store method, including one that starts with `e1.`, keeps its V2
+   physical key byte for byte. An E1 key in a foreign family is refused before any command.
 4. **One source.** One derivation component per encoding serves the writer, the operational reader and every future
    reader, for Current and Previous, created once by the builder. The V2 component returns byte-identical keys to today's.
 5. **Scope.** Set A (re-derived): K4/K4P, K5/K5p, micro-cap, budget cooldown, the `aux` purposes. Set B (derivative, not
    re-derived): the distributed-account correlation keys that hash a K4/K5 key. Everything else is outside E1.
-6. **Compatibility.** E1 is explicit and chosen once per builder; V2 remains the default across package updates; E1 never
-   reads or writes V2 state; a new isolated space may start on E1; moving existing traffic is a migration under a separate
-   contract that must preserve active blocks.
-7. **Rotation, expiry, atomicity.** Unchanged. Current is writable, Previous read-only, one Previous generation, no `max()`
-   merge, budget seeding atomic; physical lifetimes, scripts and the request save (DEC-037/041/042) are as they are. E1
-   acceptance on the request path is blocked on #287.
+6. **Compatibility.** E1 is explicit and chosen once per builder. V2 remains the default across package updates. An E1 runtime
+   reads and writes Set A state exclusively under E1. Other families follow the layout rules in the key map. A new isolated space
+   may start on E1. Moving existing traffic is a migration under a separate contract that must preserve active blocks.
+7. **Rotation, expiry, atomicity.** Current is writable and a single Previous generation is read-only. Budget seeding
+   from Previous to Current is atomic and follows the existing prohibition on `max()` merges. The same physical
+   lifetimes and scripts apply to both layouts. The request save applies DEC-037/041/042/045 to both layouts, including
+   DEC-045's guard on the physical expiry of every key read by a writing request.
 
 The full derivation contract, the key map by family, the vectors and the acceptance evidence are in
 [`docs/KEY_SCOPE_ENCODING_E1.md`](../KEY_SCOPE_ENCODING_E1.md).
@@ -82,8 +86,8 @@ The full derivation contract, the key map by family, the vectors and the accepta
 - A Host with a key-pattern ACL must grant the `e1` prefix, for reads and writes, before selecting E1. With only the `v1` grant the request is refused at the read or script entry, before any write (the entry guard, not the DEC-042 preflight). The DEC-042 `NOPERM` from `commit`, raised before the first write, is what an account that can read E1 keys but lacks a write permission of the plan receives. For direct scripts only DEC-043 applies: a refused expiry
   command is `NOPERM`, with its recorded cleanup bounds; E1 claims nothing wider.
 - An E1 runtime starts every Set A identity empty; E1 does not carry V2 scores, budgets, cooldowns or blocks.
-- Requires a new E1 store capability (public interface addition) and, on activation, amendments to `KEY_STRATEGY.md`
-  and the Package Reference with the security review §10 of KEY_STRATEGY requires.
+- Opting in requires `E1KeyspaceStoreInterface`. [PR #295](https://github.com/Maatify/php-rate-limiter/pull/295) records the implementation, the amendments to
+  `KEY_STRATEGY.md` and the Package Reference, and the accepted security review.
 - Adjacent findings recorded, not decided here: the admission layer joins fields with NUL (same ambiguity class), and
   KEY_STRATEGY §4.6 and the source disagree on the `binding_epoch` preimage.
 
@@ -96,26 +100,44 @@ The full derivation contract, the key map by family, the vectors and the accepta
 - **Decimal-length fields (`7:prod-eu`).** The #290 sketch; replaced by the `pack('N')` primitive of §4.7 to keep one length
   convention in the repository.
 
+## Security review (KEY_STRATEGY §10)
+
+The Executor reviewed the implementation in [PR #295](https://github.com/Maatify/php-rate-limiter/pull/295). The Lead accepted the security review on
+[`ccfb86964159d126d57ca34615ee28f81333ef70`](https://github.com/Maatify/php-rate-limiter/commit/ccfb86964159d126d57ca34615ee28f81333ef70).
+
+| Concern | Finding |
+|---|---|
+| Injectivity | The preimage is `MAGIC ‖ u32be(N) ‖ (u32be(len) ‖ field)*`; no content moves a boundary. A decoder recovers the exact tuple for a corpus with `:`, NUL, multibyte, empty and long fields, and the V2 ambiguity (`prod:eu`/`x` against `prod`/`eu:x`) collides under V2 and not under E1. A field longer than 2^32 − 1 bytes is refused before packing, HMAC or any command. |
+| Key-domain separation | The HMAC key is `HMAC(secret, "maatify.rate-limiter.key-domain.e1")`; E1 digests are separated from V2 digests even for an equal text. This rests on HMAC-SHA256 under the secret, not on construction. |
+| Layout carriage | The layout is carried by a typed view of the same store; a plain string given to any store method keeps its `v1` physical key, including `e1.`-shaped ones (tested in all ten families listed in the AC-5 direct-call differential). The view refuses anything not matching `^e1\.[0-9a-f]{64}$` and every family outside the eight that hold E1 keys, before any command. |
+| Closed carrier creation | A view is obtained only from `e1Keyspace()`; the pipeline derives E1 keys only through the derivation component and re-validates the grammar of a stored snapshot member before blocking it in the E1 layout. |
+| Single transaction | The view shares the root's request state, ownership and `transactRequest()`: one commit per attempt, both layouts saved together or none; a lost reply after an applied commit is an unknown outcome with a whole save (tested). |
+| Secrets and data | No new place receives the secret, an account identifier or a physical key; the refusal messages name no key. |
+| Residual risk | An account restricted to `v1` keys is refused at the read entry once E1 is selected (documented). E1 reads its own state for Set A identities. Redis Cluster and replicas are not covered. |
+
 ## Relationship to Other Decisions
 
-No `ACTIVE` decision closes the encoding choice. Read and bound by this proposal:
+This decision applies alongside the following decisions:
 
 - **DEC-007, DEC-003:** lifecycle, claim and cycle semantics are unchanged; E1 changes only which key they run on.
 - **DEC-016:** time authority unchanged.
 - **DEC-026:** `k4p`, `k5p`, the `_p` purposes and the K5 material keep their meaning; they are distinct purpose tokens.
-- **DEC-037, DEC-041, DEC-042, DEC-043:** the request save, exclusive ownership and permission preflight apply to E1 keys
-  unchanged. `#287` (preserve an inherited expiry on commit) stops E1 acceptance on the atomic request save until it is resolved (its measured effect is not accepted instead; the contract itself may proceed). Once resolved, it is judged by a literal
-  before/after comparison of the **physical** expiry on a path that pins it. The logical deadline (caller time plus TTL, DEC-016) is compared separately, and new Redis-clock TTLs are bracketed by `TIME`, never compared across runs.
+- **DEC-037, DEC-041, DEC-042, DEC-043:** the request save, exclusive ownership, ACL preflight and direct-script expiry
+  classification apply to E1 keys.
+- **[DEC-045](DEC-045_REQUEST_SAVE_REFUSES_AN_EXPIRY_LUA_CANNOT_READ_EXACTLY.md):** resolved [#287](https://github.com/Maatify/php-rate-limiter/issues/287) in the implementation base `main@4c523096`.
+  Both layouts use the same guard for physical-expiry precision. A path that preserves the physical expiry is checked
+  by literal before/after comparison. The logical deadline (caller time plus TTL, DEC-016) is compared separately.
+  Fresh Redis-clock TTLs are measured against the `TIME` bracket of each run.
 - **DEC-006 (superseded by DEC-016; its unaffected boundaries remain in force):** physical keys stay package-prefixed,
   namespace-isolated, deterministic and opaque.
 - **#291 rehearsal:** evidence for one operational cut-over option, outside this decision.
 
 ## Canonical Contract / Current Owner
 
-While `PROPOSED`: [`docs/KEY_SCOPE_ENCODING_E1.md`](../KEY_SCOPE_ENCODING_E1.md) is the reviewable proposal and
-`docs/KEY_STRATEGY.md` remains the current contract. On activation the normative owner becomes `KEY_STRATEGY.md`
-(amended), with the derivation component, `RedisFullCapabilityStore`, `RateLimiterBuilder` and
-`RATE_LIMITER_PACKAGE_REFERENCE.md`.
+[`docs/KEY_STRATEGY.md`](../KEY_STRATEGY.md) is the normative owner. [`docs/KEY_SCOPE_ENCODING_E1.md`](../KEY_SCOPE_ENCODING_E1.md)
+specifies the E1 framing, key map and acceptance evidence. The derivation component, `RedisFullCapabilityStore` and
+`RateLimiterBuilder` implement the contract. The [Package Reference](../../RATE_LIMITER_PACKAGE_REFERENCE.md) describes
+its public surface.
 
 ## Supersedes
 
