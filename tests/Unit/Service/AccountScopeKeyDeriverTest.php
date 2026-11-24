@@ -110,7 +110,7 @@ final class AccountScopeKeyDeriverTest extends TestCase
         }
     }
 
-    /** @return array<string, array{int, bool}> */
+    /** @return array<int|string, array{int, bool}> */
     public static function lengths(): array
     {
         $rows = ['0' => [0, true], '1' => [1, true], '2^24' => [1 << 24, true], 'PHP_INT_MAX' => [PHP_INT_MAX, PHP_INT_SIZE === 4]];
@@ -132,7 +132,7 @@ final class AccountScopeKeyDeriverTest extends TestCase
         if ($encodes) {
             $preimage = E1AccountScopeKeyDeriver::preimage(['k4', 'p', 'env', 'long'], $seam);
             $prefix = substr($preimage, -(4 + 4), 4);
-            self::assertSame($length, unpack('N', $prefix)[1] ?? null, 'The prefix equals the supplied length.');
+            self::assertSame($length, self::u32($prefix), 'The prefix equals the supplied length.');
             self::assertStringStartsWith('e1.', $e1->derive('k4', 'p', 'long', self::S));
 
             return;
@@ -155,6 +155,16 @@ final class AccountScopeKeyDeriverTest extends TestCase
         return ['', 'a', ':', 'a:b', "\0", "a\0b", "\u{00FC}", "\u{00FC}n\u{00EF}", 'k4', str_repeat('x', 300), "\x00\x00\x00\x01a"];
     }
 
+    private static function u32(string $bytes): int
+    {
+        $unpacked = unpack('N', $bytes);
+        self::assertIsArray($unpacked);
+        $value = $unpacked[1];
+        self::assertIsInt($value);
+
+        return $value;
+    }
+
     /** @return list<string>|null */
     private static function decode(string $preimage): ?array
     {
@@ -162,11 +172,11 @@ final class AccountScopeKeyDeriverTest extends TestCase
             return null;
         }
         $offset = strlen(E1AccountScopeKeyDeriver::MAGIC);
-        $count = unpack('N', substr($preimage, $offset, 4))[1];
+        $count = self::u32(substr($preimage, $offset, 4));
         $offset += 4;
         $fields = [];
         for ($i = 0; $i < $count; $i++) {
-            $length = unpack('N', substr($preimage, $offset, 4))[1];
+            $length = self::u32(substr($preimage, $offset, 4));
             $offset += 4;
             $fields[] = substr($preimage, $offset, $length);
             $offset += $length;

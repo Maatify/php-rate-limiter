@@ -114,9 +114,12 @@ final class KeyScopeE1RedisTest extends TestCase
         do {
             $reply = $this->admin->execute(['SCAN', $cursor, 'COUNT', 1000]);
             self::assertIsArray($reply);
-            $cursor = (string) $reply[0];
-            foreach ((array) $reply[1] as $key) {
-                $keys[] = (string) $key;
+            self::assertIsString($reply[0]);
+            $cursor = $reply[0];
+            self::assertIsArray($reply[1]);
+            foreach ($reply[1] as $key) {
+                self::assertIsString($key);
+                $keys[] = $key;
             }
         } while ($cursor !== '0');
         sort($keys);
@@ -152,7 +155,10 @@ final class KeyScopeE1RedisTest extends TestCase
         return 'maatify:rate-limiter:v1:' . hash('sha256', self::NAMESPACE) . ':';
     }
 
-    /** @param list<string> $keys @return list<string> */
+    /**
+     * @param list<string> $keys
+     * @return list<string>
+     */
     private static function under(array $keys, string $prefix): array
     {
         return array_values(array_filter($keys, static fn(string $key): bool => str_starts_with($key, $prefix)));
@@ -277,14 +283,6 @@ final class KeyScopeE1RedisTest extends TestCase
 
     public function testComposingE1OverAStoreWithoutTheCapabilityFailsBeforeAnyCommand(): void
     {
-        $commands = 0;
-        $counting = new CallableRedisCommandExecutor(function (array $command) use (&$commands): mixed {
-            $commands++;
-
-            return $this->admin->execute($command);
-        });
-        $store = new class ($counting) {
-        };
         $builder = new RateLimiterBuilder(
             $this->config(),
             new \Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore(new FixedClock('@' . self::NOW)),
@@ -292,7 +290,6 @@ final class KeyScopeE1RedisTest extends TestCase
             new \Maatify\RateLimiter\Tests\Support\CircuitBreaker\InMemoryCircuitBreakerStore(),
             new RecordingFailureSignalEmitter(),
         );
-        unset($store);
         $builder->withKeyScopeEncoding(KeyScopeEncodingEnum::E1);
 
         foreach ([static fn() => $builder->build(), static fn() => $builder->buildOperationalReader()] as $compose) {
@@ -303,14 +300,20 @@ final class KeyScopeE1RedisTest extends TestCase
                 self::assertStringContainsString('E1KeyspaceStoreInterface', $exception->getMessage());
             }
         }
-        self::assertSame(0, $commands);
+        self::assertSame([], $this->keys(), 'No command reached Redis.');
     }
 
     // ---------------------------------------------------------------------------------------------------------------- one transaction, two layouts
 
-    /** An executor that records every command and lets a test act on the first commit. */
+    /**
+     * An executor that records every commit and lets a test act on it.
+     *
+     * @param list<non-empty-list<float|int|string>> $commits
+     * @param (callable(non-empty-list<float|int|string>, int): mixed)|null $onCommit
+     */
     private function recording(array &$commits, ?callable $onCommit = null): CallableRedisCommandExecutor
     {
+        /** @param non-empty-list<float|int|string> $command */
         return new CallableRedisCommandExecutor(function (array $command) use (&$commits, $onCommit): mixed {
             if (OverlayWire::isCommit($command)) {
                 $commits[] = $command;
@@ -462,7 +465,10 @@ final class KeyScopeE1RedisTest extends TestCase
 
     // ---------------------------------------------------------------------------------------------------------------- ACL
 
-    /** @param list<string> $denied commands the account lacks @param list<string> $keys */
+    /**
+     * @param list<string> $denied commands the account lacks
+     * @param list<string> $keys
+     */
     private function userExecutor(string $user, array $denied, array $keys): RespRedisCommandExecutor
     {
         $commands = ['eval', 'time', 'exists', 'type', 'pexpiretime', 'get', 'hgetall', 'smembers', 'zrange', 'del', 'set', 'hset', 'sadd', 'zadd', 'pexpireat', 'hget', 'hmget', 'ping', 'evalsha'];

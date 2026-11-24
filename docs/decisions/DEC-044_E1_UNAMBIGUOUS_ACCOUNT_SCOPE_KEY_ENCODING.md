@@ -6,9 +6,10 @@
 
 ## Status
 
-`PROPOSED` — not approved. It is not implementation authority and does not change the current key contract
-(`docs/KEY_STRATEGY.md`), the default derivation, a stored key or any code. Activation is the Owner's decision (D-1 in the
-contract document).
+`PROPOSED` — the direction was approved by the Lead under the Owner's delegation on #284 (D-1 to D-7), the contract was merged
+(PR #292) and the implementation with the activation documents is in the activation PR for #284. The record becomes `ACTIVE`
+on acceptance of that PR, after the security review `KEY_STRATEGY.md` §10 requires. The default derivation stays V2: nothing
+changes for a configuration that does not choose E1.
 
 ## Date
 
@@ -95,6 +96,20 @@ The full derivation contract, the key map by family, the vectors and the accepta
 - **A new prefix constant for the whole store.** Moves K1–K3, correlation, simple throttling and admission keys. Rejected.
 - **Decimal-length fields (`7:prod-eu`).** The #290 sketch; replaced by the `pack('N')` primitive of §4.7 to keep one length
   convention in the repository.
+
+## Security review (KEY_STRATEGY §10)
+
+Performed by the Executor on the implementation of the activation PR; it needs the Lead's acceptance before this record becomes `ACTIVE`.
+
+| Concern | Finding |
+|---|---|
+| Injectivity | The preimage is `MAGIC ‖ u32be(N) ‖ (u32be(len) ‖ field)*`; no content moves a boundary. A decoder recovers the exact tuple for a corpus with `:`, NUL, multibyte, empty and long fields, and the V2 ambiguity (`prod:eu`/`x` against `prod`/`eu:x`) collides under V2 and not under E1. A field longer than 2^32 − 1 bytes is refused before packing, HMAC or any command. |
+| Key-domain separation | The HMAC key is `HMAC(secret, "maatify.rate-limiter.key-domain.e1")`; E1 digests are separated from V2 digests even for an equal text. This rests on HMAC-SHA256 under the secret, not on construction. |
+| Layout carriage | The layout is carried by a typed view of the same store; a plain string given to any store method keeps its `v1` physical key, including `e1.`-shaped ones (tested in four families). The view refuses anything not matching `^e1\.[0-9a-f]{64}$` and every family outside the eight that hold E1 keys, before any command. |
+| Closed carrier creation | A view is obtained only from `e1Keyspace()`; the pipeline derives E1 keys only through the derivation component and re-validates the grammar of a stored snapshot member before blocking it in the E1 layout. |
+| Single transaction | The view shares the root's request state, ownership and `transactRequest()`: one commit per attempt, both layouts saved together or none; a lost reply after an applied commit is an unknown outcome with a whole save (tested). |
+| Secrets and data | No new place receives the secret, an account identifier or a physical key; the refusal messages name no key. |
+| Residual risk | An account restricted to `v1` keys is refused at the read entry once E1 is selected (documented). V2 state is not read by E1 (a deliberate boundary). Redis Cluster and replicas are not covered. |
 
 ## Relationship to Other Decisions
 

@@ -1,9 +1,10 @@
 # Key Scope Encoding E1 — Derivation Contract and Key Map (PROPOSED)
 
-> **Status: `PROPOSED` (DEC-044). This is not the current key contract.** `docs/KEY_STRATEGY.md` stays the authoritative,
-> current contract and describes the shipped V2 derivation. Nothing here changes `src/`, a stored key, a default, or a
-> release. E1 becomes a contract only when the Owner activates [DEC-044](decisions/DEC-044_E1_UNAMBIGUOUS_ACCOUNT_SCOPE_KEY_ENCODING.md);
-> activation then amends `KEY_STRATEGY.md` as listed in §10. Issue: #284.
+> **Status: implemented as an opt-in contract; activation prepared (DEC-044).** The default derivation stays V2 and
+> `docs/KEY_STRATEGY.md` §3.4 to §4.6 and §10 now describe both. E1 is chosen explicitly, once per `RateLimiterBuilder`
+> (`withKeyScopeEncoding(KeyScopeEncodingEnum::E1)`); nothing changes for a configuration that does not choose it. The
+> implementation record is §12. [DEC-044](decisions/DEC-044_E1_UNAMBIGUOUS_ACCOUNT_SCOPE_KEY_ENCODING.md) becomes `ACTIVE`
+> on acceptance of the activation PR. Issue: #284.
 
 ## 1. Purpose, scope and non-goals
 
@@ -375,11 +376,11 @@ cycle rule, a lifecycle rule or a rotation rule. Therefore, for E1 runtimes:
      the operation and asserts `PEXPIRETIME − TIME` lies inside the bracket the TTL implies; parity is judged on that
      delta and on the recorded bracket width, never on absolute timestamps.
 
-  **The request path is blocked on #287** (a counter update inside `transactRequest()` moved the inherited absolute expiry by
-  1 ms in Docker evidence on PHP32 and PHP64). Acceptance of E1 on the atomic request save requires case 2 to hold on that
-  path: **acceptance of E1 on the atomic request save stops until #287 is resolved.** Its measured effect is not accepted in
-  place of a resolution. The E1 contract itself (encoding, key domain, storage identity, key map) is not blocked and may
-  proceed; it does not depend on how #287 is fixed.
+  **The request path was blocked on #287 and is resolved** (a counter update inside `transactRequest()` moved the inherited
+  absolute expiry by 1 ms for expiries at or above 2^53 ms). [DEC-045](decisions/DEC-045_REQUEST_SAVE_REFUSES_AN_EXPIRY_LUA_CANNOT_READ_EXACTLY.md)
+  is `ACTIVE`: a writing request is refused before its first write when a key it read has an expiry Lua cannot compare
+  exactly; below 2^53 ms the physical expiry is preserved literally. E1 keys are ordinary physical keys to that guard, in
+  either layout.
 - **Atomicity.** Every write remains one Lua script on the direct path or one overlay commit for a request (DEC-037, with
   the ACL preflight of DEC-042 and the exclusive ownership of DEC-041). The overlay requires every key in `KEYS`; E1 keys
   are declared like V2 keys. One request commit (one per attempt; a conflicting attempt saves nothing and the next attempt commits again, DEC-037) saves keys of both layouts together (K1 under `v1`, K4 under `e1`); this
@@ -439,9 +440,33 @@ None of these is taken by this document.
 ## 11. What this document does not establish
 
 - It does not prove V2 collisions in any deployment; the gap is a source-level proof (#290).
-- No E1 code, store routing, marker interface or test exists; §3.7 is the only computed material and is a reference
-  construction run outside the package.
+- §3.7 was computed outside the package before the implementation; the implementation reproduces it byte for byte on both
+  integer widths (AC-1, `tests/Unit/Service/AccountScopeKeyDeriverTest.php`).
 - It does not show that any Host passes attacker-controlled account identifiers or shares one secret and namespace across
   environment scopes.
 - Redis Cluster, Redis older than 7.0, non-official stores and the admission layer are not covered.
 - It does not decide when, or whether, an existing deployment moves to E1.
+
+## 12. Implementation record
+
+Decisions taken at implementation, inside the freedom §4, §6.2 and §8 leave to it. Issue #284, base `main@4c523096`.
+
+| Item | Choice |
+|---|---|
+| Selection (D-3) | `RateLimiterBuilder::withKeyScopeEncoding(KeyScopeEncodingEnum $encoding)`; `KeyScopeEncodingEnum::{V2, E1}`; default `V2`. One call per builder; the runtime and the operational reader it builds receive the same derivation instance. |
+| Capability (D-4 a) | `Repository\E1KeyspaceStoreInterface::e1Keyspace(): static`, implemented by `RedisFullCapabilityStore`. The view is a clone of the same store that points back at its root: one request state, one ownership claim, one `transactRequest()`; only `key()` differs. Idempotent. |
+| Plain strings | The store's own methods are unchanged: a string never selects a layout (invariant 1). The view accepts only the exact grammar `^e1\.[0-9a-f]{64}$` and only the families `score`, `block`, `budget`, `cycle`, `pause`, `reentry-claim`, `watch`, `watch-meta`; anything else throws `RateLimiterException` before any command (invariants 3 and 4). |
+| Derivation source | `Service\AccountScopeKeyDeriverInterface` with `V2AccountScopeKeyDeriver` (byte-identical to the shipped text and plain HMAC) and `E1AccountScopeKeyDeriver` (§3). The purpose registry is `Service\AccountScopePurpose`. Current and Previous are the same call with the previous secret and material. |
+| Pipeline routing | `EvaluationPipeline` remembers, per evaluation, the account-bearing keys it derived (`deriveAccountKey()`) or adopted from stored snapshot members (`adoptStoredAccountKey()`, which re-validates the E1 grammar) and reads and writes each in its layout. K1 to K3, Set B and Set C keys stay on the store itself. The registry is reset at the start of every evaluation. |
+| Builder wiring | Under E1 the budget tracker and the anti-equilibrium gate receive the E1 views of the rate-limit and correlation stores. E1 over a store without the capability fails in `build()` and `buildOperationalReader()` with a `RateLimiterException`, before any command. |
+| Selection of the layout of each store call | By the key type of the evaluation (k4, k5, auxiliary, micro-cap, cooldown and the K4 budget), never by the shape of a string. |
+
+**Not changed.** Every TTL, script, score formula, cycle, lifecycle, rotation rule and the admission layer. Set B keys differ
+from V2 only because their K4/K5 input differs. The V2 account state that E1 replaces is not read, seeded or migrated.
+
+**Evidence** (Redis 7.0.15 isolated, `PHP_INT_SIZE` 4 and 8): `tests/Unit/Service/AccountScopeKeyDeriverTest.php` (AC-1, AC-2,
+AC-3 source guard), `tests/Integration/Redis/KeyScopeE1RedisTest.php` (AC-4 to AC-9 as listed in the PR), and the unchanged
+existing suites for V2 (AC-8).
+
+**Known limits.** The E1 evidence for the three expiry cases of §7 is limited to what the PR lists; the DEC-003/DEC-007 suites
+are not re-run against E1 keys one by one. Redis Cluster, replicas and non-official stores are not covered.

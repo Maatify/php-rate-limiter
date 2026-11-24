@@ -1974,7 +1974,7 @@ LUA;
     {
         $root = $this->root();
         if ($root->e1View === null) {
-            $view = clone $root;
+            $view = clone($root);
             $view->root = $root;
             $view->layout = self::LAYOUT_E1;
             $view->e1View = null;
