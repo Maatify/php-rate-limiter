@@ -8,6 +8,8 @@ use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceRunner;
 use Maatify\RateLimiter\Tests\Support\Admission\RaceRunFailure;
 use Maatify\RateLimiter\Tests\Support\Clock\MonotonicClock;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -119,6 +121,18 @@ final class AdmissionRaceRunnerReadinessTest extends TestCase
         }
         self::assertGreaterThan(1.0, $slowReady - min(array_map(static fn(array $reply): float => self::number($reply, 'readyAt'), $replies) ?: [0.0]), 'The slow worker really was late.');
         $this->assertNoChildSurvives(self::pidsOf($replies), 8);
+    }
+
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function testAWallClockStepDoesNotExpireTheReadyWait(): void
+    {
+        require dirname(__DIR__, 2) . '/Support/Admission/race-wall-clock-jump.php';
+
+        $replies = $this->launch('slow-first', 1);
+
+        self::assertCount(1, $replies);
+        $this->assertNoChildSurvives(self::pidsOf($replies), 1);
     }
 
     public function testAWorkerThatDiesBeforeItIsReadyFailsTheRunWithItsDiagnosticsAndNothingSurvives(): void
