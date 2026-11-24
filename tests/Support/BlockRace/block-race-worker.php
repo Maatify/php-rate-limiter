@@ -9,6 +9,7 @@ require __DIR__ . '/../../../vendor/autoload.php';
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\BlockRace\BlockRaceSetup;
+use Maatify\RateLimiter\Tests\Support\Clock\MonotonicClock;
 use Maatify\RateLimiter\Tests\Support\Redis\OverlayWire;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 
@@ -36,9 +37,9 @@ $executor = new class (new RespRedisCommandExecutor($host, (int) $port), $writes
     {
         if (array_filter($this->writes, static fn(string $script): bool => OverlayWire::isScript($command, $script)) !== [] && ($command[3] ?? null) === $this->blockKey) {
             $this->inner->execute(['SET', $this->flag . ':a-at-block', '1']);
-            $deadline = microtime(true) + 10;
+            $started = MonotonicClock::nanoseconds();
             while ($this->inner->execute(['GET', $this->flag . ':b-done']) === null) {
-                if (microtime(true) > $deadline) {
+                if (MonotonicClock::elapsedSeconds($started) > 10.0) {
                     fwrite(STDERR, "timeout waiting for B\n");
                     exit(3);
                 }

@@ -6,6 +6,7 @@ namespace Maatify\RateLimiter\Tests\Unit\Admission;
 
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceRunner;
 use Maatify\RateLimiter\Tests\Support\Admission\RaceRunFailure;
+use Maatify\RateLimiter\Tests\Support\Clock\MonotonicClock;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -145,32 +146,32 @@ final class AdmissionRaceRunnerReadinessTest extends TestCase
 
     public function testAWorkerThatIsNeverReadyIsBoundedAndEveryChildIsReaped(): void
     {
-        $started = microtime(true);
+        $started = MonotonicClock::nanoseconds();
         $pids = $this->failedRunPids('never-ready', 6, 2.0);
 
         self::assertStringContainsString('not ready within 2', $this->lastMessage);
-        self::assertLessThan(15.0, microtime(true) - $started, 'The wait is bounded by the readiness timeout.');
+        self::assertLessThan(15.0, MonotonicClock::elapsedSeconds($started), 'The wait is bounded by the readiness timeout.');
         $this->assertNoChildSurvives($pids, 6);
     }
 
     public function testAWorkerThatHangsAfterTheReleaseIsBoundedAndEveryChildIsReaped(): void
     {
-        $started = microtime(true);
+        $started = MonotonicClock::nanoseconds();
         $pids = $this->failedRunPids('hang-after-go', 6, 30.0, 2.0);
 
         self::assertStringContainsString('did not exit within 2', $this->lastMessage);
-        self::assertLessThan(15.0, microtime(true) - $started, 'The collection is bounded by the result timeout.');
+        self::assertLessThan(15.0, MonotonicClock::elapsedSeconds($started), 'The collection is bounded by the result timeout.');
         $this->assertNoChildSurvives($pids, 6);
     }
 
     public function testAWorkerThatClosesItsOutputButStaysAliveIsBoundedKilledAndReaped(): void
     {
-        $started = microtime(true);
+        $started = MonotonicClock::nanoseconds();
         $pids = $this->failedRunPids('close-output-then-hang', 6, 30.0, 1.0);
 
         self::assertStringContainsString('did not exit within 1', $this->lastMessage);
         self::assertStringContainsString('\\"ok\\":true', $this->lastMessage, 'The output it had already written is kept in the diagnostics (JSON-escaped).');
-        self::assertLessThan(15.0, microtime(true) - $started, 'The deadline holds for a live child after its output ended.');
+        self::assertLessThan(15.0, MonotonicClock::elapsedSeconds($started), 'The deadline holds for a live child after its output ended.');
         $this->assertNoChildSurvives($pids, 6);
     }
 

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Tests\Support\Admission;
 
+use Maatify\RateLimiter\Tests\Support\Clock\MonotonicClock;
+
 /**
  * Runs N copies of `race-worker.php` and releases them together, after every one of them has finished its setup (#228).
  *
@@ -76,13 +78,13 @@ final class AdmissionRaceRunner
             }
 
             // Phase 1: every worker ready, before any measured operation can start.
-            $deadline = microtime(true) + $readyTimeout;
+            $readyStarted = MonotonicClock::nanoseconds();
             while (true) {
                 $waiting = array_filter($workers, static fn(RaceWorkerProcess $w): bool => ! $w->ready);
                 if ($waiting === []) {
                     break;
                 }
-                self::pump($workers, min(0.2, max(0.0, $deadline - microtime(true))));
+                self::pump($workers, min(0.2, max(0.0, $readyTimeout - MonotonicClock::elapsedSeconds($readyStarted))));
                 foreach ($waiting as $worker) {
                     if (str_starts_with($worker->out, "READY\n")) {
                         $worker->ready = true;
@@ -95,8 +97,10 @@ final class AdmissionRaceRunner
                         throw new \RuntimeException('Race worker ' . $worker->index . ' ended before it was ready. ' . $worker->diagnostics());
                     }
                 }
-                if (microtime(true) >= $deadline) {
+                if (MonotonicClock::elapsedSeconds($readyStarted) >= $readyTimeout) {
                     $late = array_filter($workers, static fn(RaceWorkerProcess $w): bool => ! $w->ready);
+                    // If the last replies arrived on the deadline poll, report the workers that were still waiting at its start.
+                    $late = $late === [] ? $waiting : $late;
                     throw new \RuntimeException('Race workers not ready within ' . $readyTimeout . ' s: ' . implode(', ', array_keys($late)) . '. ' . array_values($late)[0]->diagnostics());
                 }
             }
@@ -112,15 +116,15 @@ final class AdmissionRaceRunner
             // Phase 3: bounded wait until every worker has EXITED. Output reaching EOF is not an exit: a worker may close its
             // streams and stay alive, so the deadline also applies to a live child after its output ended (it is then killed and
             // reaped below, with the output and the status collected so far).
-            $deadline = microtime(true) + $resultTimeout;
+            $resultStarted = MonotonicClock::nanoseconds();
             while (true) {
-                self::pump($workers, 0.2);
+                self::pump($workers, min(0.2, max(0.0, $resultTimeout - MonotonicClock::elapsedSeconds($resultStarted))));
                 $alive = array_filter($workers, static fn(RaceWorkerProcess $w): bool => ! $w->exited());
                 if ($alive === []) {
                     self::pump($workers, 0.05);
                     break;
                 }
-                if (microtime(true) >= $deadline) {
+                if (MonotonicClock::elapsedSeconds($resultStarted) >= $resultTimeout) {
                     throw new \RuntimeException('Race workers did not exit within ' . $resultTimeout . ' s: ' . implode(', ', array_keys($alive)) . '. ' . array_values($alive)[0]->diagnostics());
                 }
             }

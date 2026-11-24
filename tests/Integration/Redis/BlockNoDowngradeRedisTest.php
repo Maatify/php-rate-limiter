@@ -10,6 +10,7 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\BlockRace\BlockRaceSetup;
+use Maatify\RateLimiter\Tests\Support\Clock\MonotonicClock;
 use Maatify\RateLimiter\Tests\Support\Redis\OverlayWire;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 use PHPUnit\Framework\Attributes\Group;
@@ -108,9 +109,9 @@ final class BlockNoDowngradeRedisTest extends TestCase
             $command = implode(' ', array_map(escapeshellarg(...), [PHP_BINARY, '-d', 'xdebug.mode=off', $worker, $this->host, $this->port, $keys['block'], $flag])) . ' 2>&1';
             $handle = popen($command, 'r');
             self::assertNotFalse($handle);
-            $deadline = microtime(true) + 15;
+            $started = MonotonicClock::nanoseconds();
             while ($this->executor->execute(['GET', $flag . ':a-at-block']) === null) {
-                self::assertLessThan($deadline, microtime(true), 'Request A never reached its block write.');
+                self::assertLessThan(15.0, MonotonicClock::elapsedSeconds($started), 'Request A never reached its block write.');
                 usleep(500);
             }
 
