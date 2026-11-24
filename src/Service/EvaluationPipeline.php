@@ -30,7 +30,9 @@ use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
 use Maatify\RateLimiter\Repository\ScoreReplaceStoreInterface;
 use Maatify\RateLimiter\DTO\DecayPauseStateDTO;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
+use Maatify\RateLimiter\Enum\KeyScopeEncodingEnum;
 use Maatify\RateLimiter\Exception\RateLimiterException;
+use Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface;
 use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
 use Maatify\RateLimiter\Command\RateLimitCommand;
@@ -74,6 +76,17 @@ class EvaluationPipeline
     private string $secret;
     private ?string $previousSecret;
 
+    private readonly AccountScopeKeyDeriverInterface $accountKeys;
+
+    /** The store of the account-bearing keys: the E1 view under E1, otherwise the store itself. */
+    private readonly RateLimitStoreInterface $accountStore;
+
+    private readonly CorrelationStoreInterface $accountCorrelationStore;
+
+    /** @var array<string, true> account-bearing keys this evaluation derived or adopted; reset at the start of each evaluation */
+    private array $accountScopedKeys = [];
+
+
     /** @var array<string, int> Current K4 keys with qualifying score generations. */
     private array $lifecycleEligibleKeys = [];
 
@@ -115,6 +128,7 @@ class EvaluationPipeline
         private readonly string $envScope, // e.g. 'prod', 'staging'
         private ClockInterface $clock,
         ?string $previousKeySecret = null,
+        ?AccountScopeKeyDeriverInterface $accountKeys = null,
     ) {
         $this->clock = HostClock::of($this->clock);
         if (trim($keySecret) === '') {
@@ -129,6 +143,52 @@ class EvaluationPipeline
 
         $this->secret = $keySecret;
         $this->previousSecret = $previousKeySecret;
+        // DEC-044: the single derivation source of the account-bearing keys. V2 is the default.
+        $this->accountKeys = $accountKeys ?? new V2AccountScopeKeyDeriver($this->envScope);
+        if ($this->accountKeys->encoding() === KeyScopeEncodingEnum::E1) {
+            if (! $this->store instanceof E1KeyspaceStoreInterface || ! $this->correlationStore instanceof E1KeyspaceStoreInterface) {
+                throw new RateLimiterException('The E1 key encoding requires a store and a correlation store implementing E1KeyspaceStoreInterface (DEC-044).');
+            }
+            // Views of the very same store instances: one request state, one ownership, one transactRequest().
+            $this->accountStore = $this->store->e1Keyspace();
+            $this->accountCorrelationStore = $this->correlationStore->e1Keyspace();
+        } else {
+            $this->accountStore = $this->store;
+            $this->accountCorrelationStore = $this->correlationStore;
+        }
+    }
+
+    /**
+     * The store that holds the account-bearing keys of this evaluation: the E1 view under the E1 encoding, the store itself under V2.
+     */
+    private function storeFor(?string $key): RateLimitStoreInterface
+    {
+        return $key !== null && isset($this->accountScopedKeys[$key]) ? $this->accountStore : $this->store;
+    }
+
+    /** DEC-044: derive an account-bearing key and remember that this evaluation issued it as one, so it is read and written in its layout. */
+    private function deriveAccountKey(string $purpose, string $policyName, string $accountId, string $secret, ?string $material = null): string
+    {
+        $key = $this->accountKeys->derive($purpose, $policyName, $accountId, $secret, $material);
+        $this->accountScopedKeys[$key] = true;
+
+        return $key;
+    }
+
+    /**
+     * A key that came back from state this runtime stored (a snapshot member that is blocked later). Under E1 it must have the exact E1 key
+     * form; it is then handled in the E1 layout. Under V2 nothing changes.
+     */
+    private function adoptStoredAccountKey(string $member): string
+    {
+        if ($this->accountKeys->encoding() === KeyScopeEncodingEnum::E1) {
+            if (! E1AccountScopeKeyDeriver::hasKeyForm($member)) {
+                throw new RateLimiterException('A stored account key does not have the E1 key form.');
+            }
+            $this->accountScopedKeys[$member] = true;
+        }
+
+        return $member;
     }
 
     /**
@@ -167,9 +227,10 @@ class EvaluationPipeline
         string $lifecycleId,
         ?AdmissionLaneEnum $lane = null,
     ): bool {
-        if (! $this->store instanceof PunishmentLifecycleStoreInterface) {
+        if (! $this->accountStore instanceof PunishmentLifecycleStoreInterface) {
             throw new RateLimiterException('Post-punishment re-entry requires PunishmentLifecycleStoreInterface.');
         }
+        $this->accountScopedKeys = [];
         $current = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $policyName, $this->secret, $lane, $this->k5Material($device, $lane));
         $previous = $this->hasPreviousGeneration($device)
             ? $this->buildKeys($context, $device->normalizedUa, $this->previousFingerprintHash($device), $policyName, $this->previousSecret ?? $this->secret, $lane, $this->previousK5Material($device, $lane))
@@ -179,7 +240,7 @@ class EvaluationPipeline
             return false;
         }
 
-        return CallerTimeStore::claimPostPunishmentReentry($this->store, $currentKey, $previous['k4'] ?? null, $lifecycleId, $this->clock->now());
+        return CallerTimeStore::claimPostPunishmentReentry($this->accountStore, $currentKey, $previous['k4'] ?? null, $lifecycleId, $this->clock->now());
     }
 
     /** T-5: the store that saves one request at once, or null when the store cannot (DEC-037). */
@@ -241,6 +302,7 @@ class EvaluationPipeline
     ): RateLimitResultDTO {
         $this->lifecycleEligibleKeys = [];
         $this->issuedSoftScopes = [];
+        $this->accountScopedKeys = [];
         // 1. Build keys for the current generation, then the one previous
         // generation when either generation component is present.
         $realKeysV2 = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $this->hostPolicy(fn() => $policy->getName()), $this->secret, $lane, $this->k5Material($device, $lane));
@@ -319,9 +381,9 @@ class EvaluationPipeline
 
         $servedReentry = null;
         if ($policy instanceof PostPunishmentReentryPolicyInterface
-            && $this->store instanceof PunishmentLifecycleStoreInterface
+            && $this->accountStore instanceof PunishmentLifecycleStoreInterface
             && ($k4 = $realKeysV2['k4'] ?? null) !== null) {
-            $state = CallerTimeStore::readGenerationBoundScoreState($this->store, $k4, $realKeysV1['k4'] ?? null, $this->clock->now());
+            $state = CallerTimeStore::readGenerationBoundScoreState($this->accountStore, $k4, $realKeysV1['k4'] ?? null, $this->clock->now());
             $now = $this->clock->now()->getTimestamp();
             if ($state?->generation !== null && $state->postPunishmentReentry !== null
                 && $state->postPunishmentReentry->validUntil > $now
@@ -407,9 +469,9 @@ class EvaluationPipeline
                 'flood_stage',
                 $context->accountId,
             );
-            $isFloodStage = $this->correlationStore->getWatchFlag($floodKey) > 0;
+            $isFloodStage = $this->accountCorrelationStore->getWatchFlag($floodKey) > 0;
             if (! $isFloodStage && $previousFloodKey !== null && $previousFloodKey !== $floodKey) {
-                $isFloodStage = $this->correlationStore->getWatchFlag($previousFloodKey) > 0;
+                $isFloodStage = $this->accountCorrelationStore->getWatchFlag($previousFloodKey) > 0;
             }
 
             if ($isFloodStage) {
@@ -438,7 +500,7 @@ class EvaluationPipeline
                         'retryAfter' => $duration,
                     ]]
                     : [];
-                CallerTimeStore::incrementWatchFlag($this->correlationStore, $floodKey, 900, $this->clock->now());
+                CallerTimeStore::incrementWatchFlag($this->accountCorrelationStore, $floodKey, 900, $this->clock->now());
                 $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_SOFT_BLOCK, 1, $duration, 'flood', $persistence);
             }
         }
@@ -595,7 +657,7 @@ class EvaluationPipeline
 
             $effective = null;
             if ($currentKey) {
-                $block = CallerTimeStore::checkBlock($this->store, $currentKey, $this->clock->now());
+                $block = CallerTimeStore::checkBlock($this->storeFor($currentKey), $currentKey, $this->clock->now());
                 if ($block && $block->level >= 2 && $block->expiresAt > $now) {
                     $effective = $block;
                 }
@@ -604,7 +666,7 @@ class EvaluationPipeline
             if ($effective === null) {
                 $previousKey = $keysV1[$keyType] ?? null;
                 if ($previousKey && $previousKey !== $currentKey) {
-                    $block = CallerTimeStore::checkBlock($this->store, $previousKey, $this->clock->now());
+                    $block = CallerTimeStore::checkBlock($this->storeFor($previousKey), $previousKey, $this->clock->now());
                     if ($block && $block->level >= 2 && $block->expiresAt > $now) {
                         $effective = $block;
                     }
@@ -776,7 +838,7 @@ class EvaluationPipeline
         if ($occurrenceSnapshot->added) {
             foreach ($snapshot->members as $member) {
                 $persistence[] = [
-                    'key' => $member,
+                    'key' => $this->adoptStoredAccountKey($member),
                     'previousKey' => null,
                     'level' => 2,
                     'duration' => $duration,
@@ -1789,10 +1851,10 @@ class EvaluationPipeline
             );
             // #185 F-185-17 (DEC-031): the marker is read and written in one atomic step, so of two concurrent
             // failures the second sees the first one's marker. The previous generation stays a read-only fallback.
-            $replaces = $this->store instanceof ScoreReplaceStoreInterface;
-            $last = $this->store instanceof ScoreReplaceStoreInterface
-                ? CallerTimeStore::replaceScore($this->store, $key, $this->clock->now()->getTimestamp(), 3600, $this->clock->now())
-                : $this->store->get($key);
+            $replaces = $this->accountStore instanceof ScoreReplaceStoreInterface;
+            $last = $this->accountStore instanceof ScoreReplaceStoreInterface
+                ? CallerTimeStore::replaceScore($this->accountStore, $key, $this->clock->now()->getTimestamp(), 3600, $this->clock->now())
+                : $this->accountStore->get($key);
             if ($last === null) {
                 $previousKey = $this->previousAuxiliaryAccountKey(
                     $this->hostPolicy(fn() => $policy->getName()),
@@ -1800,14 +1862,14 @@ class EvaluationPipeline
                     $context->accountId,
                 );
                 if ($previousKey !== null && $previousKey !== $key) {
-                    $last = $this->store->get($previousKey);
+                    $last = $this->accountStore->get($previousKey);
                 }
             }
             if ($last && ($this->clock->now()->getTimestamp() - $last->value) <= 1800) {
                 $deltas['k4'] = ScoreArithmetic::sum($deltas['k4'], $k4Repeated, 'K4 delta');
             }
             if (! $replaces) {
-                CallerTimeStore::set($this->store, $key, $this->clock->now()->getTimestamp(), 3600, $this->clock->now());
+                CallerTimeStore::set($this->accountStore, $key, $this->clock->now()->getTimestamp(), 3600, $this->clock->now());
             }
         }
 
@@ -1841,13 +1903,13 @@ class EvaluationPipeline
                 $newScore = null;
                 $mutation = null;
                 if ($keyType === 'k4' && $policy instanceof PostPunishmentReentryPolicyInterface
-                    && $this->store instanceof PunishmentLifecycleStoreInterface) {
+                    && $this->accountStore instanceof PunishmentLifecycleStoreInterface) {
                     for ($attempt = 0; $attempt < 3; $attempt++) {
-                        $expected = CallerTimeStore::readGenerationBoundScoreState($this->store, $key, $keysV1[$keyType] ?? null, $this->clock->now());
+                        $expected = CallerTimeStore::readGenerationBoundScoreState($this->accountStore, $key, $keysV1[$keyType] ?? null, $this->clock->now());
                         $observedValue = $expected === null ? $rawVal : $expected->value;
                         $observedAt = $expected === null ? $updatedAt : $expected->updatedAt;
                         $decayed = $this->calculateDecayedScore($observedValue, $observedAt, $keyType, $key, $keysV1[$keyType] ?? null);
-                        $mutation = CallerTimeStore::mutateGenerationBoundScore($this->store, $key, $keysV1[$keyType] ?? null, $expected, 86400, ScoreArithmetic::sum($decayed, $delta, 'k4 decayed score + delta'), $this->clock->now());
+                        $mutation = CallerTimeStore::mutateGenerationBoundScore($this->accountStore, $key, $keysV1[$keyType] ?? null, $expected, 86400, ScoreArithmetic::sum($decayed, $delta, 'k4 decayed score + delta'), $this->clock->now());
                         if ($mutation->applied) {
                             $newScore = $mutation->state?->value;
                             break;
@@ -1866,7 +1928,7 @@ class EvaluationPipeline
                 }
                 $actualScoreLevel = $this->determineLevel($newScore, $keyType, $policy);
                 if ($keyType === 'k4' && $policy instanceof PostPunishmentReentryPolicyInterface
-                    && $this->store instanceof PunishmentLifecycleStoreInterface
+                    && $this->accountStore instanceof PunishmentLifecycleStoreInterface
                     && $actualScoreLevel >= 2 && $mutation?->state?->generation !== null
                 ) {
                     $this->lifecycleEligibleKeys[$key] = $mutation->state->generation;
@@ -1949,13 +2011,12 @@ class EvaluationPipeline
                 if ($config->known_device_micro_cap === null) {
                     $shouldCount = true;
                 } else {
-                    $microRawV2 = "{$this->hostPolicy(fn() => $policy->getName())}:rate_limiter:microcap:{$this->k5KeyType($lane)}:v1:{$this->envScope}:{$context->accountId}:{$this->k5Material($device, $lane)}";
-                    $microKeyV2 = $this->hashKey($microRawV2, $this->secret);
+                    $microPurpose = $this->microCapPurpose($lane);
+                    $microKeyV2 = $this->deriveAccountKey($microPurpose, $this->hostPolicy(fn() => $policy->getName()), $context->accountId, $this->secret, $this->k5Material($device, $lane) ?? '');
                     $microKeyV1 = null;
 
                     if ($this->hasPreviousGeneration($device)) {
-                        $microRawV1 = "{$this->hostPolicy(fn() => $policy->getName())}:rate_limiter:microcap:{$this->k5KeyType($lane)}:v1:{$this->envScope}:{$context->accountId}:{$this->previousK5Material($device, $lane)}";
-                        $microKeyV1 = $this->hashKey($microRawV1, $this->previousSecret ?? $this->secret);
+                        $microKeyV1 = $this->deriveAccountKey($microPurpose, $this->hostPolicy(fn() => $policy->getName()), $context->accountId, $this->previousSecret ?? $this->secret, $this->previousK5Material($device, $lane) ?? '');
                     }
 
                     $microState = $this->incrementBudgetAcrossRotation($microKeyV2, $microKeyV1);
@@ -2260,10 +2321,11 @@ class EvaluationPipeline
             }
         }
 
-        $cycleStore = $this->store instanceof HardBlockCycleStoreInterface ? $this->store : null;
         foreach ($blocks as $key => $block) {
+            $keyStore = $this->storeFor((string) $key);
+            $cycleStore = $keyStore instanceof HardBlockCycleStoreInterface ? $keyStore : null;
             if ($policy instanceof PostPunishmentReentryPolicyInterface
-                && $this->store instanceof PunishmentLifecycleStoreInterface
+                && $keyStore instanceof PunishmentLifecycleStoreInterface
                 && $block['level'] >= 2
                 && isset($this->lifecycleEligibleKeys[$key])) {
                 $applied = false;
@@ -2273,7 +2335,7 @@ class EvaluationPipeline
                 $outcome = self::PUBLICATION_DEFERRED;
                 for ($attempt = 0; $attempt < self::PUBLICATION_ATTEMPTS; $attempt++) {
                     $transition = CallerTimeStore::blockWithPunishmentLifecycleTracking(
-                        $this->store,
+                        $keyStore,
                         $key,
                         $block['previousKey'],
                         $expectedGeneration,
@@ -2298,7 +2360,7 @@ class EvaluationPipeline
                     // A failed publication is a generation race, not a reason
                     // to replay the stale block tuple. Re-read the coherent
                     // lifecycle snapshot and recompute the current K4 level.
-                    $latest = CallerTimeStore::readGenerationBoundScoreState($this->store, $key, $block['previousKey'], $this->clock->now());
+                    $latest = CallerTimeStore::readGenerationBoundScoreState($keyStore, $key, $block['previousKey'], $this->clock->now());
                     if ($latest?->generation === null) {
                         break;
                     }
@@ -2343,7 +2405,7 @@ class EvaluationPipeline
                 continue;
             }
 
-            CallerTimeStore::block($this->store, $key, $block['level'], $block['duration'], $this->clock->now());
+            CallerTimeStore::block($keyStore, $key, $block['level'], $block['duration'], $this->clock->now());
         }
 
         return $unpublished;
@@ -2583,7 +2645,7 @@ class EvaluationPipeline
         }
 
         $currentKey = $this->budgetCooldownKey($this->hostPolicy(fn() => $policy->getName()), $accountId, $this->secret, $lane);
-        $currentMarker = $this->store->get($currentKey);
+        $currentMarker = $this->accountStore->get($currentKey);
         if ($currentMarker !== null) {
             return [
                 'issued' => false,
@@ -2599,7 +2661,7 @@ class EvaluationPipeline
                 $lane,
             );
             if ($previousKey !== $currentKey) {
-                $previousMarker = $this->store->get($previousKey);
+                $previousMarker = $this->accountStore->get($previousKey);
                 if ($previousMarker !== null) {
                     return [
                         'issued' => false,
@@ -2611,7 +2673,7 @@ class EvaluationPipeline
 
         // This is the issuance gate. It must stay atomic and must not be
         // replaced with get()+set().
-        $value = CallerTimeStore::increment($this->store, $currentKey, $cooldownSeconds, 1, $this->clock->now());
+        $value = CallerTimeStore::increment($this->accountStore, $currentKey, $cooldownSeconds, 1, $this->clock->now());
         if ($value !== 1) {
             return ['issued' => false, 'retryAfter' => 0];
         }
@@ -2621,10 +2683,12 @@ class EvaluationPipeline
 
     private function budgetCooldownKey(string $policyName, string $accountId, string $secret, ?AdmissionLaneEnum $lane): string
     {
-        return $this->hashKey(
-            "{$policyName}:rate_limiter:{$this->laneAuxiliaryPurpose($lane, 'budget_cooldown')}:v1:{$this->envScope}:{$accountId}",
-            $secret,
-        );
+        return $this->deriveAccountKey($this->laneAuxiliaryPurpose($lane, 'budget_cooldown'), $policyName, $accountId, $secret);
+    }
+
+    private function microCapPurpose(?AdmissionLaneEnum $lane): string
+    {
+        return $lane === AdmissionLaneEnum::P ? AccountScopePurpose::MICROCAP_K5P : AccountScopePurpose::MICROCAP_K5;
     }
 
     /**
@@ -2663,11 +2727,12 @@ class EvaluationPipeline
             return null;
         }
 
-        $prefix = "{$this->hostPolicy(fn() => $policy->getName())}:rate_limiter:aux:{$this->laneAuxiliaryPurpose($lane, 'anti_equilibrium_device')}:v1:{$this->envScope}:{$context->accountId}";
-        $current = $this->hashKey("{$prefix}:{$this->k5Material($device, $lane)}", $this->secret);
+        $purpose = AccountScopePurpose::aux($this->laneAuxiliaryPurpose($lane, 'anti_equilibrium_device'));
+        $policyName = $this->hostPolicy(fn() => $policy->getName());
+        $current = $this->deriveAccountKey($purpose, $policyName, $context->accountId, $this->secret, $this->k5Material($device, $lane) ?? '');
         $previous = null;
         if ($this->hasPreviousGeneration($device)) {
-            $previous = $this->hashKey("{$prefix}:{$this->previousK5Material($device, $lane)}", $this->previousSecret ?? $this->secret);
+            $previous = $this->deriveAccountKey($purpose, $policyName, $context->accountId, $this->previousSecret ?? $this->secret, $this->previousK5Material($device, $lane) ?? '');
             if ($previous === $current) {
                 $previous = null;
             }
@@ -2686,10 +2751,7 @@ class EvaluationPipeline
         string $accountId,
         string $secret,
     ): string {
-        return $this->hashKey(
-            "{$policyName}:rate_limiter:aux:{$purpose}:v1:{$this->envScope}:{$accountId}",
-            $secret,
-        );
+        return $this->deriveAccountKey(AccountScopePurpose::aux($purpose), $policyName, $accountId, $secret);
     }
 
     /**
@@ -2886,14 +2948,14 @@ class EvaluationPipeline
     private function resolveActiveBudgetState(?string $keyV2, ?string $keyV1): ?BudgetStateDTO
     {
         if ($keyV2 !== null) {
-            $current = CallerTimeStore::getBudget($this->store, $keyV2, $this->clock->now());
+            $current = CallerTimeStore::getBudget($this->accountStore, $keyV2, $this->clock->now());
             if ($current !== null) {
                 return $current;
             }
         }
 
         if ($keyV1 !== null) {
-            return CallerTimeStore::getBudget($this->store, $keyV1, $this->clock->now());
+            return CallerTimeStore::getBudget($this->accountStore, $keyV1, $this->clock->now());
         }
 
         return null;
@@ -2901,11 +2963,11 @@ class EvaluationPipeline
 
     private function resolveActiveBudgetKeyV2ThenV1(?string $keyV2, ?string $keyV1): ?string
     {
-        if ($keyV2 !== null && CallerTimeStore::getBudget($this->store, $keyV2, $this->clock->now()) !== null) {
+        if ($keyV2 !== null && CallerTimeStore::getBudget($this->accountStore, $keyV2, $this->clock->now()) !== null) {
             return $keyV2;
         }
 
-        if ($keyV1 !== null && CallerTimeStore::getBudget($this->store, $keyV1, $this->clock->now()) !== null) {
+        if ($keyV1 !== null && CallerTimeStore::getBudget($this->accountStore, $keyV1, $this->clock->now()) !== null) {
             return $keyV1;
         }
 
@@ -2927,26 +2989,26 @@ class EvaluationPipeline
      */
     private function incrementBudgetAcrossRotation(string $keyV2, ?string $keyV1, int $amount = 1): BudgetStateDTO
     {
-        $v2State = CallerTimeStore::getBudget($this->store, $keyV2, $this->clock->now());
+        $v2State = CallerTimeStore::getBudget($this->accountStore, $keyV2, $this->clock->now());
         if ($v2State !== null) {
-            return CallerTimeStore::incrementBudget($this->store, $keyV2, self::BUDGET_EPOCH_SECONDS, $amount, $this->clock->now());
+            return CallerTimeStore::incrementBudget($this->accountStore, $keyV2, self::BUDGET_EPOCH_SECONDS, $amount, $this->clock->now());
         }
 
         if ($keyV1 !== null) {
-            $v1State = CallerTimeStore::getBudget($this->store, $keyV1, $this->clock->now());
+            $v1State = CallerTimeStore::getBudget($this->accountStore, $keyV1, $this->clock->now());
             if ($v1State !== null) {
-                if (! $this->store instanceof BudgetSeedStoreInterface) {
+                if (! $this->accountStore instanceof BudgetSeedStoreInterface) {
                     throw new RateLimiterException(
                         'Budget rotation migration requires the BudgetSeedStoreInterface capability; '
                         . 'the configured store cannot carry the previous-secret budget state into V2 without a silent reset.',
                     );
                 }
 
-                return CallerTimeStore::incrementBudgetWithSeed($this->store, $keyV2, self::BUDGET_EPOCH_SECONDS, $v1State, $amount, $this->clock->now());
+                return CallerTimeStore::incrementBudgetWithSeed($this->accountStore, $keyV2, self::BUDGET_EPOCH_SECONDS, $v1State, $amount, $this->clock->now());
             }
         }
 
-        return CallerTimeStore::incrementBudget($this->store, $keyV2, self::BUDGET_EPOCH_SECONDS, $amount, $this->clock->now());
+        return CallerTimeStore::incrementBudget($this->accountStore, $keyV2, self::BUDGET_EPOCH_SECONDS, $amount, $this->clock->now());
     }
 
     private function hasPreviousGeneration(DeviceIdentityDTO $device): bool
@@ -2971,21 +3033,22 @@ class EvaluationPipeline
     private function writeScore(string $key, string $keyType, ?string $previousKey, ?PipelineScoreDTO $snapshot, int $delta, int $netChange): int
     {
         $now = $this->clock->now();
+        $keyStore = $this->storeFor($key);
         // A decay credit exists only against the current-generation score itself: an absent score or a V1 fallback has
         // no base value, so its net change is at least the delta.
-        if ($netChange >= $delta || $snapshot === null || $snapshot->isFromV1 || ! $this->store instanceof SnapshotFencedScoreStoreInterface) {
-            return CallerTimeStore::increment($this->store, $key, 86400, $netChange, $now);
+        if ($netChange >= $delta || $snapshot === null || $snapshot->isFromV1 || ! $keyStore instanceof SnapshotFencedScoreStoreInterface) {
+            return CallerTimeStore::increment($this->storeFor($key), $key, 86400, $netChange, $now);
         }
         $expectedValue = $snapshot->value;
         $expectedUpdatedAt = $snapshot->updatedAt;
         for ($attempt = 0; $attempt < 3; $attempt++) {
-            $written = CallerTimeStore::incrementIfSnapshot($this->store, $key, 86400, $expectedValue, $expectedUpdatedAt, ScoreArithmetic::sum($expectedValue, $netChange, $keyType . ' fenced score'), $now);
+            $written = CallerTimeStore::incrementIfSnapshot($keyStore, $key, 86400, $expectedValue, $expectedUpdatedAt, ScoreArithmetic::sum($expectedValue, $netChange, $keyType . ' fenced score'), $now);
             if ($written !== null) {
                 return $written;
             }
-            $fresh = $this->store->get($key);
+            $fresh = $this->storeFor($key)->get($key);
             if ($fresh === null) {
-                return CallerTimeStore::increment($this->store, $key, 86400, $delta, $now);
+                return CallerTimeStore::increment($this->storeFor($key), $key, 86400, $delta, $now);
             }
             // #185 F-185-11: the re-read sums are checked like the first ones, so no overflow is silent on this path.
             $netChange = ScoreArithmetic::difference(
@@ -2994,13 +3057,13 @@ class EvaluationPipeline
                 $keyType . ' net change',
             );
             if ($netChange >= $delta) {
-                return CallerTimeStore::increment($this->store, $key, 86400, $netChange, $now);
+                return CallerTimeStore::increment($this->storeFor($key), $key, 86400, $netChange, $now);
             }
             $expectedValue = $fresh->value;
             $expectedUpdatedAt = $fresh->updatedAt;
         }
 
-        return CallerTimeStore::increment($this->store, $key, 86400, $delta, $now);
+        return CallerTimeStore::increment($this->storeFor($key), $key, 86400, $delta, $now);
     }
 
     private function calculateDecayedScore(
@@ -3044,14 +3107,14 @@ class EvaluationPipeline
 
     private function currentBlockLevel(string $key, ?string $previousKey = null): int
     {
-        $block = CallerTimeStore::checkBlock($this->store, $key, $this->clock->now());
+        $block = CallerTimeStore::checkBlock($this->storeFor($key), $key, $this->clock->now());
         $now = $this->clock->now()->getTimestamp();
         if ($block !== null && $block->expiresAt > $now) {
             return $block->level;
         }
 
         if ($previousKey !== null && $previousKey !== $key) {
-            $block = CallerTimeStore::checkBlock($this->store, $previousKey, $this->clock->now());
+            $block = CallerTimeStore::checkBlock($this->storeFor($previousKey), $previousKey, $this->clock->now());
             if ($block !== null && $block->expiresAt > $now) {
                 return $block->level;
             }
@@ -3062,11 +3125,12 @@ class EvaluationPipeline
 
     private function decayPauseState(string $key, ?string $previousKey, int $fromTimestamp): DecayPauseStateDTO
     {
-        if (! $this->store instanceof HardBlockCycleStoreInterface) {
+        $keyStore = $this->storeFor($key);
+        if (! $keyStore instanceof HardBlockCycleStoreInterface) {
             return new DecayPauseStateDTO(0, 0);
         }
 
-        return $this->store->readDecayPauseState(
+        return $keyStore->readDecayPauseState(
             $key,
             $previousKey,
             $fromTimestamp,
@@ -3105,8 +3169,8 @@ class EvaluationPipeline
         $k1 = $this->hashKey("{$base}:k1:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}", $secret);
         $k2 = $this->hashKey("{$base}:k2:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}:{$ua}", $secret);
         $k3 = IdentityPresence::isPresent($fpHash) ? $this->hashKey("{$base}:k3:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}:{$fpHash}", $secret) : null;
-        $k4 = IdentityPresence::account($context) ? $this->hashKey("{$base}:{$this->k4KeyType($lane)}:{$ver}:{$env}:{$context->accountId}", $secret) : null;
-        $k5 = IdentityPresence::account($context) && IdentityPresence::isPresent($fpHash) ? $this->hashKey("{$base}:{$this->k5KeyType($lane)}:{$ver}:{$env}:{$context->accountId}:" . ($k5Material ?? $fpHash), $secret) : null;
+        $k4 = IdentityPresence::account($context) ? $this->deriveAccountKey($this->k4KeyType($lane), $policyName, $context->accountId, $secret) : null;
+        $k5 = IdentityPresence::account($context) && IdentityPresence::isPresent($fpHash) ? $this->deriveAccountKey($this->k5KeyType($lane), $policyName, $context->accountId, $secret, $k5Material ?? $fpHash) : null;
 
         return ['k1' => $k1, 'k2' => $k2, 'k3' => $k3, 'k4' => $k4, 'k5' => $k5];
     }
@@ -3121,10 +3185,10 @@ class EvaluationPipeline
     {
         $scores = [];
         foreach ($keysV2 as $keyType => $key) {
-            $data = $key ? $this->store->get($key) : null;
+            $data = $key ? $this->storeFor($key)->get($key) : null;
             $isFromV1 = false;
             if (! $data && isset($keysV1[$keyType]) && $keysV1[$keyType]) {
-                $data = $this->store->get($keysV1[$keyType]);
+                $data = $this->storeFor($keysV1[$keyType])->get($keysV1[$keyType]);
                 if ($data) {
                     $isFromV1 = true;
                 }

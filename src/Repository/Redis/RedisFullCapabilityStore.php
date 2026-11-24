@@ -24,6 +24,8 @@ use Maatify\RateLimiter\Exception\OverlappingRequestException;
 use Maatify\RateLimiter\Exception\RateLimitConcurrencyException;
 use Maatify\RateLimiter\Service\ContextDomain;
 use Maatify\RateLimiter\Service\OwnedResources;
+use Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface;
+use Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver;
 use Maatify\RateLimiter\Service\OwnershipRegistry;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Exception\BackendFailureException;
@@ -83,9 +85,19 @@ final class RedisFullCapabilityStore implements
     CallerTimeScoreReplaceStoreInterface,
     CallerTimeOperationalReadOnlyStoreInterface,
     RequestAtomicStoreInterface,
+    E1KeyspaceStoreInterface,
     OwnedResources
 {
     private const PREFIX = 'maatify:rate-limiter:v1';
+
+    private const E1_PREFIX = 'maatify:rate-limiter:e1';
+
+    private const LAYOUT_V1 = 'v1';
+
+    private const LAYOUT_E1 = 'e1';
+
+    /** The families that hold E1 keys (E1 contract §6.2 invariant 4); `distinct` and `distinct-meta` hold only derivative hashes. */
+    private const E1_FAMILIES = ['score' => true, 'block' => true, 'budget' => true, 'cycle' => true, 'pause' => true, 'reentry-claim' => true, 'watch' => true, 'watch-meta' => true];
 
     /** Maximum evaluations of one request before a persistent conflict is reported. */
     private const REQUEST_ATTEMPTS = 32;
@@ -102,6 +114,17 @@ final class RedisFullCapabilityStore implements
 
     /** T-5: the first backend failure a step of the held request met, even when the step handled it and went on. */
     private ?BackendFailureException $requestBackendFailure = null;
+
+    /**
+     * DEC-044: the store this object is a layout view of, or null for the store itself. A view shares the request state, the ownership and
+     * `transactRequest()` of its root, so both layouts are one transaction.
+     */
+    private ?self $root = null;
+
+    /** The physical layout of this object: `v1` for the store itself, `e1` for its E1 view. */
+    private string $layout = self::LAYOUT_V1;
+
+    private ?self $e1View = null;
 
     /**
      * Held state of the request being evaluated, `key => JSON state`, or null
@@ -1934,7 +1957,31 @@ LUA;
     /** @return list<object> */
     public function ownedResources(): array
     {
-        return [$this];
+        return [$this->root()];
+    }
+
+    /** DEC-044: the store this object belongs to; the store itself when it is not a view. */
+    private function root(): self
+    {
+        return $this->root ?? $this;
+    }
+
+    /**
+     * DEC-044, E1 contract §6.2 (a): a view of this very store bound to the E1 layout. It is a clone that points back at the root, so it shares
+     * the root's request state, ownership claim and `transactRequest()`; only the physical-key function differs.
+     */
+    public function e1Keyspace(): static
+    {
+        $root = $this->root();
+        if ($root->e1View === null) {
+            $view = clone $root;
+            $view->root = $root;
+            $view->layout = self::LAYOUT_E1;
+            $view->e1View = null;
+            $root->e1View = $view;
+        }
+
+        return $root->e1View;
     }
 
     /**
@@ -1947,7 +1994,7 @@ LUA;
      */
     private function guarded(string $entry, callable $operation): mixed
     {
-        $scope = OwnershipRegistry::admit($this, $entry, $this->ownDomain);
+        $scope = OwnershipRegistry::admit($this->root(), $entry, $this->ownDomain);
         try {
             return $operation();
         } finally {
@@ -2702,7 +2749,7 @@ LUA;
                 throw new RateLimiterException('Circuit-breaker timestamps must be non-negative Unix timestamps.');
             }
             $raw = json_encode($state, JSON_THROW_ON_ERROR);
-            if ($this->requestState !== null) {
+            if ($this->root()->requestState !== null) {
                 // T-5: inside a request the write is held back and saved with it.
                 $this->eval("redis.call('SET', KEYS[1], ARGV[1])\nreturn 1", [$this->key('circuit', $policyName)], [$raw]);
 
@@ -3075,7 +3122,7 @@ LUA;
      */
     private function executeInRequestWhenHeld(array $command): mixed
     {
-        if ($this->requestState === null || $command[0] !== 'EVAL' || ! is_string($command[1] ?? null) || ! is_int($command[2] ?? null)) {
+        if ($this->root()->requestState === null || $command[0] !== 'EVAL' || ! is_string($command[1] ?? null) || ! is_int($command[2] ?? null)) {
             return $this->command($command);
         }
         $keys = array_map('strval', array_slice($command, 3, $command[2]));
@@ -3134,6 +3181,17 @@ LUA;
 
     private function key(string $family, string $logical): string
     {
+        if ($this->layout === self::LAYOUT_E1) {
+            if (! isset(self::E1_FAMILIES[$family])) {
+                throw new RateLimiterException('An E1 key is not stored in this family.');
+            }
+            if (! E1AccountScopeKeyDeriver::hasKeyForm($logical)) {
+                throw new RateLimiterException('The E1 keyspace accepts only E1 keys.');
+            }
+
+            return self::E1_PREFIX . ':' . hash('sha256', $this->namespace) . ':' . $family . ':' . hash('sha256', $logical);
+        }
+
         return self::PREFIX . ':' . hash('sha256', $this->namespace) . ':' . $family . ':' . hash('sha256', $logical);
     }
 
@@ -3145,7 +3203,7 @@ LUA;
     {
         // DEC-041: admitted before the held request state is read, so an independent call cannot observe it.
         return $this->guarded('eval', function () use ($script, $keys, $args): mixed {
-            if ($this->requestState !== null) {
+            if ($this->root()->requestState !== null) {
                 return $this->evalInRequest($script, $keys, $args);
             }
             /** @var non-empty-list<int|string|float> $command */
@@ -3200,7 +3258,7 @@ LUA;
 
     private function runRequest(callable $evaluate): mixed
     {
-        if ($this->requestState !== null) {
+        if ($this->root()->requestState !== null) {
             return $evaluate();
         }
 
@@ -3211,8 +3269,8 @@ LUA;
             if ($retryingSince !== null && $attempt > 1 && $this->retryBudgetSpent($retryingSince)) {
                 break;
             }
-            $this->requestState = [];
-            $this->requestBackendFailure = null;
+            $this->root()->requestState = [];
+            $this->root()->requestBackendFailure = null;
             try {
                 $result = $evaluate();
                 $lost = $this->lostBackend();
@@ -3229,10 +3287,10 @@ LUA;
                 throw $exception;
             } catch (\Throwable $exception) {
                 $state = $this->heldRequestState();
-                $this->requestState = null;
+                $this->root()->requestState = null;
                 // A step that read keys at different moments can see a combination no single moment held and
                 // report it as malformed. Only an error over state that is still current is the request's answer.
-                if ($state !== [] && ! $this->requestStateIsCurrent($state)) {
+                if ($state !== [] && ! $this->root()->requestStateIsCurrent($state)) {
                     $retryingSince ??= hrtime(true);
                     $this->backOff($attempt);
                     continue;
@@ -3240,7 +3298,7 @@ LUA;
 
                 throw $exception;
             } finally {
-                $this->requestState = null;
+                $this->root()->requestState = null;
             }
             if ($this->commitRequest($state)) {
                 return $result;
@@ -3263,8 +3321,8 @@ LUA;
     {
         $held = [];
         foreach (array_unique($keys) as $key) {
-            if (isset($this->requestState[$key])) {
-                $held[] = [$key, $this->requestState[$key]];
+            if (isset($this->root()->requestState[$key])) {
+                $held[] = [$key, $this->root()->requestState[$key]];
             }
         }
         /** @var non-empty-list<int|string|float> $command */
@@ -3277,7 +3335,7 @@ LUA;
         try {
             $reply = $this->command($command);
         } catch (BackendFailureException $exception) {
-            $this->requestBackendFailure ??= $exception;
+            $this->root()->requestBackendFailure ??= $exception;
 
             throw $exception;
         }
@@ -3292,7 +3350,7 @@ LUA;
             if (! is_array($change) || ! isset($change[0], $change[1]) || ! is_string($change[0]) || ! is_string($change[1])) {
                 throw new RateLimiterException('Malformed request overlay change.');
             }
-            $this->requestState[$change[0]] = $change[1];
+            $this->root()->requestState[$change[0]] = $change[1];
         }
 
         return $reply[1] ?? null;
@@ -3301,13 +3359,13 @@ LUA;
     /** T-5: read through a method because steps of the evaluation set it behind the caller's back. */
     private function lostBackend(): ?BackendFailureException
     {
-        return $this->requestBackendFailure;
+        return $this->root()->requestBackendFailure;
     }
 
     /** @return array<string, string> */
     private function heldRequestState(): array
     {
-        return $this->requestState ?? [];
+        return $this->root()->requestState ?? [];
     }
 
     /**
@@ -3388,7 +3446,7 @@ LUA;
     {
         // DEC-041: every Redis command is admitted first (a direct capability call is a short-lived owner for the command), and
         // the executor is a Host crossing of the owning call.
-        return $this->guarded('command', fn(): mixed => OwnershipRegistry::crossing($this, function () use ($command): mixed {
+        return $this->guarded('command', fn(): mixed => OwnershipRegistry::crossing($this->root(), function () use ($command): mixed {
             try {
                 return $this->redis->execute($command);
             } catch (BackendFailureException $exception) {
@@ -3415,13 +3473,13 @@ LUA;
     private function fallbackNow(): int
     {
         // DEC-041: the store's own clock is a Host crossing of the call that owns this store (the owner is taken by the caller first).
-        return OwnershipRegistry::crossing($this, fn(): int => $this->fallbackClock->now()->getTimestamp());
+        return OwnershipRegistry::crossing($this->root(), fn(): int => $this->fallbackClock->now()->getTimestamp());
     }
 
     /** The same fallback time, in milliseconds, for the operations that derive millisecond lifetimes. */
     private function fallbackNowMilliseconds(): string
     {
-        return CallerTimeMilliseconds::fromInstant(OwnershipRegistry::crossing($this, fn(): \DateTimeImmutable => $this->fallbackClock->now()));
+        return CallerTimeMilliseconds::fromInstant(OwnershipRegistry::crossing($this->root(), fn(): \DateTimeImmutable => $this->fallbackClock->now()));
     }
 
     private function positive(int $value, string $label): void

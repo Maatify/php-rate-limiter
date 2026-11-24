@@ -61,7 +61,12 @@ use Maatify\RateLimiter\Service\RateLimiterEngine;
 use Maatify\RateLimiter\Service\RateLimiterInterface;
 use Maatify\RateLimiter\Service\RequestScopedClock;
 use Maatify\RateLimiter\Service\SimpleRateLimitOperationalReader;
+use Maatify\RateLimiter\Enum\KeyScopeEncodingEnum;
 use Maatify\RateLimiter\Exception\RateLimiterException;
+use Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface;
+use Maatify\RateLimiter\Service\AccountScopeKeyDeriverInterface;
+use Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver;
+use Maatify\RateLimiter\Service\V2AccountScopeKeyDeriver;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\SharedCommon\Infrastructure\SystemClock;
 
@@ -80,6 +85,10 @@ final class RateLimiterBuilder
     private ?DeviceIdentityResolverInterface $deviceIdentityResolver = null;
 
     private ?int $provenPendingPermitLimit = null;
+
+    private KeyScopeEncodingEnum $keyScopeEncoding = KeyScopeEncodingEnum::V2;
+
+    private ?AccountScopeKeyDeriverInterface $accountKeyDeriver = null;
 
     private ?ExecutionContextProviderInterface $contextProvider = null;
 
@@ -146,6 +155,21 @@ final class RateLimiterBuilder
      * Override the clock shared by the Builder's clock-dependent runtime and
      * operational-read components.
      */
+    /**
+     * Choose the derivation of the account-bearing keys for the runtime and the operational reader this builder composes (DEC-044).
+     *
+     * `V2` is the default and keeps every physical key of the shipped derivation. `E1` is explicit and chosen once per builder: the length-prefixed
+     * encoding with its own HMAC key domain, kept under its own physical prefix. It starts a new key space: V2 state is never read from E1.
+     * The stores must implement {@see E1KeyspaceStoreInterface}; composition fails otherwise, before anything is written.
+     */
+    public function withKeyScopeEncoding(KeyScopeEncodingEnum $encoding): self
+    {
+        $this->keyScopeEncoding = $encoding;
+        $this->accountKeyDeriver = null;
+
+        return $this;
+    }
+
     public function withClock(ClockInterface $clock): self
     {
         $this->clock = $clock;
@@ -234,8 +258,16 @@ final class RateLimiterBuilder
         $clock = new RequestScopedClock($this->clock ?? new SystemClock(new DateTimeZone('UTC')));
         $deviceIdentityResolver = $this->deviceIdentityResolver ?? $this->defaultDeviceIdentityResolver();
 
-        $budgetTracker = new BudgetTracker($this->rateLimitStore, $clock);
-        $antiEquilibriumGate = new AntiEquilibriumGate($this->correlationStore, $clock);
+        $accountKeys = $this->accountKeyDeriver();
+        // Under E1 the K4 budget and the auxiliary watchers live in the E1 layout of the same stores (views of the same instances).
+        $accountStore = $this->keyScopeEncoding === KeyScopeEncodingEnum::E1 && $this->rateLimitStore instanceof E1KeyspaceStoreInterface
+            ? $this->rateLimitStore->e1Keyspace()
+            : $this->rateLimitStore;
+        $accountCorrelation = $this->keyScopeEncoding === KeyScopeEncodingEnum::E1 && $this->correlationStore instanceof E1KeyspaceStoreInterface
+            ? $this->correlationStore->e1Keyspace()
+            : $this->correlationStore;
+        $budgetTracker = new BudgetTracker($accountStore, $clock);
+        $antiEquilibriumGate = new AntiEquilibriumGate($accountCorrelation, $clock);
         $decayCalculator = new DecayCalculator($clock);
         $ephemeralBucket = new EphemeralBucket($this->correlationStore, $clock);
         $evaluationPipeline = new EvaluationPipeline(
@@ -249,6 +281,7 @@ final class RateLimiterBuilder
             $this->config->environmentScope(),
             $clock,
             $this->config->previousKeySecret(),
+            $accountKeys,
         );
         $circuitBreaker = new CircuitBreaker(
             $this->circuitBreakerStore,
@@ -363,6 +396,7 @@ final class RateLimiterBuilder
             $this->config->keySecret(),
             $this->config->environmentScope(),
             $this->config->previousKeySecret(),
+            $this->accountKeyDeriver(),
         );
         $built[] = $scoreReader;
 
@@ -401,6 +435,27 @@ final class RateLimiterBuilder
      *
      * @throws RateLimiterException when a required typed capability is absent.
      */
+    /** One derivation source per builder: the runtime and its reader receive the same instance, so they cannot select different encodings. */
+    private function accountKeyDeriver(): AccountScopeKeyDeriverInterface
+    {
+        $this->assertKeyScopeEncodingSupported();
+
+        return $this->accountKeyDeriver ??= $this->keyScopeEncoding === KeyScopeEncodingEnum::E1
+            ? new E1AccountScopeKeyDeriver($this->config->environmentScope())
+            : new V2AccountScopeKeyDeriver($this->config->environmentScope());
+    }
+
+    /** E1 over a store that cannot keep the E1 layout fails here, before the first write (DEC-044, E1 contract §8.6). */
+    private function assertKeyScopeEncodingSupported(): void
+    {
+        if ($this->keyScopeEncoding !== KeyScopeEncodingEnum::E1) {
+            return;
+        }
+        if (! $this->rateLimitStore instanceof E1KeyspaceStoreInterface || ! $this->correlationStore instanceof E1KeyspaceStoreInterface) {
+            throw new RateLimiterException('The E1 key encoding requires a rate-limit store and a correlation store implementing E1KeyspaceStoreInterface (DEC-044).');
+        }
+    }
+
     private function assertCapabilitiesSatisfied(): void
     {
         $this->assertPunishmentLifecycleCapability();
