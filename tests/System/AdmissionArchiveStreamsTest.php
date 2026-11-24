@@ -112,6 +112,7 @@ final class AdmissionArchiveStreamsTest extends TestCase
 
     // ---- harness validity (LT-20 condition 3) ------------------------------------------------------------------------------
 
+    #[Group('php32')]
     public function testTheDumpCountsEqualTheArchiveCounts(): void
     {
         $data = ArchiveData::get();
