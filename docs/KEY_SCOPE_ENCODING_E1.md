@@ -464,9 +464,11 @@ Decisions taken at implementation, inside the freedom §4, §6.2 and §8 leave t
 **Not changed.** Every TTL, script, score formula, cycle, lifecycle, rotation rule and the admission layer. Set B keys differ
 from V2 only because their K4/K5 input differs. The V2 account state that E1 replaces is not read, seeded or migrated.
 
-**Evidence** (Redis 7.0.15 isolated, `PHP_INT_SIZE` 4 and 8): `tests/Unit/Service/AccountScopeKeyDeriverTest.php` (AC-1, AC-2,
-AC-3 source guard), `tests/Integration/Redis/KeyScopeE1RedisTest.php` (AC-4 to AC-9 as listed in the PR), and the unchanged
-existing suites for V2 (AC-8).
+**Evidence** (Redis 7.0.15 isolated, `PHP_INT_SIZE` 4 and 8; the PR records the raw outputs):
 
-**Known limits.** The E1 evidence for the three expiry cases of §7 is limited to what the PR lists; the DEC-003/DEC-007 suites
-are not re-run against E1 keys one by one. Redis Cluster, replicas and non-official stores are not covered.
+- AC-1, AC-2, AC-3 source guard: `tests/Unit/Service/AccountScopeKeyDeriverTest.php`.
+- AC-3 parity and AC-4 rotation: the lane, lifecycle, cycle and reader-parity suites (`FamilyGuardsTest`, `FamilyLifecycleTest`, `FamilyCyclesTest`, `FamilyReaderParityTest`: lane U and P, with and without an instance id, one secret and a rotation, K4/K5/micro-cap/cooldown/allowance/flood/last-missing-fingerprint/anti-equilibrium) run unchanged under both encodings; `KEY_SCOPE_ENCODING=e1` selects E1 for the test laboratory and CI runs them both ways. Their expected keys come from the same single derivation component through the laboratory's oracle helpers, so a drift between writer and reader fails them under either encoding.
+- AC-4 to AC-9 on Redis: `tests/Integration/Redis/KeyScopeE1RedisTest.php` (separation and Set B families, reader parity and no cross-reads, Current/Previous rotation, plain strings and the view, capability failure, one commit per attempt, conflict in either layout, interruption before the save and after an applied save, shared request state and ownership, DEC-045, ACL entry and save guards, the three expiry cases of §7).
+- AC-8: the existing suites for V2 unchanged.
+
+**Known limits.** The DEC-003 cycle, DEC-007 lifecycle and budget-rotation suites that build their own pipelines or Redis stores are not re-run against E1 one by one; the laboratory suites above cover their logic under E1. Redis Cluster, replicas and non-official stores are not covered.

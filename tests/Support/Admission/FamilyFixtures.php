@@ -111,21 +111,21 @@ final class FamilyFixtures
         $d = $lab->resolver->resolve($c);
         $type = $lab->lane === AdmissionLaneEnum::P ? 'k5p' : 'k5';
 
-        return hash_hmac('sha256', "{$lab->policy->getName()}:rate_limiter:{$type}:v2:prod:{$c->accountId}:" . ($d->deviceIdHash ?? $d->fingerprintHash), $lab->secret);
+        return FamilyLab::deriver()->derive($type, $lab->policy->getName(), $c->accountId ?? '', $lab->secret, $d->deviceIdHash ?? $d->fingerprintHash);
     }
 
     public static function k4Key(FamilyLab $lab, RateLimitContextDTO $c): string
     {
         $type = $lab->lane === AdmissionLaneEnum::P ? 'k4p' : 'k4';
 
-        return hash_hmac('sha256', "{$lab->policy->getName()}:rate_limiter:{$type}:v2:prod:{$c->accountId}", $lab->secret);
+        return FamilyLab::deriver()->derive($type, $lab->policy->getName(), $c->accountId ?? '', $lab->secret);
     }
 
     public static function allowanceKey(FamilyLab $lab, string $account): string
     {
         $suffix = $lab->lane === AdmissionLaneEnum::P ? '_p' : '';
 
-        return hash_hmac('sha256', "{$lab->policy->getName()}:rate_limiter:aux:known_device_allowance{$suffix}:v1:prod:{$account}", $lab->secret);
+        return FamilyLab::deriver()->derive('aux.known_device_allowance' . $suffix, $lab->policy->getName(), $account, $lab->secret);
     }
 
     public static function blockLevel(FamilyLab $lab, string $key): ?int

@@ -9,6 +9,10 @@ use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Enum\AdmissionLaneEnum;
+use Maatify\RateLimiter\Enum\KeyScopeEncodingEnum;
+use Maatify\RateLimiter\Service\AccountScopeKeyDeriverInterface;
+use Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver;
+use Maatify\RateLimiter\Service\V2AccountScopeKeyDeriver;
 use Maatify\RateLimiter\Service\AntiEquilibriumGate;
 use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
@@ -66,11 +70,25 @@ final class FamilyLab
             'prod',
             $this->clock,
             $previousSecret,
+            self::deriver(),
         );
         $this->resolver = new DeviceIdentityResolver(
             new FingerprintHasher($secret),
             $previousSecret !== null ? new FingerprintHasher($previousSecret) : null,
         );
+    }
+
+    /**
+     * The key encoding under test: V2 unless the environment variable KEY_SCOPE_ENCODING is `e1` (DEC-044). The same suites run under both.
+     */
+    public static function encoding(): KeyScopeEncodingEnum
+    {
+        return getenv('KEY_SCOPE_ENCODING') === 'e1' ? KeyScopeEncodingEnum::E1 : KeyScopeEncodingEnum::V2;
+    }
+
+    public static function deriver(string $env = 'prod'): AccountScopeKeyDeriverInterface
+    {
+        return self::encoding() === KeyScopeEncodingEnum::E1 ? new E1AccountScopeKeyDeriver($env) : new V2AccountScopeKeyDeriver($env);
     }
 
     public function at(int $secondsFromStart): void

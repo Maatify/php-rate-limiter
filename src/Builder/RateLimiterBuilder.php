@@ -251,6 +251,7 @@ final class RateLimiterBuilder
      */
     public function build(): CompositeRateLimiterRuntimeInterface
     {
+        $this->assertKeyScopeEncodingSupported();
         $this->assertCapabilitiesSatisfied();
 
         // One reading of the Host clock per runtime call, shared by every

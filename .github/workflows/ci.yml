@@ -149,6 +149,8 @@ jobs:
           composer check-platform-reqs
       - name: Run PHPUnit (all suites except the archive replays)
         run: composer test:core
+      - name: Run the lane, lifecycle, cycle and reader-parity suites under the E1 key encoding (DEC-044)
+        run: KEY_SCOPE_ENCODING=e1 vendor/bin/phpunit tests/Unit/Admission/FamilyGuardsTest.php tests/Unit/Admission/FamilyLifecycleTest.php tests/Unit/Admission/FamilyCyclesTest.php tests/Unit/Admission/FamilyReaderParityTest.php
 
   archive-replays:
     name: Archive Replay Suite (PHP ${{ matrix.php }})

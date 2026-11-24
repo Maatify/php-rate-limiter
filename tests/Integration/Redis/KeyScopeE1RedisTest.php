@@ -195,6 +195,14 @@ final class KeyScopeE1RedisTest extends TestCase
         $e1V1Scores = self::under($e1Keys, self::v1Prefix() . 'score:');
         self::assertSame([], array_values(array_diff($e1V1Scores, $v2Scores)), 'No v1 score key of the E1 run is new.');
         self::assertSame(count($v2Scores), count($e1V1Scores) + count(self::under($underE1, self::e1Prefix() . 'score:')), 'The account scores moved to E1, nothing else.');
+        // Set B (derivative) keys differ by design and stay under v1: the only new v1 keys of the E1 run are watch and distinct hashes of the E1 keys.
+        foreach (array_diff($e1Keys, $v2Keys) as $key) {
+            if (! str_starts_with($key, self::v1Prefix())) {
+                continue;
+            }
+            $family = explode(':', substr($key, strlen(self::v1Prefix())))[0];
+            self::assertContains($family, ['watch', 'watch-meta', 'distinct', 'distinct-meta'], 'Only the documented derivative families differ.');
+        }
     }
 
     public function testTheOperationalReaderFollowsTheWriterAndNeverReadsTheOtherEncoding(): void
@@ -285,7 +293,7 @@ final class KeyScopeE1RedisTest extends TestCase
     {
         $builder = new RateLimiterBuilder(
             $this->config(),
-            new \Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore(new FixedClock('@' . self::NOW)),
+            new \Maatify\RateLimiter\Tests\Support\RateLimiter\BaseOnlyInMemoryRateLimitStore(new FixedClock('@' . self::NOW)),
             new \Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore(new FixedClock('@' . self::NOW)),
             new \Maatify\RateLimiter\Tests\Support\CircuitBreaker\InMemoryCircuitBreakerStore(),
             new RecordingFailureSignalEmitter(),
@@ -517,5 +525,63 @@ final class KeyScopeE1RedisTest extends TestCase
         $complete = $this->userExecutor('e1-complete', [], ['~maatify:rate-limiter:*', '~']);
         $this->failures($this->runtime($complete, KeyScopeEncodingEnum::E1));
         self::assertContains($this->e1ScoreKey('k4'), $this->keys());
+    }
+
+    /** A float: a millisecond epoch value does not fit a 32-bit int, and below 2^53 it is exact in a double. */
+    private function redisTimeMilliseconds(): float
+    {
+        $time = $this->admin->execute(['TIME']);
+        self::assertIsArray($time);
+        self::assertIsString($time[0]);
+        self::assertIsString($time[1]);
+
+        return (float) $time[0] * 1000 + (float) intdiv((int) $time[1], 1000);
+    }
+
+    public function testExpiryOfE1KeysFollowsTheThreeCasesOfTheContract(): void
+    {
+        $store = new RedisFullCapabilityStore($this->admin, self::NAMESPACE);
+        $view = $store->e1Keyspace();
+        $e1Key = E1AccountScopeKeyDeriver::key(self::SECRET, ['k4', self::POLICY, self::ENV, self::ACCOUNT]);
+        $v1Key = hash_hmac('sha256', 'v2-comparison-key', self::SECRET);
+
+        // Case 1: the logical deadline from caller time is exact and identical across layouts (the physical key differs, the stored deadline does not).
+        $store->blockAt($v1Key, 2, 600, self::NOW);
+        $view->blockAt($e1Key, 2, 600, self::NOW);
+        $v1Block = $this->admin->execute(['HGETALL', self::v1Prefix() . 'block:' . hash('sha256', $v1Key)]);
+        $e1Block = $this->admin->execute(['HGETALL', self::e1Prefix() . 'block:' . hash('sha256', $e1Key)]);
+        self::assertIsArray($v1Block);
+        self::assertIsArray($e1Block);
+        self::assertSame($v1Block, $e1Block, 'The logical deadline stored from the same caller time is identical in both layouts.');
+        self::assertContains((string) (self::NOW + 600), array_map(static fn(mixed $value): string => is_scalar($value) ? (string) $value : '', $e1Block));
+
+        // Case 3: a new physical TTL on the Redis clock is bracketed by two TIME samples, in each layout; the delta is judged, never the absolute value.
+        foreach (['v1' => [$store, $v1Key, self::v1Prefix()], 'e1' => [$view, $e1Key, self::e1Prefix()]] as $layout => [$target, $logical, $prefix]) {
+            $this->admin->execute(['DEL', $prefix . 'score:' . hash('sha256', $logical)]);
+            $before = $this->redisTimeMilliseconds();
+            $target->incrementAt($logical, 600, 1, self::NOW);
+            $after = $this->redisTimeMilliseconds();
+            $expiry = $this->admin->execute(['PEXPIRETIME', $prefix . 'score:' . hash('sha256', $logical)]);
+            self::assertTrue(is_int($expiry) || is_string($expiry));
+            $expiryMs = (float) $expiry;
+            self::assertGreaterThanOrEqual($before + 600000, $expiryMs, "{$layout}: the TTL starts after the first TIME sample.");
+            self::assertLessThanOrEqual($after + 600000, $expiryMs, "{$layout}: and before the second.");
+        }
+
+        // Case 2: a physical expiry the path must preserve is kept literally in one run, in the E1 layout, through a request commit.
+        $budgetKey = E1AccountScopeKeyDeriver::key(self::SECRET, ['budget_cooldown', self::POLICY, self::ENV, self::ACCOUNT]);
+        $view->incrementBudgetAt($budgetKey, 86400, 1, self::NOW);
+        $physical = self::e1Prefix() . 'budget:' . hash('sha256', $budgetKey);
+        $before = $this->expiryText($physical);
+        $view->transactRequest(static fn() => $view->incrementBudgetAt($budgetKey, 86400, 1, self::NOW + 5));
+        self::assertSame($before, $this->expiryText($physical), 'An increment of the active epoch keeps its physical expiry to the millisecond (no renewal).');
+    }
+
+    private function expiryText(string $key): string
+    {
+        $expiry = $this->admin->execute(['PEXPIRETIME', $key]);
+        self::assertTrue(is_int($expiry) || is_string($expiry));
+
+        return (string) $expiry;
     }
 }

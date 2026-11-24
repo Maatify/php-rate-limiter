@@ -15,7 +15,7 @@ use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotRotationStoreInterf
 use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\RateLimiter\Repository\CallerTimeBoundedCorrelationSnapshotRotationStoreInterface;
 
-class StatefulInMemoryCorrelationStore implements BoundedCorrelationSnapshotRotationStoreInterface, CallerTimeBoundedCorrelationSnapshotRotationStoreInterface, CallerTimeDecimalMillisecondsCorrelationRotationStoreInterface, CallerTimeDecimalMillisecondsBoundedCorrelationRotationStoreInterface, CallerTimeDecimalMillisecondsBoundedCorrelationSnapshotRotationStoreInterface
+class StatefulInMemoryCorrelationStore implements \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface, BoundedCorrelationSnapshotRotationStoreInterface, CallerTimeBoundedCorrelationSnapshotRotationStoreInterface, CallerTimeDecimalMillisecondsCorrelationRotationStoreInterface, CallerTimeDecimalMillisecondsBoundedCorrelationRotationStoreInterface, CallerTimeDecimalMillisecondsBoundedCorrelationSnapshotRotationStoreInterface
 {
     /** @var array<string, array{items: array<string, bool>, expiresAt: int|null}> */
     private array $sets = [];
@@ -34,6 +34,12 @@ class StatefulInMemoryCorrelationStore implements BoundedCorrelationSnapshotRota
     private static ?\WeakMap $callerTimes = null;
 
     public function __construct(private readonly ClockInterface $clock) {}
+
+    /** DEC-044: the in-memory store keys by the plain logical string, which already differs between V2 and E1; its view is itself. */
+    public function e1Keyspace(): static
+    {
+        return $this;
+    }
 
     public function addDistinct(string $key, string $item, int $ttlSeconds): int
     {
