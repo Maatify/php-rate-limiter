@@ -23,6 +23,7 @@ final class QualifyingPersistenceTest extends TestCase
 {
     private const string TARGET = '1.0.0-rc.3';
     private const string STARTED = '2026-10-06T20:00:00Z';
+    private const string FAR_FUTURE_REVIEW = '2038-01-19T03:14:07Z';
 
     private Fx $repo;
     private string $outDir;
@@ -52,7 +53,7 @@ final class QualifyingPersistenceTest extends TestCase
     public static function reviewTimestamps(): iterable
     {
         yield 'after the boundary' => ['2026-10-06T20:00:01Z', false];
-        yield 'far-future review' => ['2099-01-01T00:00:00Z', false];
+        yield 'far-future review' => [self::FAR_FUTURE_REVIEW, false];
         yield 'exactly at the boundary' => [self::STARTED, true];
         yield 'before the boundary' => ['2026-10-06T19:59:59Z', true];
         yield 'local time with offset (ambiguous)' => ['2026-10-06T19:00:00+02:00', false];
@@ -110,7 +111,7 @@ final class QualifyingPersistenceTest extends TestCase
             'target' => self::TARGET,
             'candidate_sha' => $candidate,
             'repo_path' => $this->repo->path,
-            'semantic_review_file' => $this->repo->semanticReviewFile(self::TARGET, $candidate, '2099-01-01T00:00:00Z'),
+            'semantic_review_file' => $this->repo->semanticReviewFile(self::TARGET, $candidate, self::FAR_FUTURE_REVIEW),
         ], $this->outDir . '/evidence.json');
 
         self::assertSame('FAIL', $result['status']);
