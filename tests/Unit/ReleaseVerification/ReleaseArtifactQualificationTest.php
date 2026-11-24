@@ -352,8 +352,8 @@ final class ReleaseArtifactQualificationTest extends TestCase
     public function testSourceOnlyEffectiveTimingNotBeforeRavFailsOrIsAmbiguous(): void
     {
         $cases = [
-            'future approval' => ['Approval Date' => '2999-01-01', 'Effective Date' => '2999-01-01'],
-            'effective later than RAV' => ['Effective Date' => '2999-01-01'],
+            'future approval' => ['Approval Date' => '2026-10-07', 'Effective Date' => '2026-10-07'],
+            'effective later than RAV' => ['Effective Date' => '2026-10-07'],
             'ambiguous format' => ['Approval Date' => 'last Tuesday'],
             'missing effective date' => ['Effective Date' => ''],
         ];
@@ -369,7 +369,7 @@ final class ReleaseArtifactQualificationTest extends TestCase
                 self::TARGET,
                 $c,
                 'source-only',
-                gmdate('Y-m-d\TH:i:s\Z'),
+                '2026-10-06T20:00:00Z',
             );
             $repo->cleanup();
             self::assertSame('FAIL', $r['status'], $label);
