@@ -852,6 +852,51 @@ final class KeyScopeE1RedisTest extends TestCase
         }
     }
 
+    public function testAFailingOuterBuildNeverUndoesTheSelectionAReaderBuiltInsideItAlreadyFixed(): void
+    {
+        $builder = $this->builder($this->admin, KeyScopeEncodingEnum::V2);
+        /** @var \ArrayObject<string, mixed> $sink */
+        $sink = new \ArrayObject();
+        // A Host policy callback that builds a reader from this same builder while the outer build() runs, then makes the outer build fail.
+        $policy = new class ($builder, $sink) extends \Maatify\RateLimiter\Config\LoginProtectionPolicy {
+            /** @param \ArrayObject<string, mixed> $sink */
+            public function __construct(private RateLimiterBuilder $builder, private \ArrayObject $sink) {}
+
+            public function getName(): string
+            {
+                return 'nested_failing_policy';
+            }
+
+            public function getCapabilities(): array
+            {
+                if (! isset($this->sink['reader'])) {
+                    $this->sink['reader'] = true;
+                    $this->sink['reader'] = $this->builder->buildOperationalReader();
+
+                    throw new \RuntimeException('the outer build fails after the nested reader succeeded');
+                }
+
+                return parent::getCapabilities();
+            }
+        };
+        $builder->withPolicy($policy);
+
+        try {
+            $builder->build();
+            self::fail('The outer build fails.');
+        } catch (\RuntimeException $exception) {
+            self::assertStringContainsString('nested reader succeeded', $exception->getMessage());
+        }
+        self::assertInstanceOf(\Maatify\RateLimiter\Service\CompositeRateLimitOperationalReaderInterface::class, $sink['reader'], 'The nested reader was built before the outer failure.');
+
+        try {
+            $builder->withKeyScopeEncoding(KeyScopeEncodingEnum::E1);
+            self::fail('The nested successful build fixed the selection; the outer failure must not undo it.');
+        } catch (RateLimiterException $exception) {
+            self::assertStringContainsString('fixed once', $exception->getMessage());
+        }
+    }
+
     /**
      * @return array{claimed: bool, again: bool, e1: list<string>, v1: list<string>}
      */
@@ -899,6 +944,99 @@ final class KeyScopeE1RedisTest extends TestCase
             self::assertTrue($e1['claimed']);
             self::assertFalse($e1['again'], "{$label}: the marker is one-shot in E1.");
             self::assertSame($v2['again'], $e1['again']);
+        }
+    }
+
+    /** A known device of the account: the failure is counted by the known-device micro-cap budget (a fingerprint-bound account key). */
+    private function knownDeviceContext(): RateLimitContextDTO
+    {
+        return new RateLimitContextDTO(
+            ip: '192.0.2.78',
+            ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+            accountId: self::ACCOUNT,
+            clientFingerprint: ['device' => 'known-device-1'],
+            isDevicePreviouslyVerifiedForAccount: true,
+        );
+    }
+
+    /**
+     * Budget rotation through the real composition: the previous generation writes, the rotated runtime seeds its Current budget from it.
+     *
+     * @return array{before: array<string, list<string>>, after: array<string, list<string>>}
+     */
+    private function budgetRotationRun(KeyScopeEncodingEnum $encoding, RateLimiterConfig $previousGeneration, RateLimiterConfig $rotated): array
+    {
+        $this->admin->execute(['FLUSHDB']);
+        $store = new RedisFullCapabilityStore($this->admin, self::NAMESPACE);
+        $make = static fn(RateLimiterConfig $config): CompositeRateLimiterRuntimeInterface => RateLimiterBuilder::fromFullCapabilityStore($config, $store, new RecordingFailureSignalEmitter())
+            ->withClock(new FixedClock('@' . self::NOW))->withKeyScopeEncoding($encoding)->build();
+
+        $make($previousGeneration)->limit($this->knownDeviceContext(), RateLimitCommand::recordFailure(self::POLICY));
+        $before = $this->budgetEntries();
+        $make($rotated)->limit($this->knownDeviceContext(), RateLimitCommand::recordFailure(self::POLICY));
+
+        return ['before' => $before, 'after' => $this->budgetEntries()];
+    }
+
+    /** @return array<string, list<string>> every budget key (all prefixes) and its stored fields */
+    private function budgetEntries(): array
+    {
+        $entries = [];
+        foreach ($this->keys() as $key) {
+            if (preg_match('/:budget:/', $key) !== 1) {
+                continue;
+            }
+            $fields = $this->admin->execute(['HGETALL', $key]);
+            self::assertIsArray($fields);
+            $entries[$key] = array_values(array_map(static fn(mixed $field): string => is_scalar($field) ? (string) $field : '', $fields));
+        }
+
+        return $entries;
+    }
+
+    public function testBudgetRotationSeedsCurrentFromPreviousThroughTheRuntimeInBothEncodings(): void
+    {
+        $scenarios = [
+            'secret rotation' => [new RateLimiterConfig('previous_secret', 'previous_fp', self::ENV), new RateLimiterConfig(self::SECRET, 'test_fp', self::ENV, 'previous_secret', 'previous_fp')],
+            'device generation rotation' => [new RateLimiterConfig(self::SECRET, 'previous_fp', self::ENV), new RateLimiterConfig(self::SECRET, 'test_fp', self::ENV, null, 'previous_fp')],
+        ];
+        foreach ($scenarios as $label => [$previousGeneration, $rotated]) {
+            $shapes = [];
+            foreach ([KeyScopeEncodingEnum::V2, KeyScopeEncodingEnum::E1] as $encoding) {
+                $run = $this->budgetRotationRun($encoding, $previousGeneration, $rotated);
+                $before = $run['before'];
+                $after = $run['after'];
+                $new = array_diff_key($after, $before);
+                $name = "{$label} under {$encoding->value}";
+
+                self::assertNotSame([], $new, "{$name}: the rotated runtime created a Current budget key (the seed).");
+                foreach ($before as $key => $fields) {
+                    if ($label === 'secret rotation') {
+                        self::assertSame($fields, $after[$key] ?? null, "{$name}: a Previous budget key is read, never written.");
+
+                        continue;
+                    }
+                    // A fingerprint-only rotation keeps the account budget key (K4 does not depend on the device), so that key is the Current one: it counts on.
+                    $changed = $after[$key] ?? null;
+                    self::assertTrue($changed === $fields || ($changed !== null && (int) $changed[1] === (int) $fields[1] + 1), "{$name}: an unchanged account key either stays or counts on by one.");
+                }
+                $wrong = $encoding === KeyScopeEncodingEnum::E1 ? self::v1Prefix() : self::e1Prefix();
+                $right = $encoding === KeyScopeEncodingEnum::E1 ? self::e1Prefix() : self::v1Prefix();
+                self::assertSame([], self::under(array_keys($after), $wrong . 'budget:'), "{$name}: no budget key in the other layout (account-scope budget keys only).");
+                self::assertSame(array_keys($after), self::under(array_keys($after), $right . 'budget:'), "{$name}: every budget key is under the selected prefix.");
+
+                $counts = array_map(static fn(array $fields): int => (int) ($fields[1] ?? 0), array_values($before));
+                foreach ($new as $key => $fields) {
+                    self::assertSame('count', $fields[0], $name);
+                    self::assertContains((int) $fields[1] - 1, $counts, "{$name}: the seeded Current count is a Previous count plus this request's one.");
+                    $epochStart = array_search('epochStart', $fields, true);
+                    self::assertNotFalse($epochStart);
+                    self::assertSame(array_values($before)[0][array_search('epochStart', array_values($before)[0], true) + 1], $fields[$epochStart + 1], "{$name}: the seed keeps the Previous epoch start.");
+                }
+                $shapes[$encoding->value] = array_values($after);
+                sort($shapes[$encoding->value]);
+            }
+            self::assertSame($shapes['v2'], $shapes['e1'], "{$label}: the saved budget state is identical in both encodings.");
         }
     }
 

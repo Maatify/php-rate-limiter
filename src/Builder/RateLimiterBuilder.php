@@ -90,6 +90,9 @@ final class RateLimiterBuilder
 
     private ?AccountScopeKeyDeriverInterface $accountKeyDeriver = null;
 
+    /** True once a runtime or reader was built successfully from this builder (anywhere, including inside another build): the selection is then final. */
+    private bool $selectionFixed = false;
+
     private ?ExecutionContextProviderInterface $contextProvider = null;
 
     /** @var array<string, BlockPolicyInterface> */
@@ -164,7 +167,7 @@ final class RateLimiterBuilder
      */
     public function withKeyScopeEncoding(KeyScopeEncodingEnum $encoding): self
     {
-        if ($this->accountKeyDeriver !== null && $encoding !== $this->keyScopeEncoding) {
+        if ($this->selectionFixed && $encoding !== $this->keyScopeEncoding) {
             // F295-02: a runtime or reader already derived keys with the first selection; a second encoding on this builder would let the
             // writer and a later reader disagree on every account-scope key.
             throw new RateLimiterException('The key scope encoding is fixed once a runtime or reader has been built from this builder (DEC-044).');
@@ -255,13 +258,15 @@ final class RateLimiterBuilder
      */
     public function build(): CompositeRateLimiterRuntimeInterface
     {
-        $fixedBefore = $this->accountKeyDeriver !== null;
         try {
-            return $this->composeRuntime();
+            $runtime = $this->composeRuntime();
         } catch (\Throwable $failure) {
-            $this->releaseSelectionAfterFailedBuild($fixedBefore);
+            $this->releaseSelectionAfterFailedBuild();
             throw $failure;
         }
+        $this->selectionFixed = true;
+
+        return $runtime;
     }
 
     private function composeRuntime(): CompositeRateLimiterRuntimeInterface
@@ -374,13 +379,15 @@ final class RateLimiterBuilder
      */
     public function buildOperationalReader(): CompositeRateLimitOperationalReaderInterface
     {
-        $fixedBefore = $this->accountKeyDeriver !== null;
         try {
-            return $this->composeReader();
+            $reader = $this->composeReader();
         } catch (\Throwable $failure) {
-            $this->releaseSelectionAfterFailedBuild($fixedBefore);
+            $this->releaseSelectionAfterFailedBuild();
             throw $failure;
         }
+        $this->selectionFixed = true;
+
+        return $reader;
     }
 
     private function composeReader(): CompositeRateLimitOperationalReaderInterface
@@ -464,11 +471,12 @@ final class RateLimiterBuilder
      */
     /**
      * F295-02: the selection is fixed by the first SUCCESSFUL build. A build that fails, at any point and for any reason, leaves nothing
-     * derived behind, so the Host can correct the cause and still choose either encoding.
+     * derived behind, so the Host can correct the cause and still choose either encoding; a failure never undoes a selection that an earlier
+     * (or nested) successful build already fixed.
      */
-    private function releaseSelectionAfterFailedBuild(bool $fixedBefore): void
+    private function releaseSelectionAfterFailedBuild(): void
     {
-        if (! $fixedBefore) {
+        if (! $this->selectionFixed) {
             $this->accountKeyDeriver = null;
         }
     }
