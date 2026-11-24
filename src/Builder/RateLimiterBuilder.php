@@ -255,6 +255,17 @@ final class RateLimiterBuilder
      */
     public function build(): CompositeRateLimiterRuntimeInterface
     {
+        $fixedBefore = $this->accountKeyDeriver !== null;
+        try {
+            return $this->composeRuntime();
+        } catch (\Throwable $failure) {
+            $this->releaseSelectionAfterFailedBuild($fixedBefore);
+            throw $failure;
+        }
+    }
+
+    private function composeRuntime(): CompositeRateLimiterRuntimeInterface
+    {
         $this->assertKeyScopeEncodingSupported();
         $this->assertCapabilitiesSatisfied();
 
@@ -363,6 +374,17 @@ final class RateLimiterBuilder
      */
     public function buildOperationalReader(): CompositeRateLimitOperationalReaderInterface
     {
+        $fixedBefore = $this->accountKeyDeriver !== null;
+        try {
+            return $this->composeReader();
+        } catch (\Throwable $failure) {
+            $this->releaseSelectionAfterFailedBuild($fixedBefore);
+            throw $failure;
+        }
+    }
+
+    private function composeReader(): CompositeRateLimitOperationalReaderInterface
+    {
         if (! $this->rateLimitStore instanceof OperationalReadOnlyStoreInterface) {
             throw new RateLimiterException('Operational Read requires a store implementing OperationalReadOnlyStoreInterface (#185, DEC-032).');
         }
@@ -440,6 +462,17 @@ final class RateLimiterBuilder
      *
      * @throws RateLimiterException when a required typed capability is absent.
      */
+    /**
+     * F295-02: the selection is fixed by the first SUCCESSFUL build. A build that fails, at any point and for any reason, leaves nothing
+     * derived behind, so the Host can correct the cause and still choose either encoding.
+     */
+    private function releaseSelectionAfterFailedBuild(bool $fixedBefore): void
+    {
+        if (! $fixedBefore) {
+            $this->accountKeyDeriver = null;
+        }
+    }
+
     /** One derivation source per builder: the runtime and its reader receive the same instance, so they cannot select different encodings. */
     private function accountKeyDeriver(): AccountScopeKeyDeriverInterface
     {

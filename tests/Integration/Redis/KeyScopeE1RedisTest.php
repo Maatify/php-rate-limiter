@@ -18,6 +18,7 @@ use Maatify\RateLimiter\Service\CompositeRateLimiterRuntimeInterface;
 use Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
+use Maatify\RateLimiter\Tests\Support\Ownership\StubContextProvider;
 use Maatify\RateLimiter\Tests\Support\Redis\OverlayWire;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 use PHPUnit\Framework\Attributes\Group;
@@ -813,6 +814,91 @@ final class KeyScopeE1RedisTest extends TestCase
             }
             self::assertNotSame([], $commits, "{$label}: the request reached the commit (the save guard, not the entry guard).");
             self::assertSame($before, $this->snapshot(), "{$label}: both layouts are unchanged.");
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------- round 3: F295-02 (failed build) and F295-03 (lifecycle through the real composition)
+
+    public function testAFailedBuildDoesNotFixTheSelectionButTheFirstSuccessfulBuildDoes(): void
+    {
+        $bound = new StubContextProvider(static fn(): int => 1);
+        $other = new StubContextProvider(static fn(): int => 2);
+        foreach (['runtime' => static fn(RateLimiterBuilder $b) => $b->build(), 'reader' => static fn(RateLimiterBuilder $b) => $b->buildOperationalReader()] as $kind => $compose) {
+            foreach ([[KeyScopeEncodingEnum::E1, KeyScopeEncodingEnum::V2], [KeyScopeEncodingEnum::V2, KeyScopeEncodingEnum::E1]] as [$first, $second]) {
+                $store = new RedisFullCapabilityStore($this->admin, self::NAMESPACE, null, 500, $bound);
+                $builder = RateLimiterBuilder::fromFullCapabilityStore($this->config(), $store, new RecordingFailureSignalEmitter())
+                    ->withClock(new FixedClock('@' . self::NOW))
+                    ->withKeyScopeEncoding($first)
+                    ->withExecutionContextProvider($other);
+                try {
+                    $compose($builder);
+                    self::fail("{$kind}: another provider over a bound store fails the build (DEC-041).");
+                } catch (RateLimiterException $exception) {
+                    self::assertStringContainsString('domain', $exception->getMessage());
+                }
+
+                // Nothing was built, so nothing is fixed: the other encoding is accepted, the cause is corrected and the build succeeds.
+                $builder->withKeyScopeEncoding($second)->withExecutionContextProvider($bound);
+                $compose($builder);
+
+                // Now it is fixed.
+                try {
+                    $builder->withKeyScopeEncoding($first);
+                    self::fail("{$kind}: the first successful build fixes the selection.");
+                } catch (RateLimiterException $exception) {
+                    self::assertStringContainsString('fixed once', $exception->getMessage());
+                }
+            }
+        }
+    }
+
+    /**
+     * @return array{claimed: bool, again: bool, e1: list<string>, v1: list<string>}
+     */
+    private function lifecycleThroughTheRealComposition(KeyScopeEncodingEnum $encoding, bool $rotated): array
+    {
+        $this->admin->execute(['FLUSHDB']);
+        $clock = new FixedClock('@' . self::NOW);
+        $store = new RedisFullCapabilityStore($this->admin, self::NAMESPACE);
+        $make = function (RateLimiterConfig $config) use ($store, $clock, $encoding): CompositeRateLimiterRuntimeInterface {
+            return RateLimiterBuilder::fromFullCapabilityStore($config, $store, new RecordingFailureSignalEmitter())->withClock($clock)->withKeyScopeEncoding($encoding)->build();
+        };
+        $writer = $make($rotated ? new RateLimiterConfig('previous_secret', 'previous_fp', self::ENV) : $this->config());
+        $runtime = $rotated ? $make(new RateLimiterConfig(self::SECRET, 'test_fp', self::ENV, 'previous_secret', 'previous_fp')) : $writer;
+
+        for ($i = 0; $i < 3; $i++) {
+            $writer->limit($this->context(), RateLimitCommand::recordFailure(self::POLICY));
+        }
+        $poll = $runtime->limit($this->context(), RateLimitCommand::checkOnly(self::POLICY));
+        self::assertSame(\Maatify\RateLimiter\DTO\RateLimitResultDTO::DECISION_HARD_BLOCK, $poll->decision, 'Three failures hard-block, through the previous identity after a rotation.');
+        $clock->setNow($clock->now()->modify('+' . ((int) $poll->retryAfter + 1) . ' seconds'));
+        $back = $runtime->limit($this->context(), RateLimitCommand::checkOnly(self::POLICY));
+        $reentry = $back->metadata?->postPunishmentReentry;
+        self::assertNotNull($reentry, 'The client returning after the block gets re-entry evidence.');
+        $claimed = $runtime->claimPostPunishmentReentry($this->context(), self::POLICY, $reentry->id);
+        $again = $runtime->claimPostPunishmentReentry($this->context(), self::POLICY, $reentry->id);
+
+        $keys = $this->keys();
+
+        return ['claimed' => $claimed, 'again' => $again, 'e1' => $this->families(self::e1Prefix()), 'v1' => self::under($keys, self::v1Prefix() . 'reentry-claim:')];
+    }
+
+    public function testLifecycleAndRotationThroughTheRealCompositionReachTheLayoutTheEncodingSelects(): void
+    {
+        foreach ([false, true] as $rotated) {
+            $label = $rotated ? 'after a rotation' : 'one secret';
+            $v2 = $this->lifecycleThroughTheRealComposition(KeyScopeEncodingEnum::V2, $rotated);
+            $e1 = $this->lifecycleThroughTheRealComposition(KeyScopeEncodingEnum::E1, $rotated);
+
+            self::assertSame([], $v2['e1'], "V2 {$label}: no key under the E1 prefix, in any family.");
+            self::assertNotSame([], $v2['v1'], "V2 {$label}: the claim marker is under v1.");
+            self::assertContains('reentry-claim', $e1['e1'], "E1 {$label}: the claim marker is under the E1 prefix.");
+            self::assertSame([], $e1['v1'], "E1 {$label}: no claim marker is under v1 (the claim was not routed to the V2 layout).");
+            self::assertSame(['budget', 'cycle', 'reentry-claim', 'score', 'watch', 'watch-meta'], $e1['e1'], "E1 {$label}: every account-scope family the lifecycle touched is under the E1 prefix.");
+            self::assertSame($v2['claimed'], $e1['claimed'], "{$label}: the claim has the same outcome in both encodings.");
+            self::assertTrue($e1['claimed']);
+            self::assertFalse($e1['again'], "{$label}: the marker is one-shot in E1.");
+            self::assertSame($v2['again'], $e1['again']);
         }
     }
 
