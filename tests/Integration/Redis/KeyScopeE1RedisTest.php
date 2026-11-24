@@ -957,6 +957,72 @@ final class KeyScopeE1RedisTest extends TestCase
         }
     }
 
+    public function testABuildSuspendedInAFiberThatIsDestroyedReleasesTheSelectionLikeAFailedBuild(): void
+    {
+        foreach (['build' => static fn(RateLimiterBuilder $b) => $b->build(), 'reader' => static fn(RateLimiterBuilder $b) => $b->buildOperationalReader()] as $kind => $compose) {
+            $builder = $this->builder($this->admin, KeyScopeEncodingEnum::V2);
+            /** @var \ArrayObject<string, mixed> $sink */
+            $sink = new \ArrayObject();
+            // A Host getter that suspends the first build it is called from, inside the build.
+            $policy = new class ($sink) extends \Maatify\RateLimiter\Config\LoginProtectionPolicy {
+                /** @param \ArrayObject<string, mixed> $sink */
+                public function __construct(private \ArrayObject $sink) {}
+
+                public function getName(): string
+                {
+                    $this->suspendOnce();
+
+                    return 'suspending_policy';
+                }
+
+                public function getCapabilities(): array
+                {
+                    $this->suspendOnce();
+
+                    return parent::getCapabilities();
+                }
+
+                private function suspendOnce(): void
+                {
+                    if (isset($this->sink['armed']) && ! isset($this->sink['suspended'])) {
+                        $this->sink['suspended'] = true;
+                        \Fiber::suspend();
+                    }
+                }
+            };
+            $builder->withPolicy($policy);
+
+            $sink['armed'] = true;
+            $fiber = new \Fiber(static function () use ($builder, $compose): void {
+                $compose($builder);
+            });
+            $fiber->start();
+            self::assertTrue($fiber->isSuspended(), "{$kind}: the build is suspended inside the Host getter.");
+
+            $weak = \WeakReference::create($fiber);
+            unset($fiber);
+            gc_collect_cycles();
+            self::assertNull($weak->get(), "{$kind}: the suspended Fiber is destroyed.");
+
+            // The attempt ended without succeeding: the selection is free and the build works under the new choice.
+            $builder->withKeyScopeEncoding(KeyScopeEncodingEnum::E1);
+            $compose($builder);
+            self::assertTrue($this->refusesToSelect($builder, KeyScopeEncodingEnum::V2), "{$kind}: the successful build fixes it.");
+        }
+    }
+
+    /** Whether the builder refuses the selection (the exception is released here, so it does not keep a suspended Fiber's frames alive). */
+    private function refusesToSelect(RateLimiterBuilder $builder, KeyScopeEncodingEnum $encoding): bool
+    {
+        try {
+            $builder->withKeyScopeEncoding($encoding);
+        } catch (RateLimiterException) {
+            return true;
+        }
+
+        return false;
+    }
+
     /**
      * @return array{claimed: bool, again: bool, e1: list<string>, v1: list<string>}
      */

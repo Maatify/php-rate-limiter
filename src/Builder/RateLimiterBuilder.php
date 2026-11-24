@@ -262,17 +262,21 @@ final class RateLimiterBuilder
     public function build(): CompositeRateLimiterRuntimeInterface
     {
         $this->buildDepth++;
+        $succeeded = false;
         try {
             $runtime = $this->composeRuntime();
-        } catch (\Throwable $failure) {
-            $this->buildDepth--;
-            $this->releaseSelectionAfterFailedBuild();
-            throw $failure;
-        }
-        $this->buildDepth--;
-        $this->selectionFixed = true;
+            $succeeded = true;
 
-        return $runtime;
+            return $runtime;
+        } finally {
+            // `finally`, not `catch (\Throwable)`: a build suspended in a Fiber that is destroyed is unwound through `finally` only.
+            $this->buildDepth--;
+            if ($succeeded) {
+                $this->selectionFixed = true;
+            } else {
+                $this->releaseSelectionAfterFailedBuild();
+            }
+        }
     }
 
     private function composeRuntime(): CompositeRateLimiterRuntimeInterface
@@ -386,17 +390,21 @@ final class RateLimiterBuilder
     public function buildOperationalReader(): CompositeRateLimitOperationalReaderInterface
     {
         $this->buildDepth++;
+        $succeeded = false;
         try {
             $reader = $this->composeReader();
-        } catch (\Throwable $failure) {
-            $this->buildDepth--;
-            $this->releaseSelectionAfterFailedBuild();
-            throw $failure;
-        }
-        $this->buildDepth--;
-        $this->selectionFixed = true;
+            $succeeded = true;
 
-        return $reader;
+            return $reader;
+        } finally {
+            // `finally`, not `catch (\Throwable)`: a build suspended in a Fiber that is destroyed is unwound through `finally` only.
+            $this->buildDepth--;
+            if ($succeeded) {
+                $this->selectionFixed = true;
+            } else {
+                $this->releaseSelectionAfterFailedBuild();
+            }
+        }
     }
 
     private function composeReader(): CompositeRateLimitOperationalReaderInterface
