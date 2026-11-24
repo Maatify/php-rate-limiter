@@ -1960,6 +1960,17 @@ LUA;
         return [$this->root()];
     }
 
+    /**
+     * F295-01: a copy of a store is its own store, so it never inherits the E1 view of the original (that view writes through the original's
+     * request state). A copy of a view stays a view of the same root.
+     */
+    public function __clone()
+    {
+        if ($this->root === null) {
+            $this->e1View = null;
+        }
+    }
+
     /** DEC-044: the store this object belongs to; the store itself when it is not a view. */
     private function root(): self
     {

@@ -577,6 +577,255 @@ final class KeyScopeE1RedisTest extends TestCase
         self::assertSame($before, $this->expiryText($physical), 'An increment of the active epoch keeps its physical expiry to the millisecond (no renewal).');
     }
 
+    // ---------------------------------------------------------------------------------------------------------------- F295-01 / F295-02
+
+    public function testACopyOfAStoreNeverSharesTheE1ViewOfTheOriginalAndACancelledRequestLeavesNeitherLayoutWritten(): void
+    {
+        $e1Key = E1AccountScopeKeyDeriver::key(self::SECRET, ['k4', self::POLICY, self::ENV, self::ACCOUNT]);
+        $original = new RedisFullCapabilityStore($this->admin, self::NAMESPACE);
+        $originalView = $original->e1Keyspace();
+        $copy = clone $original;
+        $copyView = $copy->e1Keyspace();
+
+        self::assertNotSame($originalView, $copyView, 'F295-01: a copy gets a view of its own, never the original\'s.');
+        self::assertSame($copyView, $copy->e1Keyspace());
+        self::assertSame($originalView, $original->e1Keyspace(), 'The original keeps its view.');
+
+        foreach ([['the original', $original, $originalView], ['the copy', $copy, $copyView]] as [$label, $store, $view]) {
+            $before = $this->snapshot();
+            try {
+                $store->transactRequest(function () use ($store, $view, $e1Key): int {
+                    $store->incrementAt('cancelled-v1-key', 600, 1, self::NOW);
+                    $view->incrementAt($e1Key, 600, 1, self::NOW);
+
+                    return $this->cancelTheRequest($store !== $view);
+                });
+                self::fail('The callback cancels the request.');
+            } catch (\Throwable $exception) {
+                self::assertInstanceOf(\LogicException::class, $exception);
+            }
+            self::assertSame($before, $this->snapshot(), "{$label}: cancelling the request leaves no trace in either layout.");
+        }
+
+        // The same request, not cancelled, saves both layouts through the copy's own state and none of it appears through the original's.
+        $copy->transactRequest(static function () use ($copy, $copyView, $e1Key): void {
+            $copy->incrementAt('kept-v1-key', 600, 1, self::NOW);
+            $copyView->incrementAt($e1Key, 600, 1, self::NOW);
+        });
+        self::assertContains(self::v1Prefix() . 'score:' . hash('sha256', 'kept-v1-key'), $this->keys());
+        self::assertContains(self::e1Prefix() . 'score:' . hash('sha256', $e1Key), $this->keys());
+    }
+
+    public function testTheEncodingIsFixedByTheFirstBuildWhicheverOfTheRuntimeAndTheReaderComesFirst(): void
+    {
+        foreach ([
+            'runtime then reader' => [static fn(RateLimiterBuilder $b) => $b->build(), static fn(RateLimiterBuilder $b) => $b->buildOperationalReader()],
+            'reader then runtime' => [static fn(RateLimiterBuilder $b) => $b->buildOperationalReader(), static fn(RateLimiterBuilder $b) => $b->build()],
+        ] as $label => [$first, $second]) {
+            foreach ([[KeyScopeEncodingEnum::V2, KeyScopeEncodingEnum::E1], [KeyScopeEncodingEnum::E1, KeyScopeEncodingEnum::V2]] as [$chosen, $other]) {
+                $builder = $this->builder($this->admin, $chosen);
+                $first($builder);
+                try {
+                    $builder->withKeyScopeEncoding($other);
+                    self::fail("{$label}: changing the encoding after a build must be refused.");
+                } catch (RateLimiterException $exception) {
+                    self::assertStringContainsString('fixed once', $exception->getMessage());
+                }
+                $builder->withKeyScopeEncoding($chosen); // the same selection is harmless
+                $second($builder);
+
+                // The runtime and the reader of this builder agree: the reader sees the score the runtime wrote.
+                $runtime = $builder->build();
+                $this->failures($runtime);
+                $reader = $builder->buildOperationalReader();
+                self::assertNotNull($reader->readScorePolicy($this->context(), self::POLICY)->scopes->k4?->score, "{$label} under {$chosen->value}: the reader sees the K4 score the runtime wrote.");
+                $this->admin->execute(['FLUSHDB']);
+            }
+        }
+
+        // A build that failed before deriving anything does not fix the selection.
+        $builder = new RateLimiterBuilder(
+            $this->config(),
+            new \Maatify\RateLimiter\Tests\Support\RateLimiter\BaseOnlyInMemoryRateLimitStore(new FixedClock('@' . self::NOW)),
+            new \Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore(new FixedClock('@' . self::NOW)),
+            new \Maatify\RateLimiter\Tests\Support\CircuitBreaker\InMemoryCircuitBreakerStore(),
+            new RecordingFailureSignalEmitter(),
+        );
+        $builder->withKeyScopeEncoding(KeyScopeEncodingEnum::E1);
+        try {
+            $builder->build();
+            self::fail('E1 over an incapable store fails.');
+        } catch (RateLimiterException) {
+            $this->addToAssertionCount(1);
+        }
+        self::assertSame($builder, $builder->withKeyScopeEncoding(KeyScopeEncodingEnum::V2));
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------- F295-03: the ten families
+
+    /**
+     * Every store method that writes a family, for one logical string. Returns what the calls returned.
+     *
+     * @return list<string>
+     */
+    private function everyFamily(RedisFullCapabilityStore $store, string $logical, string $life, ?string $previous = null, bool $withDistinct = true): array
+    {
+        $out = [];
+        $out[] = (string) $store->incrementAt($logical, 600, 1, self::NOW);
+        $store->blockAt($logical, 1, 600, self::NOW);
+        $out[] = print_r($store->incrementBudgetAt($logical, 86400, 1, self::NOW), true);
+        $out[] = (string) $store->incrementWatchFlagAt($logical, 600, self::NOW);
+        if ($withDistinct) {
+            $out[] = (string) $store->addDistinctAt($logical, 'member', 600, self::NOW);
+        }
+        $out[] = print_r($store->blockWithCycleTracking($logical, $previous, 2, 60, self::NOW, 3600, 1, 60, 3600), true);
+        $out[] = print_r($store->readDecayPauseState($logical, $previous, self::NOW - 10, self::NOW), true);
+        // The lifecycle works on a score key written by the lifecycle mutation (its own state shape), so it has its own logical key.
+        $lifecycleId = str_repeat('ab', 16);
+        $out[] = print_r($store->mutateGenerationBoundScoreAtMilliseconds($life, $previous, null, 600, 5, self::NOW . '000'), true);
+        $out[] = print_r($store->blockWithPunishmentLifecycleTrackingAt($life, $previous, 1, $lifecycleId, 2, 60, 3600, 1, 60, 3600, self::NOW), true);
+        $out[] = $store->claimPostPunishmentReentryAtMilliseconds($life, $previous, $lifecycleId, (self::NOW + 61) . '000') ? 'claimed' : 'not-claimed';
+        $out[] = (string) $store->incrementWatchFlagAcrossRotationAt($logical, $previous ?? $logical . '-prev', 600, self::NOW);
+
+        return $out;
+    }
+
+    /** @return list<string> the family segment of each key under a prefix */
+    private function families(string $prefix): array
+    {
+        $families = [];
+        foreach (self::under($this->keys(), $prefix) as $key) {
+            $families[explode(':', substr($key, strlen($prefix)))[0]] = true;
+        }
+        $names = array_keys($families);
+        sort($names);
+
+        return $names;
+    }
+
+    public function testDirectPlainStringsGiveTheV1KeysInAllTenFamiliesWithE1SelectedOrNot(): void
+    {
+        $tenFamilies = ['block', 'budget', 'cycle', 'distinct', 'distinct-meta', 'pause', 'reentry-claim', 'score', 'watch', 'watch-meta'];
+        foreach (['e1.' . str_repeat('a', 64), str_repeat('b', 64), 'e1.not-hex', 'e1.' . str_repeat('A', 64), 'plain-string', "nul\0byte"] as $string) {
+            $baseline = null;
+            $selectedRun = null;
+            foreach ([false, true] as $selected) {
+                $this->admin->execute(['FLUSHDB']);
+                $store = new RedisFullCapabilityStore($this->admin, self::NAMESPACE);
+                if ($selected) {
+                    $this->builder($this->admin, KeyScopeEncodingEnum::E1, $store)->build();
+                }
+                $returned = $this->everyFamily($store, $string, $string . '|lifecycle');
+                $keys = $this->keys();
+                self::assertSame([], self::under($keys, self::e1Prefix()), 'A plain string never reaches the E1 prefix.');
+                self::assertSame($tenFamilies, $this->families(self::v1Prefix()), 'All ten families are reached, under v1.');
+                $dumps = array_map(static fn(array $entry): string => $entry[0], $this->snapshot());
+                if ($selected) {
+                    $selectedRun = [$keys, $dumps, $returned];
+                } else {
+                    $baseline = [$keys, $dumps, $returned];
+                }
+            }
+            self::assertNotNull($baseline);
+            self::assertNotNull($selectedRun);
+            self::assertSame($baseline[0], $selectedRun[0], 'The physical keys equal those with E1 unselected.');
+            self::assertSame($baseline[1], $selectedRun[1], 'The stored values equal those with E1 unselected.');
+            self::assertSame($baseline[2], $selectedRun[2], 'The results equal those with E1 unselected.');
+        }
+    }
+
+    /** @return array{list<string>, array<string, list<string>>} the results and, per family, the sorted byte-exact values */
+    private function layoutRun(bool $e1): array
+    {
+        $this->admin->execute(['FLUSHDB']);
+        $store = new RedisFullCapabilityStore($this->admin, self::NAMESPACE);
+        if ($e1) {
+            $target = $store->e1Keyspace();
+            $current = E1AccountScopeKeyDeriver::key(self::SECRET, ['k4', self::POLICY, self::ENV, self::ACCOUNT]);
+            $previous = E1AccountScopeKeyDeriver::key('previous_secret', ['k4', self::POLICY, self::ENV, self::ACCOUNT]);
+            $life = E1AccountScopeKeyDeriver::key(self::SECRET, ['k4p', self::POLICY, self::ENV, self::ACCOUNT]);
+            $prefix = self::e1Prefix();
+        } else {
+            $target = $store;
+            $current = hash_hmac('sha256', 'k4|current', self::SECRET);
+            $previous = hash_hmac('sha256', 'k4|previous', 'previous_secret');
+            $life = hash_hmac('sha256', 'k4p|current', self::SECRET);
+            $prefix = self::v1Prefix();
+        }
+        // E1 holds no `distinct` family (invariant 4): the derivative hashes stay in v1.
+        $returned = $this->everyFamily($target, $current, $life, $previous, false);
+        $returned[] = print_r($target->readGenerationBoundScoreState($current, $previous), true);
+        $returned[] = print_r($target->checkBlockAt($current, self::NOW + 1), true);
+        $returned[] = print_r($target->peekBudgetAt($current, self::NOW + 1), true);
+
+        $values = [];
+        foreach (self::under($this->keys(), $prefix) as $key) {
+            $family = explode(':', substr($key, strlen($prefix)))[0];
+            $dump = $this->admin->execute(['DUMP', $key]);
+            self::assertIsString($dump);
+            $expiry = (float) $this->expiryText($key);
+            $values[$family][] = bin2hex($dump) . '@' . (string) (int) round($expiry / 60000);
+        }
+        ksort($values);
+        foreach ($values as &$list) {
+            sort($list);
+        }
+
+        return [$returned, $values];
+    }
+
+    public function testEveryE1FamilyBehavesLikeItsV1CounterpartOnTheRealStoreIncludingLifecycleAndRotation(): void
+    {
+        [$v1Returned, $v1Values] = $this->layoutRun(false);
+        [$e1Returned, $e1Values] = $this->layoutRun(true);
+
+        self::assertSame(['block', 'budget', 'cycle', 'pause', 'reentry-claim', 'score', 'watch', 'watch-meta'], array_keys($e1Values), 'All eight E1 families are written, in the E1 prefix.');
+        self::assertSame(array_keys($v1Values), array_keys($e1Values));
+        self::assertSame($v1Returned, $e1Returned, 'Every call returns the same result through the view as through the store.');
+        self::assertSame($v1Values, $e1Values, 'Every family stores the same values and the same (minute-rounded) expiries in both layouts.');
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------- F295-04: ACL per layout
+
+    public function testARefusedWriteInEitherLayoutAloneReachesTheCommitAndLeavesBothLayoutsUnchanged(): void
+    {
+        // Redis 7 selectors: the account holds every command of the plan on every key of the namespace except `hset`, which a selector grants on one layout only.
+        $cases = [
+            'writes refused in the E1 layout only' => ['e1-no-write', '(+hset ~maatify:rate-limiter:v1:*)'],
+            'writes refused in the v1 layout only' => ['v1-no-write', '(+hset ~maatify:rate-limiter:e1:*)'],
+        ];
+        foreach ($cases as $label => [$user, $selector]) {
+            $account = $this->userExecutor($user, ['hset'], ['~maatify:rate-limiter:*', '~', $selector]);
+            $commits = [];
+            $executor = new CallableRedisCommandExecutor(function (array $command) use (&$commits, $account): mixed {
+                if (OverlayWire::isCommit($command)) {
+                    $commits[] = $command;
+                }
+
+                return $account->execute($command);
+            });
+            $before = $this->snapshot();
+            try {
+                $this->failures($this->runtime($executor, KeyScopeEncodingEnum::E1));
+                self::fail("{$label}: the save must be refused.");
+            } catch (\Throwable $exception) {
+                self::assertStringContainsString('NOPERM', $exception->getMessage(), $label);
+            }
+            self::assertNotSame([], $commits, "{$label}: the request reached the commit (the save guard, not the entry guard).");
+            self::assertSame($before, $this->snapshot(), "{$label}: both layouts are unchanged.");
+        }
+    }
+
+    /** Cancels the request on purpose (declared `int` so the static analysis does not treat the callback as never returning). */
+    private function cancelTheRequest(bool $really): int
+    {
+        if ($really) {
+            throw new \LogicException('cancel on purpose');
+        }
+
+        return 0;
+    }
+
     private function expiryText(string $key): string
     {
         $expiry = $this->admin->execute(['PEXPIRETIME', $key]);

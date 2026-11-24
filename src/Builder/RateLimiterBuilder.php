@@ -164,8 +164,12 @@ final class RateLimiterBuilder
      */
     public function withKeyScopeEncoding(KeyScopeEncodingEnum $encoding): self
     {
+        if ($this->accountKeyDeriver !== null && $encoding !== $this->keyScopeEncoding) {
+            // F295-02: a runtime or reader already derived keys with the first selection; a second encoding on this builder would let the
+            // writer and a later reader disagree on every account-scope key.
+            throw new RateLimiterException('The key scope encoding is fixed once a runtime or reader has been built from this builder (DEC-044).');
+        }
         $this->keyScopeEncoding = $encoding;
-        $this->accountKeyDeriver = null;
 
         return $this;
     }
