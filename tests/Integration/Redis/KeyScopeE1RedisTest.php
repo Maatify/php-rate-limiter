@@ -897,6 +897,66 @@ final class KeyScopeE1RedisTest extends TestCase
         }
     }
 
+    public function testTheSelectionCannotChangeWhileABuildIsRunningAndIsFreeAgainOnlyWhenEveryAttemptFailed(): void
+    {
+        foreach ([false, true] as $outerFails) {
+            $builder = $this->builder($this->admin, KeyScopeEncodingEnum::V2);
+            /** @var \ArrayObject<string, mixed> $sink */
+            $sink = new \ArrayObject();
+            // A Host policy callback that tries to switch the encoding from inside the running build.
+            $policy = new class ($builder, $sink, $outerFails) extends \Maatify\RateLimiter\Config\LoginProtectionPolicy {
+                /** @param \ArrayObject<string, mixed> $sink */
+                public function __construct(private RateLimiterBuilder $builder, private \ArrayObject $sink, private bool $fail) {}
+
+                public function getName(): string
+                {
+                    return 'switching_policy';
+                }
+
+                public function getCapabilities(): array
+                {
+                    if (! isset($this->sink['tried'])) {
+                        $this->sink['tried'] = true;
+                        try {
+                            $this->builder->withKeyScopeEncoding(KeyScopeEncodingEnum::E1);
+                            $this->sink['refused'] = false;
+                        } catch (RateLimiterException) {
+                            $this->sink['refused'] = true;
+                        }
+                        if ($this->fail) {
+                            throw new \RuntimeException('the only attempt fails');
+                        }
+                    }
+
+                    return parent::getCapabilities();
+                }
+            };
+            $builder->withPolicy($policy);
+
+            if ($outerFails) {
+                try {
+                    $builder->build();
+                    self::fail('The only attempt fails.');
+                } catch (\RuntimeException) {
+                    $this->addToAssertionCount(1);
+                }
+                self::assertTrue($sink['refused'], 'The switch from inside the running build was refused.');
+                // Every attempt failed and nothing was fixed: the selection is free again.
+                self::assertSame($builder, $builder->withKeyScopeEncoding(KeyScopeEncodingEnum::E1));
+
+                continue;
+            }
+
+            $runtime = $builder->build();
+            self::assertTrue($sink['refused'], 'The switch from inside the running build was refused.');
+            $this->failures($runtime);
+            self::assertSame([], $this->families(self::e1Prefix()), 'The runtime keeps the encoding it was built with: nothing under the E1 prefix.');
+            self::assertNotSame([], self::under($this->keys(), self::v1Prefix() . 'score:'));
+            $reader = $builder->buildOperationalReader();
+            self::assertNotNull($reader->readScorePolicy($this->context(), self::POLICY)->scopes->k4?->score, 'The reader agrees with the runtime.');
+        }
+    }
+
     /**
      * @return array{claimed: bool, again: bool, e1: list<string>, v1: list<string>}
      */
