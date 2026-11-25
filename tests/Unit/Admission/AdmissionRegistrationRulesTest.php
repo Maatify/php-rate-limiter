@@ -13,12 +13,9 @@ use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Service\AdmissionRuntime;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\CircuitBreaker;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\FingerprintHasher;
@@ -224,13 +221,13 @@ final class AdmissionRegistrationRulesTest extends TestCase
             new EvaluationPipeline(
                 $store,
                 new NullCorrelationStore(),
-                new BudgetTracker($store, $clock),
-                new AntiEquilibriumGate(new NullCorrelationStore()),
                 new DecayCalculator($clock),
-                new EphemeralBucket(new NullCorrelationStore()),
                 'test_secret',
                 'prod',
                 $clock,
+                $clock,
+                null,
+                null,
             ),
             new CircuitBreaker(new InMemoryCircuitBreakerStore(), $emitter, $clock),
             new FailureModeResolver(),

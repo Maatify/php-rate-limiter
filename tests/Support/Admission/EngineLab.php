@@ -17,12 +17,9 @@ use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Repository\AtomicAdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Service\AdmissionCredentialCodec;
 use Maatify\RateLimiter\Service\AdmissionRuntime;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\CircuitBreaker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\FingerprintHasher;
@@ -113,13 +110,13 @@ final class EngineLab
         $pipeline = new $pipelineClass(
             $scores,
             $correlation,
-            new BudgetTracker($scores, $this->clock),
-            new AntiEquilibriumGate($correlation),
             new DecayCalculator($this->clock),
-            new EphemeralBucket($correlation),
             self::KEY_SECRET,
             self::ENV,
             $this->clock,
+            $this->clock,
+            null,
+            null,
         );
         $this->pipeline = $pipeline;
         $all = $registerOptedPolicy ? [new OptedEngineLoginPolicy(self::GROUP), ...$policies] : $policies;

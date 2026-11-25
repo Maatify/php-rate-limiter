@@ -1,0 +1,5 @@
+base=6db137868f4abaebb94a287f75a3af1742d8d3bc tree=b03cf3e2e267ab8c863edc8264e80923a7f1812e
+head=f176bf871b10e600bbb3e46351b1ccdc10a63aba branch=codex/284-g1-e1-only dirtyFiles=1
+platform=linux/386 image=maatify-rl-php32:local repeats=3 concurrency=1 n=100 warmup=15 mode=EVAL callerNow=1793793600
+sha256:d4793fbe6171a70cee9fad4354488d73a694e8ec15016d7fa9ad89695201fc8e
+Redis server v=7.0.15 sha=00000000:0 malloc=jemalloc-5.2.1 bits=64 build=d6d81b7b50ab2e83

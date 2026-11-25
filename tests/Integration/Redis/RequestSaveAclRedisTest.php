@@ -211,7 +211,7 @@ final class RequestSaveAclRedisTest extends TestCase
             return 'control';
         }
 
-        return preg_match('/^maatify:rate-limiter:v1:[0-9a-f]{64}:([a-z-]+):/', $key, $match) === 1 ? $match[1] : 'other';
+        return preg_match('/^maatify:rate-limiter:(?:v1|e1):[0-9a-f]{64}:([a-z-]+):/', $key, $match) === 1 ? $match[1] : 'other';
     }
 
     /**
@@ -681,8 +681,8 @@ final class RequestSaveAclRedisTest extends TestCase
             $cases["$shape connection killed before the commit"] = ['connection killed before commit', ['shape' => $shape, 'hook' => 'kill']];
             $cases["$shape reply lost after the save"] = ['reply lost after the save', ['shape' => $shape, 'proxy' => true]];
             // The engine's scripts declare empty-string placeholder keys: a prefix pattern alone does not admit them, `~` (the empty pattern) does.
-            $engineKeys = ['~' . self::SCOPE, '~'];
-            $cases["$shape engine outage (positive control of the fallback metric)"] = ['engine outage', ['shape' => $shape, 'engine' => true, 'keys' => ['~' . self::SCOPE, '~'], 'hook' => 'outage']];
+            $engineKeys = ['~' . self::SCOPE, '~maatify:rate-limiter:e1:*', '~'];
+            $cases["$shape engine outage (positive control of the fallback metric)"] = ['engine outage', ['shape' => $shape, 'engine' => true, 'keys' => $engineKeys, 'hook' => 'outage']];
             $cases["$shape engine control (prefix pattern only)"] = ['engine control (prefix pattern only)', ['shape' => $shape, 'engine' => true]];
             $cases["$shape engine control"] = ['engine control', ['shape' => $shape, 'engine' => true, 'keys' => $engineKeys]];
             $cases["$shape engine deny -pexpiretime"] = ['engine deny -pexpiretime', ['shape' => $shape, 'engine' => true, 'keys' => $engineKeys, 'denied' => ['pexpiretime']]];

@@ -44,7 +44,13 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
             RateLimitCommand::recordFailure('login_protection'),
         );
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $login->decision);
-        self::assertSame(3, $store->get($this->scopeKey(
+        self::assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->scopeKey(
+            'login_protection',
+            'k4',
+            $loginContext,
+            'key-secret',
+            'fingerprint-secret',
+        ))->get($this->scopeKey(
             'login_protection',
             'k4',
             $loginContext,
@@ -66,7 +72,13 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
             new RateLimitCommand('api_heavy_protection'),
         );
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $api->decision);
-        self::assertSame(1, $store->get($this->scopeKey(
+        self::assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->scopeKey(
+            'api_heavy_protection',
+            'k1',
+            $apiContext,
+            'key-secret',
+            'fingerprint-secret',
+        ))->get($this->scopeKey(
             'api_heavy_protection',
             'k1',
             $apiContext,
@@ -222,7 +234,7 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
             $currentOuter,
             $currentFingerprint,
         );
-        $store->set($previousKey, 2, 86400);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousKey)->set($previousKey, 2, 86400);
 
         $limiter = $this->fullLimiter($clock, $store, new RateLimiterConfig(
             $currentOuter,
@@ -237,20 +249,32 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
         );
 
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
-        self::assertSame(4, $store->get($currentKey)?->value);
+        self::assertSame(4, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $currentKey)->get($currentKey)?->value);
         if ($currentKey !== $previousKey) {
-            self::assertSame(2, $store->get($previousKey)?->value);
+            self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousKey)->get($previousKey)?->value);
         }
 
         if ($currentOuter !== $stateOuter && $currentFingerprint !== $stateFingerprint) {
-            self::assertNull($store->get($this->scopeKey(
+            self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->scopeKey(
+                'login_protection',
+                'k5',
+                $context,
+                $currentOuter,
+                $stateFingerprint,
+            ))->get($this->scopeKey(
                 'login_protection',
                 'k5',
                 $context,
                 $currentOuter,
                 $stateFingerprint,
             )));
-            self::assertNull($store->get($this->scopeKey(
+            self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->scopeKey(
+                'login_protection',
+                'k5',
+                $context,
+                $stateOuter,
+                $currentFingerprint,
+            ))->get($this->scopeKey(
                 'login_protection',
                 'k5',
                 $context,
@@ -273,7 +297,7 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
         $oldLimiter->limit($context, RateLimitCommand::recordFailure('login_protection'));
 
         $oldBudgetKey = $this->microCapKey($context, 'old-key', 'fingerprint-secret');
-        $oldBudget = $store->getBudget($oldBudgetKey);
+        $oldBudget = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $oldBudgetKey)->getBudget($oldBudgetKey);
         self::assertNotNull($oldBudget);
         self::assertSame(1, $oldBudget->count);
 
@@ -286,10 +310,10 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
         $result = $currentLimiter->limit($context, RateLimitCommand::recordFailure('login_protection'));
 
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
-        $unchangedOldBudget = $store->getBudget($oldBudgetKey);
+        $unchangedOldBudget = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $oldBudgetKey)->getBudget($oldBudgetKey);
         self::assertNotNull($unchangedOldBudget);
         self::assertSame(1, $unchangedOldBudget->count);
-        $currentBudget = $store->getBudget($this->microCapKey($context, 'new-key', 'fingerprint-secret'));
+        $currentBudget = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->microCapKey($context, 'new-key', 'fingerprint-secret'))->getBudget($this->microCapKey($context, 'new-key', 'fingerprint-secret'));
         self::assertNotNull($currentBudget);
         self::assertSame(2, $currentBudget->count);
     }
@@ -353,10 +377,10 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
             'key-secret',
             'fingerprint-secret',
         );
-        self::assertSame(2, $store->checkBlock($k4)?->level);
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $k4)->checkBlock($k4)?->level);
         self::assertSame(
             0,
-            $store->readDecayPauseState($k4, null, $clock->now()->getTimestamp() - 86400, $clock->now()->getTimestamp())
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $k4)->readDecayPauseState($k4, null, $clock->now()->getTimestamp() - 86400, $clock->now()->getTimestamp())
                 ->elapsedPausedSeconds,
         );
     }
@@ -488,7 +512,13 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
         $result = $limiter->limit($context, new RateLimitCommand('api_heavy_protection'));
 
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
-        self::assertNotNull($rateLimitStore->get($this->scopeKey(
+        self::assertNotNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($rateLimitStore, $this->scopeKey(
+            'api_heavy_protection',
+            'k1',
+            $context,
+            'key-secret',
+            'fingerprint-secret',
+        ))->get($this->scopeKey(
             'api_heavy_protection',
             'k1',
             $context,
@@ -566,6 +596,10 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
     ): string {
         $base = "{$policy}:rate_limiter:{$scope}:v2:prod:";
         $fingerprintHash = $this->fingerprintHash($context, $fingerprintSecret);
+        if (in_array($scope, ['k4', 'k5'], true)) {
+            self::assertNotNull($context->accountId);
+            return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive($scope, $policy, $context->accountId, $outerSecret, $scope === 'k5' ? $fingerprintHash : null);
+        }
         $raw = match ($scope) {
             'k1' => $base . $context->ip,
             'k2' => $base . $context->ip . ':' . DeviceIdentityResolver::normalizeUserAgent($context->ua),
@@ -583,12 +617,7 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
         string $outerSecret,
         string $fingerprintSecret,
     ): string {
-        return hash_hmac(
-            'sha256',
-            'login_protection:rate_limiter:microcap:k5:v1:prod:'
-                . ($context->accountId ?? '') . ':' . $this->fingerprintHash($context, $fingerprintSecret),
-            $outerSecret,
-        );
+        return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('microcap.k5', 'login_protection', ($context->accountId ?? ''), $outerSecret, ($this->fingerprintHash($context, $fingerprintSecret)));
     }
 
     private function fingerprintHash(RateLimitContextDTO $context, string $secret): string
@@ -603,11 +632,7 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
 
     private function distributedDeviceScope(string $policy, string $account, string $secret): string
     {
-        $k4 = hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:k4:v2:prod:{$account}",
-            $secret,
-        );
+        $k4 = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', ($policy), ($account), $secret);
 
         return hash_hmac(
             'sha256',

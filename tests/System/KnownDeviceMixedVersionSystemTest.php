@@ -14,7 +14,7 @@ use Maatify\RateLimiter\Service\AntiEquilibriumGate;
 use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\EphemeralBucket;
-use Maatify\RateLimiter\Service\EvaluationPipeline;
+use Maatify\RateLimiter\Tests\Fixtures\PreG1\EvaluationPipeline;
 use Maatify\RateLimiter\Tests\Fixtures\S0Baseline\S0EvaluationPipeline;
 use Maatify\RateLimiter\Tests\Fixtures\S0Baseline\S0LoginProtectionPolicy;
 use Maatify\RateLimiter\Service\RequestScopedClock;
@@ -23,6 +23,10 @@ use Maatify\RateLimiter\Tests\Support\FullCapability\FullCapabilityInMemoryStore
 use PHPUnit\Framework\TestCase;
 
 /**
+ * HISTORICAL V2 replay: the later worker is frozen at main@6db1378, not the G1 runtime.
+ * Original mixed-version/rollback detectors remain intact; they do not qualify an E1 transition.
+ * Current G1 divergence is tested in KeyScopeE1RedisTest.
+ *
  * Rollback and previous-generation regression for the known-device bound
  * (F117-06, DEC-021) on the full-capability reference store, where
  * time can be advanced. The old worker is the pinned S0 pipeline with the S0

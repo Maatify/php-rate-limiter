@@ -8,4 +8,4 @@ use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
 use Maatify\RateLimiter\Repository\OperationalReadOnlyStoreInterface;
 
 /** A test-only shape: the full-capability store with the read-only reads of Operational Read (#185, DEC-032), and no more. */
-interface FullCapabilityReadOnlyReadsStoreInterface extends FullCapabilityStoreInterface, OperationalReadOnlyStoreInterface {}
+interface FullCapabilityReadOnlyReadsStoreInterface extends \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface, FullCapabilityStoreInterface, OperationalReadOnlyStoreInterface {}

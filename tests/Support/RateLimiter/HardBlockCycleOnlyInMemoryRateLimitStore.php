@@ -23,9 +23,18 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  * DEC-003 hard-block-cycle capability, not the full lifecycle/budget-seed
  * capabilities.
  */
-final class HardBlockCycleOnlyInMemoryRateLimitStore implements HardBlockCycleStoreInterface, SnapshotFencedScoreStoreInterface, ScoreReplaceStoreInterface, OperationalReadOnlyStoreInterface
+final class HardBlockCycleOnlyInMemoryRateLimitStore implements \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface, HardBlockCycleStoreInterface, SnapshotFencedScoreStoreInterface, ScoreReplaceStoreInterface, OperationalReadOnlyStoreInterface
 {
-    private readonly InMemoryRateLimitStore $delegate;
+    use \Maatify\RateLimiter\Tests\Support\E1View;
+
+    private InMemoryRateLimitStore $delegate;
+
+    protected function initializeAccountView(object $view): void
+    {
+        if ($view instanceof self) {
+            $view->delegate = $this->delegate->e1Keyspace();
+        }
+    }
 
     public function __construct(ClockInterface $clock)
     {

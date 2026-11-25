@@ -35,6 +35,14 @@ class FullCapabilityInMemoryStore extends InMemoryRateLimitStore implements Full
         $this->circuitBreakerStore = new InMemoryCircuitBreakerStore();
     }
 
+    protected function initializeAccountView(object $view): void
+    {
+        parent::initializeAccountView($view);
+        if ($view instanceof self) {
+            $view->correlationStore = $this->correlationStore->e1Keyspace();
+        }
+    }
+
     public function addDistinct(string $key, string $item, int $ttlSeconds): int
     {
         return $this->correlationStore->addDistinct($key, $item, $ttlSeconds);

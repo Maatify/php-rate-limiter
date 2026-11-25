@@ -15,8 +15,10 @@ use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
  * a method named like the package's internal inventory method, which the package must never call. It counts every call it receives
  * and can suspend a fiber inside `getBudget()`.
  */
-class HostStore implements RateLimitStoreInterface
+class HostStore implements \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface, RateLimitStoreInterface
 {
+    use \Maatify\RateLimiter\Tests\Support\E1View;
+
     public int $calls = 0;
 
     public int $inventoryCalls = 0;

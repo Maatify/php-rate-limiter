@@ -10,15 +10,12 @@ use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\Service\CircuitBreaker;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\LocalFallbackLimiter;
 use Maatify\RateLimiter\Service\RateLimiterEngine;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
@@ -89,8 +86,8 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
             'test_secret',
         );
 
-        $this->assertSame(1, $store->get($chromeKey)?->value);
-        $this->assertSame(1, $store->get($firefoxKey)?->value);
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $chromeKey)->get($chromeKey)?->value);
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $firefoxKey)->get($firefoxKey)?->value);
 
         // A healthy request must not consume local fallback capacity. Prove this through the public Engine
         // workflow by failing the backend afterward and requiring the full 60-request K2 allowance.
@@ -603,13 +600,13 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
         $pipeline = new EvaluationPipeline(
             $store,
             $correlationStore,
-            new BudgetTracker($store, $this->clock),
-            new AntiEquilibriumGate($correlationStore),
             new DecayCalculator($this->clock),
-            new EphemeralBucket($correlationStore),
             'test_secret',
             'prod',
             $this->clock,
+            $this->clock,
+            null,
+            null,
         );
 
         return new RateLimiterEngine(

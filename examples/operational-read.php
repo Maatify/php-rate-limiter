@@ -2,6 +2,15 @@
 
 declare(strict_types=1);
 
+use Maatify\RateLimiter\Repository\ScoreReplaceStoreInterface;
+use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
+use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
+use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotStoreInterface;
+use Maatify\RateLimiter\DTO\PunishmentLifecycleTransitionDTO;
+use Maatify\RateLimiter\DTO\PostPunishmentReentryStateDTO;
+use Maatify\RateLimiter\DTO\GenerationBoundScoreStateDTO;
+use Maatify\RateLimiter\DTO\GenerationBoundScoreMutationDTO;
+use Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO;
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
@@ -18,17 +27,11 @@ use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface;
-use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
-use Maatify\RateLimiter\Repository\BoundedCorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
-use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
 use Maatify\RateLimiter\Repository\OperationalReadOnlyStoreInterface;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\CircuitBreaker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\FingerprintHasher;
@@ -39,8 +42,27 @@ use Maatify\SharedCommon\Infrastructure\SystemClock;
 require dirname(__DIR__) . '/vendor/autoload.php';
 
 /** Small host-owned adapters used only to make this example executable. */
-final class OperationalExampleRateLimitStore implements HardBlockCycleStoreInterface, OperationalReadOnlyStoreInterface
+final class OperationalExampleRateLimitStore implements \Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface, OperationalReadOnlyStoreInterface, \Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface, \Maatify\RateLimiter\Repository\ScoreReplaceStoreInterface, \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface
 {
+    private bool $accountLayout = false;
+    private ?self $accountView = null;
+
+    /** Example-local isolated in-memory account layout; production Redis shares a transaction through its official view. */
+    public function e1Keyspace(): static
+    {
+        if ($this->accountLayout) {
+            return $this;
+        }
+        if ($this->accountView === null) {
+            $view = clone $this;
+            $view->accountLayout = true;
+            $view->accountView = null;
+            $view->writes = & $this->writes;
+            $this->accountView = $view;
+        }
+        return $this->accountView;
+    }
+
     private const PAUSE_HISTORY_RETENTION_SECONDS = 86400;
 
     /** @var array<string, array{value: int, updatedAt: int, expiresAt: int}> */
@@ -80,6 +102,33 @@ final class OperationalExampleRateLimitStore implements HardBlockCycleStoreInter
         }
 
         return $this->counters[$key]['value'];
+    }
+
+    public function incrementIfSnapshot(string $key, int $ttlSeconds, ?int $expectedValue, ?int $expectedUpdatedAt, int $newValue): ?int
+    {
+        $current = $this->get($key);
+        $matches = $expectedValue === null
+            ? $current === null
+            : $current !== null && $current->value === $expectedValue && $current->updatedAt === $expectedUpdatedAt;
+        if (! $matches) {
+            return null;
+        }
+        $this->writes++;
+        $now = $this->clock->now()->getTimestamp();
+        $this->counters[$key] = [
+            'value' => $newValue,
+            'updatedAt' => $now,
+            'expiresAt' => $current === null ? $now + $ttlSeconds : $this->counters[$key]['expiresAt'],
+        ];
+
+        return $newValue;
+    }
+
+    public function replaceScore(string $key, int $value, int $ttlSeconds): ?RateLimitStateDTO
+    {
+        $previous = $this->get($key);
+        $this->set($key, $value, $ttlSeconds);
+        return $previous;
     }
 
     public function get(string $key): ?RateLimitStateDTO
@@ -333,12 +382,116 @@ final class OperationalExampleRateLimitStore implements HardBlockCycleStoreInter
             'pauses' => array_values($mergedPauses),
         ];
     }
+
+    /** @var array<string, array{generation: int, lifecycle: ?PostPunishmentReentryStateDTO}> */
+    private array $generations = [];
+
+    /** @var array<string, string> */
+    private array $claimMarkers = [];
+
+    public function readGenerationBoundScoreState(string $currentKey, ?string $previousKey): ?GenerationBoundScoreStateDTO
+    {
+        $now = $this->clock->now()->getTimestamp();
+        $source = isset($this->counters[$currentKey]) && $this->counters[$currentKey]['expiresAt'] > $now ? GenerationBoundScoreStateDTO::SOURCE_CURRENT : GenerationBoundScoreStateDTO::SOURCE_PREVIOUS;
+        $key = $source === GenerationBoundScoreStateDTO::SOURCE_CURRENT ? $currentKey : $previousKey;
+        if ($key === null || !isset($this->counters[$key]) || $this->counters[$key]['expiresAt'] <= $now) {
+            return null;
+        }
+        $generation = $this->generations[$key]['generation'] ?? null;
+        $activeBlock = $this->checkBlock($currentKey);
+        if ($activeBlock === null && $previousKey !== null) {
+            $activeBlock = $this->checkBlock($previousKey);
+        }
+        $lifecycle = $activeBlock === null && $generation !== null ? $this->generations[$key]['lifecycle'] : null;
+        return new GenerationBoundScoreStateDTO($source, $this->counters[$key]['value'], $this->counters[$key]['updatedAt'], $this->counters[$key]['expiresAt'], $generation, $lifecycle);
+    }
+
+    public function mutateGenerationBoundScore(string $currentKey, ?string $previousKey, ?GenerationBoundScoreStateDTO $expectedState, int $ttlSeconds, int $newValue): GenerationBoundScoreMutationDTO
+    {
+        $observed = $this->readGenerationBoundScoreState($currentKey, $previousKey);
+        if ($expectedState === null && $observed !== null || $expectedState !== null && ($observed === null || $observed->source !== $expectedState->source || $observed->generation !== $expectedState->generation || $observed->value !== $expectedState->value || $observed->updatedAt !== $expectedState->updatedAt || $observed->expiresAt !== $expectedState->expiresAt)) {
+            return new GenerationBoundScoreMutationDTO(false, null);
+        }
+        $now = $this->clock->now()->getTimestamp();
+        $generation = $observed === null ? 1 : ($observed->generation ?? 0) + 1;
+        $expiresAt = $observed === null ? $now + $ttlSeconds : $observed->expiresAt;
+        $this->counters[$currentKey] = ['value' => $newValue, 'updatedAt' => $now, 'expiresAt' => $expiresAt];
+        $this->generations[$currentKey] = ['generation' => $generation, 'lifecycle' => null];
+        unset($this->claimMarkers[$currentKey]);
+        return new GenerationBoundScoreMutationDTO(true, new GenerationBoundScoreStateDTO(GenerationBoundScoreStateDTO::SOURCE_CURRENT, $newValue, $now, $expiresAt, $generation));
+    }
+
+    public function blockWithPunishmentLifecycleTracking(string $currentKey, ?string $previousKey, int $expectedGeneration, string $proposedLifecycleId, int $level, int $durationSeconds, int $cycleWindowSeconds, int $cycleThreshold, int $pauseSeconds, int $pauseHistoryRetentionSeconds): PunishmentLifecycleTransitionDTO
+    {
+        if ($expectedGeneration <= 0 || $level < 2 || $durationSeconds <= 0 || $cycleWindowSeconds <= 0 || $cycleThreshold <= 0 || $pauseSeconds <= 0 || $pauseHistoryRetentionSeconds <= 0) {
+            throw new InvalidArgumentException('Invalid lifecycle publication parameters.');
+        }
+        $state = $this->readGenerationBoundScoreState($currentKey, $previousKey);
+        if ($state === null || $state->source !== GenerationBoundScoreStateDTO::SOURCE_CURRENT || $state->generation !== $expectedGeneration) {
+            // No Current generated score is a publishable source: an absent
+            // source, a stale Current, or a structurally valid but merely
+            // historical Previous are all ordinary optimistic conflicts.
+            return new PunishmentLifecycleTransitionDTO(false, null, null, null);
+        }
+        $cycle = $this->blockWithCycleTracking($currentKey, $previousKey, $level, $durationSeconds, $this->clock->now()->getTimestamp(), $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds);
+        $now = $this->clock->now()->getTimestamp();
+        $existingLifecycle = $this->generations[$currentKey]['lifecycle'] ?? null;
+        if ($existingLifecycle !== null && $existingLifecycle->validUntil === $state->expiresAt) {
+            // Same generation, same authoritative expiry: preserve the
+            // already-published identity instead of adopting a new one.
+            $lifecycleId = $existingLifecycle->id;
+        } else {
+            $lifecycleId = preg_match('/\A[a-f0-9]{32}\z/D', $proposedLifecycleId) === 1 ? $proposedLifecycleId : bin2hex(random_bytes(16));
+        }
+        $lifecycle = new PostPunishmentReentryStateDTO($lifecycleId, $state->expiresAt);
+        $this->generations[$currentKey]['lifecycle'] = $lifecycle;
+        return new PunishmentLifecycleTransitionDTO(true, $cycle, new BlockStateDTO($level, $now + $durationSeconds), $lifecycle);
+    }
+
+    public function claimPostPunishmentReentry(string $currentKey, ?string $previousKey, string $lifecycleId): bool
+    {
+        $now = $this->clock->now()->getTimestamp();
+        $currentBlock = $this->checkBlock($currentKey);
+        $previousBlock = $previousKey === null ? null : $this->checkBlock($previousKey);
+        if (($currentBlock === null ? 0 : $currentBlock->expiresAt) > $now || ($previousBlock === null ? 0 : $previousBlock->expiresAt) > $now) {
+            return false;
+        }
+        $state = $this->readGenerationBoundScoreState($currentKey, $previousKey);
+        if ($state?->postPunishmentReentry?->id !== $lifecycleId || $state->postPunishmentReentry->validUntil <= $now || isset($this->claimMarkers[$currentKey])) {
+            return false;
+        }
+        $this->claimMarkers[$currentKey] = $lifecycleId;
+        return true;
+    }
 }
 
-final class OperationalExampleCorrelationStore implements BoundedCorrelationStoreInterface
+final class OperationalExampleCorrelationStore implements \Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotStoreInterface, \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface
 {
+    private bool $accountLayout = false;
+    private ?self $accountView = null;
+
+    /** Example-local isolated in-memory account layout; production Redis shares a transaction through its official view. */
+    public function e1Keyspace(): static
+    {
+        if ($this->accountLayout) {
+            return $this;
+        }
+        if ($this->accountView === null) {
+            $view = clone $this;
+            $view->accountLayout = true;
+            $view->accountView = null;
+            $this->accountView = $view;
+        }
+        return $this->accountView;
+    }
+
     /** @var array<string, array<string, true>> */
     private array $boundedSets = [];
+
+    public function addDistinctBoundedWithSnapshot(string $key, string $item, int $ttlSeconds, int $maxDistinct): \Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO
+    {
+        $this->fail();
+    }
 
     private function fail(): never
     {
@@ -421,13 +574,13 @@ $emitter = new OperationalExampleSignalEmitter();
 $pipeline = new EvaluationPipeline(
     $store,
     $correlationStore,
-    new BudgetTracker($store, $clock),
-    new AntiEquilibriumGate($correlationStore),
     new DecayCalculator($clock),
-    new EphemeralBucket($correlationStore),
     'example-outer-secret',
     'example',
     $clock,
+    $clock,
+    null,
+    null,
 );
 $limiter = new RateLimiterEngine(
     new DeviceIdentityResolver(new FingerprintHasher('example-fingerprint-secret')),

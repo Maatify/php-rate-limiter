@@ -172,7 +172,7 @@ the admission capability, a request carrying the proven lane derives the account
 type `k4p` instead of `k4`:
 
 ```
-K4P = AccountID          // {policy}:rate_limiter:k4p:v2:{env}:{accountId}
+K4P = AccountID          // E1 purpose k4p, policy/env/account framed (§4.2)
 ```
 
 Rule A only: account-wide and **not** cleared at a password change; there is no scope suffix
@@ -204,7 +204,7 @@ K5 = AccountID + DeviceFP
 
 **Admission family K5p and the K5 material (DEC-026, DEC-034 9.1; LOCKED amendment, active since 2026-10-20).** For a policy that
 declares the admission capability: (1) the proven lane derives the device key from the key type
-`k5p` (`{policy}:rate_limiter:k5p:v2:{env}:{accountId}:{material}`) and keeps the unsuffixed
+`k5p` (E1 purpose k5p with policy/env/account/material framed under §4.2) and keeps the unsuffixed
 `k5` for the unproven lane; (2) `{material}` is the instance-id component `deviceIdHash` when the
 device carries one, else the fingerprint component (today's derivation). The pipeline selects a
 component and never re-hashes it (`DEVICE_FINGERPRINT.md` §5.1.1). The micro-cap key
@@ -260,7 +260,9 @@ Normalization MUST be deterministic and versioned.
 
 Correlation members MUST also use a domain-separated keyed HMAC derived from the package key secret. Raw correlation subjects, account identifiers, usernames, and email addresses MUST NOT cross the `CorrelationStoreInterface` member boundary.
 
-**E1 (DEC-044, opt-in).** A runtime composed with `RateLimiterBuilder::withKeyScopeEncoding(KeyScopeEncodingEnum::E1)` derives the account-bearing keys of §3.4, §3.5, §4.5 and §4.6 (K4/K4P, K5/K5p, micro-cap, budget cooldown, the `aux` purposes) from a length-prefixed preimage with an HMAC key domain of its own, as specified in [`KEY_SCOPE_ENCODING_E1.md`](KEY_SCOPE_ENCODING_E1.md) §3. The logical key is `e1.` followed by 64 lowercase hexadecimal characters. A single derivation component serves the writer and the operational reader, for Current and Previous. V2 is the default and keeps its text and plain HMAC byte for byte.
+**E1 (DEC-046, mandatory for account identities).** K4/K4P, K5/K5p, micro-cap, budget cooldown and registered account auxiliary keys use only the length-prefixed framing and HMAC domain in [KEY_SCOPE_ENCODING_E1](KEY_SCOPE_ENCODING_E1.md) §3. Bytes and vectors are unchanged. Writer and operational reader instantiate the same final internal implementation from their validated environment. There is no selector, V2 account implementation or deriver injection. The Pipeline constructs its store-bound helpers on the actual validated account views and keeps EphemeralBucket on the root; advanced callers supply each existing clock role explicitly. Views, resource binding and execution use the same captured handles. See that contract's §4/§8 for custom adapter limits and the breaking new-traffic boundary.
+
+In §4.3 and existing source variable names, **V2/Current and V1/Previous are secret generations**, not the removed account encoding. Rotation and atomic budget seeding within E1 remain required. K1–K3 algorithm literals and store layout v1 are unchanged by G1.
 
 ---
 
@@ -688,7 +690,7 @@ All keys MUST include:
 
 This prevents cross-action and cross-module leakage.
 
-Under V2 these fields are joined with `:`. Under E1 (DEC-044) each field is length-prefixed, so a field boundary can never move; the environment scope and the account identifier are opaque byte strings. The physical key of an E1 account-bearing key is `maatify:rate-limiter:e1:{sha256(namespace)}:{family}:{sha256(E1 key)}`; every other key keeps `maatify:rate-limiter:v1:…`. The layout is carried by the typed view `E1KeyspaceStoreInterface::e1Keyspace()` of the same store, never inferred from the shape of a string. E1 never reads V2 state: choosing it starts a new key space, and moving existing traffic is a separate migration decision.
+The removed V2 account derivation joined these fields with `:`. Under sole-E1 (DEC-046) each field is length-prefixed, so a field boundary can never move; the environment scope and the account identifier are opaque byte strings. The physical key of an E1 account-bearing key is `maatify:rate-limiter:e1:{sha256(namespace)}:{family}:{sha256(E1 key)}`; every other key keeps `maatify:rate-limiter:v1:…`. The layout is carried by the typed view `E1KeyspaceStoreInterface::e1Keyspace()` of the same store, never inferred from the shape of a string. E1 never reads V2 account state. Existing-traffic transfer, mixed workers and live rollback are unsupported; no active-block preservation is claimed for that transfer.
 
 ### 4.5 Auxiliary Budget Keys (Locked)
 
@@ -1152,7 +1154,7 @@ Rules:
 ## 10. Stability & Versioning
 
 * Key definitions are part of the public contract
-* The derivations are `V2` (default, unchanged) and `E1` (DEC-044, opt-in, explicit once per builder). A security review covering E1 (injectivity of the encoding, key-domain separation, layout carriage, closed carrier creation, ACL prefix, no V2 read) is recorded in the activation PR for #284.
+* E1 alone derives account keys (DEC-046); its bytes are unchanged, and the former opt-in/default selection is removed. A security review covering E1 (injectivity of the encoding, key-domain separation, layout carriage, closed carrier creation, ACL prefix, no V2 read) is recorded in the activation PR for #284.
 * Any change requires:
 
   * version bump

@@ -21,9 +21,18 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  * prove that paths requiring a V1→V2 migration fail explicitly instead of
  * silently resetting the previous-secret budget.
  */
-final class BaseOnlyInMemoryRateLimitStore implements RateLimitStoreInterface, SnapshotFencedScoreStoreInterface, ScoreReplaceStoreInterface, OperationalReadOnlyStoreInterface
+final class BaseOnlyInMemoryRateLimitStore implements \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface, RateLimitStoreInterface, SnapshotFencedScoreStoreInterface, ScoreReplaceStoreInterface, OperationalReadOnlyStoreInterface
 {
-    private readonly InMemoryRateLimitStore $delegate;
+    use \Maatify\RateLimiter\Tests\Support\E1View;
+
+    private InMemoryRateLimitStore $delegate;
+
+    protected function initializeAccountView(object $view): void
+    {
+        if ($view instanceof self) {
+            $view->delegate = $this->delegate->e1Keyspace();
+        }
+    }
 
     public function __construct(ClockInterface $clock)
     {

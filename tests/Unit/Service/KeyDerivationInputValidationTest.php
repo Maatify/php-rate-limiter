@@ -15,11 +15,8 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\Service\FixedWindowSimpleRateLimiter;
@@ -152,7 +149,7 @@ final class KeyDerivationInputValidationTest extends TestCase
         // that literal key is only observed by process() if the constructor
         // preserved the secret byte-for-byte instead of trimming it.
         $k1Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k1:v2:prod:127.0.0.1', $secretWithWhitespace);
-        $store->block($k1Key, 2, 600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $k1Key)->block($k1Key, 2, 600);
 
         $result = $pipeline->process($policy, $context, RateLimitCommand::checkOnly('otp_protection'), $device);
 
@@ -175,13 +172,13 @@ final class KeyDerivationInputValidationTest extends TestCase
         return new EvaluationPipeline(
             $store,
             $correlationStore,
-            new BudgetTracker($store, $clock),
-            new AntiEquilibriumGate($correlationStore),
             new DecayCalculator($clock),
-            new EphemeralBucket($correlationStore),
             $keySecret,
             $envScope,
             $clock,
+            $clock,
+            null,
+            null,
             $previousKeySecret,
         );
     }

@@ -1,0 +1,3422 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Maatify\RateLimiter\Tests\Fixtures\PreG1;
+
+use Maatify\RateLimiter\Service\SourcePrefix;
+use Maatify\RateLimiter\Service\HostClock;
+use Maatify\RateLimiter\Service\CallerTimeStore;
+use Maatify\RateLimiter\Service\AccountScopePurpose;
+use Maatify\RateLimiter\Service\IdentityPresence;
+use Maatify\RateLimiter\Service\OwnershipRegistry;
+use Maatify\RateLimiter\Service\BoundedCorrelationResultValidator;
+use Maatify\RateLimiter\Service\ScoreArithmetic;
+use Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver;
+use Maatify\RateLimiter\Config\BlockPolicyInterface;
+use Maatify\RateLimiter\Enum\AdmissionLaneEnum;
+use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
+use Maatify\RateLimiter\Config\KnownDeviceAccountAllowancePolicyInterface;
+use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
+use Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface;
+use Maatify\RateLimiter\DTO\BoundedCorrelationObservationDTO;
+use Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO;
+use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
+use Maatify\RateLimiter\Repository\BudgetSeedStoreInterface;
+use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotRotationStoreInterface;
+use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotStoreInterface;
+use Maatify\RateLimiter\Repository\BoundedCorrelationRotationStoreInterface;
+use Maatify\RateLimiter\Repository\BoundedCorrelationStoreInterface;
+use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
+use Maatify\RateLimiter\Repository\CorrelationRotationStoreInterface;
+use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
+use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
+use Maatify\RateLimiter\Exception\RateLimitConcurrencyException;
+use Maatify\RateLimiter\DTO\PostPunishmentReentryMetadataDTO;
+use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
+use Maatify\RateLimiter\Repository\RequestAtomicStoreInterface;
+use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
+use Maatify\RateLimiter\Repository\ScoreReplaceStoreInterface;
+use Maatify\RateLimiter\DTO\DecayPauseStateDTO;
+use Maatify\RateLimiter\DTO\BudgetStateDTO;
+use Maatify\RateLimiter\Tests\Fixtures\PreG1\KeyScopeEncodingEnum;
+use Maatify\RateLimiter\Exception\RateLimiterException;
+use Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface;
+use Maatify\RateLimiter\Service\EphemeralBucket;
+use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
+use Maatify\RateLimiter\Command\RateLimitCommand;
+use Maatify\RateLimiter\DTO\PipelineScoreDTO;
+use Maatify\RateLimiter\DTO\RateLimitContextDTO;
+use Maatify\RateLimiter\DTO\RateLimitResultDTO;
+use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
+use Maatify\RateLimiter\Service\AntiEquilibriumGate;
+use Maatify\RateLimiter\Service\BudgetTracker;
+use Maatify\RateLimiter\Service\DecayCalculator;
+use Maatify\RateLimiter\Service\PenaltyLadder;
+use Maatify\SharedCommon\Contracts\ClockInterface;
+
+/**
+ * Executes key derivation, score evaluation, budget handling, aggregation, and
+ * the opt-in generation-bound authentication K4 lifecycle.
+ *
+ * The pipeline reads both the active and previous key generation when rotation
+ * is configured, while writing only to the active generation. It also owns K4
+ * mutation orchestration, lifecycle-publication eligibility, and the served
+ * post-punishment re-entry metadata/suppression path.
+ */
+class EvaluationPipeline
+{
+    private const BUDGET_EPOCH_SECONDS = 86400; // 24h
+    private const SCOPE_ACCOUNT = 'account';
+    private const SCOPE_DEVICE = 'device';
+    private const CYCLE_WINDOW_SECONDS = 21600;
+    /** DEC-029: three attempts plus one final attempt on the re-read generation. */
+    private const PUBLICATION_ATTEMPTS = 4;
+    private const PUBLICATION_DEFERRED = 'deferred';
+    private const PUBLICATION_DROPPED = 'dropped';
+    private const CYCLE_THRESHOLD = 2;
+    private const DECAY_PAUSE_SECONDS = 600;
+    private const PAUSE_HISTORY_RETENTION_SECONDS = 86400;
+    private const IPV6_ADAPTIVE_WINDOW_SECONDS = 600;
+    private const IPV6_ADAPTIVE_48_CAP = 2;
+    private const IPV6_ADAPTIVE_40_CAP = 4;
+    private const IPV6_ADAPTIVE_32_CAP = 8;
+
+    private string $secret;
+    private ?string $previousSecret;
+
+    private readonly AccountScopeKeyDeriverInterface $accountKeys;
+
+    /** The store of the account-bearing keys: the E1 view under E1, otherwise the store itself. */
+    private readonly RateLimitStoreInterface $accountStore;
+
+    private readonly CorrelationStoreInterface $accountCorrelationStore;
+
+    /** @var array<string, true> account-bearing keys this evaluation derived or adopted; reset at the start of each evaluation */
+    private array $accountScopedKeys = [];
+
+
+    /** @var array<string, int> Current K4 keys with qualifying score generations. */
+    private array $lifecycleEligibleKeys = [];
+
+    /**
+     * Anti-Equilibrium scopes of the winning SOFT_BLOCK candidates of the
+     * current request (DEC-026).
+     *
+     * @var list<string>
+     */
+    private array $issuedSoftScopes = [];
+
+    /**
+     * @param RateLimitStoreInterface $store Score and block persistence boundary.
+     * @param CorrelationStoreInterface $correlationStore Correlation persistence boundary.
+     * @param BudgetTracker $budgetTracker Account-budget service.
+     * @param AntiEquilibriumGate $antiEquilibriumGate Repeated-soft-block guard.
+     * @param DecayCalculator $decayCalculator Score decay service.
+     * @param EphemeralBucket $ephemeralBucket Device-cap key resolver.
+     * @param string $keySecret Active, non-blank key-generation secret. Not
+     *     trimmed or otherwise normalized: accepted surrounding whitespace is
+     *     retained byte-for-byte.
+     * @param string $envScope Non-blank environment namespace included in derived keys.
+     * @param ClockInterface $clock Source of current timestamps.
+     * @param ?string $previousKeySecret Optional previous-generation secret;
+     *     null means no previous generation. When provided, it must not be
+     *     empty or whitespace-only, and is likewise never trimmed or normalized.
+     * @throws RateLimiterException When $keySecret or $envScope is empty or
+     *     whitespace-only, or when a non-null $previousKeySecret is empty or
+     *     whitespace-only.
+     */
+    public function __construct(
+        private readonly RateLimitStoreInterface $store,
+        private readonly CorrelationStoreInterface $correlationStore,
+        private readonly BudgetTracker $budgetTracker,
+        private readonly AntiEquilibriumGate $antiEquilibriumGate,
+        private readonly DecayCalculator $decayCalculator,
+        private readonly EphemeralBucket $ephemeralBucket,
+        string $keySecret,
+        private readonly string $envScope, // e.g. 'prod', 'staging'
+        private ClockInterface $clock,
+        ?string $previousKeySecret = null,
+        ?AccountScopeKeyDeriverInterface $accountKeys = null,
+    ) {
+        $this->clock = HostClock::of($this->clock);
+        if (trim($keySecret) === '') {
+            throw new RateLimiterException('Active key secret must not be empty or whitespace-only.');
+        }
+        if (trim($this->envScope) === '') {
+            throw new RateLimiterException('Environment scope must not be empty or whitespace-only.');
+        }
+        if ($previousKeySecret !== null && trim($previousKeySecret) === '') {
+            throw new RateLimiterException('Previous key secret must not be empty or whitespace-only.');
+        }
+
+        $this->secret = $keySecret;
+        $this->previousSecret = $previousKeySecret;
+        // DEC-044: the single derivation source of the account-bearing keys. V2 is the default.
+        $this->accountKeys = $accountKeys ?? new V2AccountScopeKeyDeriver($this->envScope);
+        if ($this->accountKeys->encoding() === KeyScopeEncodingEnum::E1) {
+            if (! $this->store instanceof E1KeyspaceStoreInterface || ! $this->correlationStore instanceof E1KeyspaceStoreInterface) {
+                throw new RateLimiterException('The E1 key encoding requires a store and a correlation store implementing E1KeyspaceStoreInterface (DEC-044).');
+            }
+            // Views of the very same store instances: one request state, one ownership, one transactRequest().
+            $this->accountStore = $this->store->e1Keyspace();
+            $this->accountCorrelationStore = $this->correlationStore->e1Keyspace();
+        } else {
+            $this->accountStore = $this->store;
+            $this->accountCorrelationStore = $this->correlationStore;
+        }
+    }
+
+    /**
+     * The store that holds the account-bearing keys of this evaluation: the E1 view under the E1 encoding, the store itself under V2.
+     */
+    private function storeFor(?string $key): RateLimitStoreInterface
+    {
+        return $key !== null && isset($this->accountScopedKeys[$key]) ? $this->accountStore : $this->store;
+    }
+
+    /** DEC-044: derive an account-bearing key and remember that this evaluation issued it as one, so it is read and written in its layout. */
+    private function deriveAccountKey(string $purpose, string $policyName, string $accountId, string $secret, ?string $material = null): string
+    {
+        $key = $this->accountKeys->derive($purpose, $policyName, $accountId, $secret, $material);
+        $this->accountScopedKeys[$key] = true;
+
+        return $key;
+    }
+
+    /**
+     * A key that came back from state this runtime stored (a snapshot member that is blocked later). Under E1 it must have the exact E1 key
+     * form; it is then handled in the E1 layout. Under V2 nothing changes.
+     */
+    private function adoptStoredAccountKey(string $member): string
+    {
+        if ($this->accountKeys->encoding() === KeyScopeEncodingEnum::E1) {
+            if (! E1AccountScopeKeyDeriver::hasKeyForm($member)) {
+                throw new RateLimiterException('A stored account key does not have the E1 key form.');
+            }
+            $this->accountScopedKeys[$member] = true;
+        }
+
+        return $member;
+    }
+
+    /**
+     * Run the read-only backend health boundary used by circuit-breaker recovery.
+     *
+     * This method delegates only to RateLimitStoreInterface::isHealthy(). It does
+     * not resolve identity, read or write scores, evaluate blocks, touch budgets,
+     * observe correlation state, or execute normal pipeline processing.
+     */
+    public function isBackendHealthy(): bool
+    {
+        return $this->store->isHealthy();
+    }
+
+    /**
+     * Claim one package-owned, one-shot lifecycle handoff without exposing
+     * physical keys or generation state to the host.
+     *
+     * Resolves the current K4 namespace first and the previous K4 namespace
+     * only when the request carries a previous identity generation. Requires
+     * the lifecycle-store capability; missing account/K4 identity returns
+     * false. The backend owns stale, expired, generation-mismatched, absent,
+     * replayed, and malformed-evidence semantics: normal misses return false,
+     * while backend/contract corruption propagates. A successful claim consumes
+     * only the one-shot application handoff marker, never punishment evidence,
+     * score, generation, block, cycle, or pause state.
+     *
+     * The optional lane selects the account key family the evidence is read
+     * from: `P` reads K4P, any other value reads K4. `null` is today's
+     * behaviour. The lane is trusted here (only a policy name is available).
+     */
+    public function claimPostPunishmentReentry(
+        RateLimitContextDTO $context,
+        DeviceIdentityDTO $device,
+        string $policyName,
+        string $lifecycleId,
+        ?AdmissionLaneEnum $lane = null,
+    ): bool {
+        if (! $this->accountStore instanceof PunishmentLifecycleStoreInterface) {
+            throw new RateLimiterException('Post-punishment re-entry requires PunishmentLifecycleStoreInterface.');
+        }
+        $this->accountScopedKeys = [];
+        $current = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $policyName, $this->secret, $lane, $this->k5Material($device, $lane));
+        $previous = $this->hasPreviousGeneration($device)
+            ? $this->buildKeys($context, $device->normalizedUa, $this->previousFingerprintHash($device), $policyName, $this->previousSecret ?? $this->secret, $lane, $this->previousK5Material($device, $lane))
+            : [];
+        $currentKey = $current['k4'] ?? null;
+        if ($currentKey === null) {
+            return false;
+        }
+
+        return CallerTimeStore::claimPostPunishmentReentry($this->accountStore, $currentKey, $previous['k4'] ?? null, $lifecycleId, $this->clock->now());
+    }
+
+    /** T-5: the store that saves one request at once, or null when the store cannot (DEC-037). */
+    public function requestStore(): ?RequestAtomicStoreInterface
+    {
+        return $this->store instanceof RequestAtomicStoreInterface && $this->correlationStore === $this->store ? $this->store : null;
+    }
+
+    /**
+     * Evaluate a command and return the winning allow or block decision.
+     *
+     * Normal candidates are aggregated before budget enforcement, and only
+     * winning candidates are persisted as blocks.
+     *
+     * The optional admission lane is a call parameter, never object state.
+     * `null` is today's behaviour, byte for byte, and ignores any instance id
+     * the device carries. A non-null lane is accepted only for a policy that
+     * declares the admission capability: `U` applies the unproven-lane rules
+     * (no account-scoped refusal or persistence, device-scoped parts kept),
+     * `P` the proven-lane rules (own K4P and K5p families, no collective
+     * K1/K2/K3 penalties, no device-cap observation, no flood). Both lanes drop
+     * the collective correlation rules and take the K5 material from the
+     * instance id when the device carries one.
+     *
+     * When the store implements `RequestAtomicStoreInterface` and is also the correlation store (`requestStore()`),
+     * the whole evaluation runs through `transactRequest()`: every write is held back and saved together, or not at
+     * all, and the evaluation is repeated from a fresh read when another request changed state it read (DEC-037).
+     * Any other store keeps the sequential writes. A lane given for a policy without the admission capability is
+     * refused with `RateLimiterException` before any store access. When the store's recalculation bound is reached,
+     * `RateLimitConcurrencyException` is thrown with nothing saved; the engine answers it with its concurrency block.
+     */
+    public function process(
+        BlockPolicyInterface $policy,
+        RateLimitContextDTO $context,
+        RateLimitCommand $request,
+        DeviceIdentityDTO $device,
+        ?AdmissionLaneEnum $lane = null,
+    ): RateLimitResultDTO {
+        $this->assertLaneAllowed($policy, $lane);
+        // One request is one save: a store that can hold every write back until
+        // the decision is final saves them together, or not at all. The
+        // evaluation repeats from a fresh read when another request changed
+        // any state it read. Other stores keep the sequential writes.
+        if ($this->store instanceof RequestAtomicStoreInterface && $this->correlationStore === $this->store) {
+            return $this->store->transactRequest(
+                fn(): RateLimitResultDTO => $this->evaluate($policy, $context, $request, $device, $lane),
+            );
+        }
+
+        return $this->evaluate($policy, $context, $request, $device, $lane);
+    }
+
+    private function evaluate(
+        BlockPolicyInterface $policy,
+        RateLimitContextDTO $context,
+        RateLimitCommand $request,
+        DeviceIdentityDTO $device,
+        ?AdmissionLaneEnum $lane,
+    ): RateLimitResultDTO {
+        $this->lifecycleEligibleKeys = [];
+        $this->issuedSoftScopes = [];
+        $this->accountScopedKeys = [];
+        // 1. Build keys for the current generation, then the one previous
+        // generation when either generation component is present.
+        $realKeysV2 = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $this->hostPolicy(fn() => $policy->getName()), $this->secret, $lane, $this->k5Material($device, $lane));
+        $realKeysV1 = $this->hasPreviousGeneration($device)
+            ? $this->buildKeys(
+                $context,
+                $device->normalizedUa,
+                $this->previousFingerprintHash($device),
+                $this->hostPolicy(fn() => $policy->getName()),
+                $this->previousSecret ?? $this->secret,
+                $lane,
+                $this->previousK5Material($device, $lane),
+            )
+            : [];
+
+        // 2. Check Active Blocks (Fail-Fast) on Real Keys
+        if ($blocked = $this->checkActiveBlocks($realKeysV2, $realKeysV1, $policy, $device, $lane)) {
+            return $blocked;
+        }
+
+        // 3. Load budget state for later candidate evaluation. Budget loading is
+        // deliberately non-enforcing; normal evaluation must always run first.
+
+        // 4. Observe bounded device caps once, using only opaque package-derived
+        // current/previous references. Ephemeral mode is a routing decision;
+        // it never creates a synthetic persistent fingerprint key.
+        $ephemeralState = null;
+        if (IdentityPresence::fingerprint($device) && ! $this->isProvenLane($lane)) {
+            $ipObservation = $this->buildCorrelationObservation(
+                $this->hostPolicy(fn() => $policy->getName()),
+                'device_cap_ip',
+                $realKeysV2['k1'] ?? null,
+                $device->fingerprintHash,
+                $realKeysV1['k1'] ?? null,
+                $this->previousFingerprintHash($device),
+            );
+            $accountObservation = IdentityPresence::account($context)
+                ? $this->buildCorrelationObservation(
+                    $this->hostPolicy(fn() => $policy->getName()),
+                    'device_cap_account',
+                    $this->accountAnchor($realKeysV2),
+                    $device->fingerprintHash,
+                    $this->accountAnchor($realKeysV1),
+                    $this->previousFingerprintHash($device),
+                )
+                : null;
+            $ephemeralState = $this->ephemeralBucket->check($ipObservation, $accountObservation);
+        }
+        $isEphemeral = $ephemeralState === null ? false : $ephemeralState->isEphemeral;
+
+        $effectiveKeysV2 = $realKeysV2;
+        $effectiveKeysV1 = $realKeysV1;
+
+        if ($isEphemeral) {
+            unset($effectiveKeysV2['k3'], $effectiveKeysV2['k5']);
+            unset($effectiveKeysV1['k3'], $effectiveKeysV1['k5']);
+        }
+
+        // IPv6 macro scopes are correlation-only. Resolve their bounded
+        // activation once, before the feature-specific observations below.
+        $adaptiveIpv6Scopes = $this->resolveAdaptiveIpv6Scopes(
+            $policy,
+            $context,
+            $request,
+            $device,
+            $realKeysV2,
+            $realKeysV1,
+        );
+
+        // 5. Fetch & Decay Scores (Using Effective Keys)
+        $rawScores = $this->fetchScores($effectiveKeysV2, $effectiveKeysV1);
+        $decayedScores = $this->applyDecay($rawScores, $effectiveKeysV2, $effectiveKeysV1);
+        if (! $request->isPreCheck && ($request->isFailure || $this->hostPolicy(fn() => $policy->getScoreDeltas())->access > 0)) {
+            $this->assertScoreUpdatesRepresentable($policy, $context, $request, $device, $isEphemeral, $effectiveKeysV2, $rawScores, $decayedScores);
+        }
+
+        $servedReentry = null;
+        if ($policy instanceof PostPunishmentReentryPolicyInterface
+            && $this->accountStore instanceof PunishmentLifecycleStoreInterface
+            && ($k4 = $realKeysV2['k4'] ?? null) !== null) {
+            $state = CallerTimeStore::readGenerationBoundScoreState($this->accountStore, $k4, $realKeysV1['k4'] ?? null, $this->clock->now());
+            $now = $this->clock->now()->getTimestamp();
+            if ($state?->generation !== null && $state->postPunishmentReentry !== null
+                && $state->postPunishmentReentry->validUntil > $now
+                && $state->expiresAt > $now) {
+                $servedReentry = new PostPunishmentReentryMetadataDTO(
+                    $state->postPunishmentReentry->id,
+                    $state->postPunishmentReentry->validUntil,
+                );
+                $decayedScores['k4'] = 0;
+            }
+        }
+
+        // 6. Evaluate normal candidates. None of these candidates may be
+        // hidden by an active account budget.
+        $candidates = $this->checkThresholds(
+            $policy,
+            $rawScores,
+            $decayedScores,
+            $effectiveKeysV2,
+            $effectiveKeysV1,
+            $device,
+            $lane,
+        );
+
+        // 7. Distributed account attack is a pre-check-only observation. It
+        // must run before the older bounded correlation rules so a missing
+        // snapshot capability cannot leave partial S3-F08 state behind.
+        if ($request->isPreCheck && $this->isDistributedAccountPolicy($policy) && ! $this->isProvenLane($lane)) {
+            if ($candidate = $this->checkDistributedAccountAttack(
+                $context,
+                $device,
+                $this->hostPolicy(fn() => $policy->getName()),
+                $isEphemeral,
+                $realKeysV2,
+                $realKeysV1,
+            )) {
+                $candidates[] = $candidate;
+            }
+        }
+
+        // 8. Check existing bounded correlation rules. An opted policy takes
+        // no collective churn / dilution penalty and writes none of their
+        // observations.
+        if ($this->appliesCollectiveCorrelation($lane) && ($candidate = $this->checkCorrelationRules(
+            $device,
+            $this->hostPolicy(fn() => $policy->getName()),
+            $isEphemeral,
+            $realKeysV2,
+            $realKeysV1,
+            $adaptiveIpv6Scopes,
+        ))) {
+            $candidates[] = $candidate;
+        }
+
+        // Credential-spray observation is deliberately precheck-only. The
+        // later failure/success command in the same host lifecycle must not
+        // observe the same spray attempt a second time.
+        if ($request->isPreCheck && $this->isCredentialSprayPolicy($policy) && $this->appliesCollectiveCorrelation($lane)) {
+            if ($candidate = $this->checkCredentialSpray(
+                $context,
+                $device,
+                $policy,
+                $realKeysV2['k1'] ?? null,
+                $realKeysV1['k1'] ?? null,
+                $adaptiveIpv6Scopes,
+            )) {
+                $candidates[] = $candidate;
+            }
+        }
+
+        // 9. New Device Flood (5.4). It needs the device-cap observation, which
+        // the proven lane never makes ($ephemeralState stays null there).
+        if ($ephemeralState !== null && IdentityPresence::account($context) && ! $this->isApiHeavyPolicy($policy)
+            && $ephemeralState->accountDeviceCount >= 6) {
+            $floodKey = $this->auxiliaryAccountKey(
+                $this->hostPolicy(fn() => $policy->getName()),
+                'flood_stage',
+                $context->accountId,
+                $this->secret,
+            );
+            $previousFloodKey = $this->previousAuxiliaryAccountKey(
+                $this->hostPolicy(fn() => $policy->getName()),
+                'flood_stage',
+                $context->accountId,
+            );
+            $isFloodStage = $this->accountCorrelationStore->getWatchFlag($floodKey) > 0;
+            if (! $isFloodStage && $previousFloodKey !== null && $previousFloodKey !== $floodKey) {
+                $isFloodStage = $this->accountCorrelationStore->getWatchFlag($previousFloodKey) > 0;
+            }
+
+            if ($isFloodStage) {
+                $duration = PenaltyLadder::getDuration(2);
+                $persistence = [];
+                if (! $ephemeralState->isEphemeral && $realKeysV2['k5'] !== null) {
+                    $persistence[] = [
+                        'key' => $realKeysV2['k5'],
+                        'previousKey' => $realKeysV1['k5'] ?? null,
+                        'level' => 2,
+                        'duration' => $duration,
+                        'retryAfter' => $duration,
+                    ];
+                }
+
+                $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, $duration, 'flood', $persistence);
+            } else {
+                $duration = PenaltyLadder::getDuration(1);
+                $k4Key = $realKeysV2['k4'];
+                $persistence = $k4Key !== null
+                    ? [[
+                        'key' => $k4Key,
+                        'previousKey' => $realKeysV1['k4'] ?? null,
+                        'level' => 1,
+                        'duration' => $duration,
+                        'retryAfter' => $duration,
+                    ]]
+                    : [];
+                CallerTimeStore::incrementWatchFlag($this->accountCorrelationStore, $floodKey, 900, $this->clock->now());
+                $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_SOFT_BLOCK, 1, $duration, 'flood', $persistence);
+            }
+        }
+
+        // 10. Process Updates (Failure / Access). Budget counting is part of
+        // this step and must continue even while BudgetActive.
+        $budgetState = $this->resolveActiveBudgetState($realKeysV2['k4'] ?? null, $realKeysV1['k4'] ?? null);
+        $budgetRequestEligible = false;
+        $budgetSuppressed = false;
+        if (! $request->isPreCheck && ($request->isFailure || $this->hostPolicy(fn() => $policy->getScoreDeltas())->access > 0)) {
+            // We write only to V2 (Active Key); V1 stays read-only
+            $updates = $this->processUpdates(
+                $policy,
+                $context,
+                $request,
+                $device,
+                $isEphemeral,
+                $effectiveKeysV2,
+                $effectiveKeysV1,
+                $rawScores,
+                $lane,
+            );
+            $candidates = array_merge($candidates, $updates['candidates']);
+            $budgetState = $updates['budgetState'];
+            $budgetRequestEligible = $updates['budgetRequestEligible'];
+            $budgetSuppressed = $updates['budgetSuppressed'];
+        }
+
+        // Anti-Equilibrium reads prior history before budget cooldown
+        // acquisition. Recording happens only after final aggregation. The
+        // account watcher keeps the §2.5 account-wide escalation; the device
+        // watcher (DEC-026) escalates SOFT_BLOCKs that came from K5
+        // alone on that account + device only.
+        if ($request->isFailure && IdentityPresence::account($context) && $this->hostPolicy(fn() => $policy->getBudgetConfig()) !== null
+            && $this->antiEquilibriumGate->shouldEscalate(
+                $this->auxiliaryAccountKey($this->hostPolicy(fn() => $policy->getName()), $this->laneAuxiliaryPurpose($lane, 'anti_equilibrium'), $context->accountId, $this->secret),
+                $this->previousAuxiliaryAccountKey($this->hostPolicy(fn() => $policy->getName()), $this->laneAuxiliaryPurpose($lane, 'anti_equilibrium'), $context->accountId),
+            )) {
+            $persistence = ($realKeysV2['k4'] ?? null) !== null
+                ? [[
+                    'key' => $realKeysV2['k4'],
+                    'previousKey' => $realKeysV1['k4'] ?? null,
+                    'level' => 2,
+                    'duration' => PenaltyLadder::getDuration(2),
+                    'retryAfter' => PenaltyLadder::getDuration(2),
+                ]]
+                : [];
+            $candidates[] = $this->candidate(
+                RateLimitResultDTO::DECISION_HARD_BLOCK,
+                2,
+                PenaltyLadder::getDuration(2),
+                'anti_equilibrium',
+                $persistence,
+            );
+        }
+        $deviceWatcher = $this->deviceAntiEquilibriumKeys($policy, $context, $device, $isEphemeral, $lane);
+        if ($request->isFailure && $deviceWatcher !== null && ($realKeysV2['k5'] ?? null) !== null
+            && $this->antiEquilibriumGate->shouldEscalate($deviceWatcher['current'], $deviceWatcher['previous'])) {
+            $persistence = [[
+                'key' => $realKeysV2['k5'],
+                'previousKey' => $realKeysV1['k5'] ?? null,
+                'level' => 2,
+                'duration' => PenaltyLadder::getDuration(2),
+                'retryAfter' => PenaltyLadder::getDuration(2),
+            ]];
+            $candidates[] = $this->candidate(
+                RateLimitResultDTO::DECISION_HARD_BLOCK,
+                2,
+                PenaltyLadder::getDuration(2),
+                'anti_equilibrium:device',
+                $persistence,
+                [self::SCOPE_DEVICE],
+            );
+        }
+
+        $final = $this->finalizeDecision(
+            $policy,
+            $context,
+            $request,
+            $device,
+            $realKeysV2,
+            $realKeysV1,
+            $candidates,
+            $budgetState,
+            $budgetRequestEligible,
+            $budgetSuppressed,
+            $lane,
+        );
+
+        if ($final->decision === RateLimitResultDTO::DECISION_SOFT_BLOCK
+            && ! $request->isSuccess
+            && IdentityPresence::account($context)
+            && $this->hostPolicy(fn() => $policy->getBudgetConfig()) !== null) {
+            // Exactly one watcher write per issued SOFT_BLOCK: the account
+            // watcher whenever any winning SOFT candidate has account scope
+            // (mixed K4 + K5 included, the stronger account protection), the
+            // device watcher only for a K5-only SOFT with an eligible device,
+            // and the account watcher otherwise.
+            $issuedSoftScopes = $this->issuedSoftScopes();
+            $deviceOnly = $deviceWatcher !== null
+                && $issuedSoftScopes !== []
+                && ! in_array(self::SCOPE_ACCOUNT, $issuedSoftScopes, true);
+            $this->antiEquilibriumGate->recordSoftBlock(
+                $deviceOnly
+                    ? $deviceWatcher['current']
+                    : $this->auxiliaryAccountKey($this->hostPolicy(fn() => $policy->getName()), $this->laneAuxiliaryPurpose($lane, 'anti_equilibrium'), $context->accountId, $this->secret),
+            );
+        }
+
+        if ($servedReentry !== null && $request->isPreCheck && $final->decision === RateLimitResultDTO::DECISION_ALLOW) {
+            return new RateLimitResultDTO(
+                $final->decision,
+                $final->blockLevel,
+                $final->retryAfter,
+                $final->failureMode,
+                new \Maatify\RateLimiter\DTO\RateLimitMetadataDTO(
+                    $final->metadata?->signal,
+                    'post_punishment_reentry',
+                    new \Maatify\RateLimiter\DTO\RateLimitContextMetadataDTO('post_punishment_reentry', 'k4'),
+                    $servedReentry,
+                ),
+            );
+        }
+
+        return $final;
+    }
+
+    /**
+     * @param   array<string, string|null>  $keysV2
+     * @param   array<string, string|null>  $keysV1
+     */
+    private function checkActiveBlocks(
+        array $keysV2,
+        array $keysV1,
+        BlockPolicyInterface $policy,
+        DeviceIdentityDTO $device,
+        ?AdmissionLaneEnum $lane,
+    ): ?RateLimitResultDTO {
+        $now = $this->clock->now()->getTimestamp();
+        $highestLevel = 0;
+        $longestRemaining = 0;
+        $hasEffectiveBlock = false;
+
+        foreach ($keysV2 as $keyType => $currentKey) {
+            if ($this->isApiHeavyPolicy($policy) && ! $this->isApiHeavyKeyType($keyType)) {
+                continue;
+            }
+            if ($this->isTrustedAuthenticationPolicy($policy, $device) && $this->isK1Key($keyType)) {
+                continue;
+            }
+            if ($this->ignoresCollectiveKeyType($lane, $keyType)) {
+                continue;
+            }
+
+            $effective = null;
+            if ($currentKey) {
+                $block = CallerTimeStore::checkBlock($this->storeFor($currentKey), $currentKey, $this->clock->now());
+                if ($block && $block->level >= 2 && $block->expiresAt > $now) {
+                    $effective = $block;
+                }
+            }
+
+            if ($effective === null) {
+                $previousKey = $keysV1[$keyType] ?? null;
+                if ($previousKey && $previousKey !== $currentKey) {
+                    $block = CallerTimeStore::checkBlock($this->storeFor($previousKey), $previousKey, $this->clock->now());
+                    if ($block && $block->level >= 2 && $block->expiresAt > $now) {
+                        $effective = $block;
+                    }
+                }
+            }
+
+            if ($effective === null) {
+                continue;
+            }
+
+            $hasEffectiveBlock = true;
+            $highestLevel = max($highestLevel, $effective->level);
+            $longestRemaining = max($longestRemaining, $effective->expiresAt - $now);
+        }
+
+        if (! $hasEffectiveBlock) {
+            return null;
+        }
+
+        return $this->createBlockedResult($highestLevel, $longestRemaining, RateLimitResultDTO::DECISION_HARD_BLOCK);
+    }
+
+    /**
+     * @param array<string, ?PipelineScoreDTO> $rawScores
+     * @param array<string, int> $scores
+     * @param array<string, string|null> $keys
+     * @param array<string, string|null> $keysV1
+     * @return list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}>
+     */
+    private function checkThresholds(
+        BlockPolicyInterface $policy,
+        array $rawScores,
+        array $scores,
+        array $keys,
+        array $keysV1,
+        DeviceIdentityDTO $device,
+        ?AdmissionLaneEnum $lane,
+    ): array {
+        $candidates = [];
+        foreach ($scores as $keyType => $score) {
+            if ($this->ignoresCollectiveKeyType($lane, $keyType)) {
+                continue;
+            }
+            $level = $this->determineLevel($score, $keyType, $policy);
+
+            if ($level > 0) {
+                $candidateKeyType = $keyType;
+                $candidateLevel = $level;
+                if ($this->isApiHeavyPolicy($policy)
+                    && $keyType === 'k3'
+                    && $device->confidence === 'LOW'
+                    && $level >= 2) {
+                    $candidateKeyType = 'k2';
+                    $candidateLevel = 2;
+                }
+
+                $decision = ($candidateLevel >= 2)
+                    ? RateLimitResultDTO::DECISION_HARD_BLOCK
+                    : RateLimitResultDTO::DECISION_SOFT_BLOCK;
+                $source = $this->isTrustedAuthenticationPolicy($policy, $device) && $this->isK1Key($keyType)
+                    ? 'trusted_advisory:score'
+                    : ($keyType === 'k4' && $policy instanceof PostPunishmentReentryPolicyInterface
+                        ? 'score:k4'
+                        : 'score');
+                $thresholds = $this->getScopedThresholds($keyType, $policy);
+                $scoreState = $rawScores[$keyType] ?? null;
+                $key = $keys[$keyType] ?? null;
+                $retryAfter = PenaltyLadder::getDuration($candidateLevel);
+                if ($thresholds !== null && $scoreState !== null && $key !== null) {
+                    $exitThreshold = $candidateLevel >= 2 ? $thresholds->l2 : $thresholds->l1;
+                    $retryAfter = $this->scoreDecayRetryAfter(
+                        $scoreState,
+                        $key,
+                        $keysV1[$keyType] ?? null,
+                        $keyType,
+                        $exitThreshold,
+                    );
+                }
+
+                $persistence = [];
+                if ($this->isApiHeavyPolicy($policy)
+                    && $this->isCanonicalApiHeavyEnforcementKeyType($candidateKeyType)) {
+                    $persistenceKey = $keys[$candidateKeyType] ?? null;
+                    if ($persistenceKey !== null) {
+                        $persistence[] = [
+                            'key' => $persistenceKey,
+                            'previousKey' => $keysV1[$candidateKeyType] ?? null,
+                            'level' => $candidateLevel,
+                            'duration' => PenaltyLadder::getDuration($candidateLevel),
+                            'retryAfter' => $retryAfter,
+                        ];
+                    }
+                }
+
+                $candidates[] = $this->candidate(
+                    $decision,
+                    $candidateLevel,
+                    $retryAfter,
+                    $source,
+                    $persistence,
+                    $candidateKeyType === 'k5' ? [self::SCOPE_DEVICE] : [self::SCOPE_ACCOUNT],
+                );
+            }
+        }
+
+        return $candidates;
+    }
+
+    /**
+     * Observe the distributed-account device window and its account-only
+     * repeated-occurrence gate.
+     *
+     * @param array<string, string|null> $keysV2
+     * @param array<string, string|null> $keysV1
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}|null
+     */
+    private function checkDistributedAccountAttack(
+        RateLimitContextDTO $context,
+        DeviceIdentityDTO $device,
+        string $policyName,
+        bool $isEphemeral,
+        array $keysV2,
+        array $keysV1,
+    ): ?array {
+        if (! IdentityPresence::account($context)
+            || ! IdentityPresence::fingerprint($device)
+            || ($keysV2['k4'] ?? null) === null
+            || ($keysV2['k5'] ?? null) === null) {
+            return null;
+        }
+
+        $devices = $this->buildDistributedDeviceObservation($policyName, $device, $keysV2, $keysV1);
+        $snapshot = $this->addBoundedSnapshot($devices, 600, 4);
+        $thresholdMet = $snapshot->count >= 4;
+
+        if ($snapshot->count === 3) {
+            $watchCount = $this->incrementWatchAcrossRotation(
+                $this->correlationStateKey($policyName, 'distributed_account_watch', $devices->currentKey, $this->secret),
+                $devices->previousKey === null
+                    ? null
+                    : $this->correlationStateKey(
+                        $policyName,
+                        'distributed_account_watch',
+                        $devices->previousKey,
+                        $this->previousSecret ?? $this->secret,
+                    ),
+                1800,
+            );
+            $thresholdMet = $watchCount >= 2;
+        }
+
+        if (! $thresholdMet) {
+            return null;
+        }
+
+        $occurrence = $this->buildDistributedOccurrenceObservation(
+            $policyName,
+            $snapshot->expiresAt,
+            $keysV2,
+            $keysV1,
+        );
+        $occurrenceSnapshot = $this->addBoundedSnapshot($occurrence, 86400, 3);
+        $persistence = [];
+        $duration = PenaltyLadder::getDuration(2);
+
+        // Persist the complete involved snapshot only for the first qualifying
+        // occurrence in this logical device window. Later qualifications must
+        // not refresh historical K5 TTLs.
+        if ($occurrenceSnapshot->added) {
+            foreach ($snapshot->members as $member) {
+                $persistence[] = [
+                    'key' => $this->adoptStoredAccountKey($member),
+                    'previousKey' => null,
+                    'level' => 2,
+                    'duration' => $duration,
+                    'retryAfter' => $duration,
+                ];
+            }
+        }
+
+        // A current member may be absent from the bounded distributed set
+        // after its cap is reached, or may be represented by a previous
+        // generation member during rotation. On the first qualification the
+        // complete snapshot already covers represented members; on a later
+        // qualification only the current non-ephemeral K5 is refreshed.
+        if (! $isEphemeral
+            && (! $occurrenceSnapshot->added || ! in_array($keysV2['k5'], $snapshot->members, true))) {
+            $persistence[] = [
+                'key' => $keysV2['k5'],
+                'previousKey' => $keysV1['k5'] ?? null,
+                'level' => 2,
+                'duration' => $duration,
+                'retryAfter' => $duration,
+            ];
+        }
+
+        $level = 2;
+        $retryAfter = $duration;
+        if ($occurrenceSnapshot->count >= 3) {
+            $level = 4;
+            $retryAfter = PenaltyLadder::getDuration(4);
+            $persistence[] = [
+                'key' => $keysV2['k4'],
+                'previousKey' => $keysV1['k4'] ?? null,
+                'level' => 4,
+                'duration' => PenaltyLadder::getDuration(4),
+                'retryAfter' => PenaltyLadder::getDuration(4),
+            ];
+        }
+
+        return $this->candidate(
+            RateLimitResultDTO::DECISION_HARD_BLOCK,
+            $level,
+            $retryAfter,
+            'distributed_account_attack',
+            $persistence,
+        );
+    }
+
+    /**
+     * @param array<string, string|null> $keysV2
+     * @param array<string, string|null> $keysV1
+     */
+    private function buildDistributedDeviceObservation(
+        string $policyName,
+        DeviceIdentityDTO $device,
+        array $keysV2,
+        array $keysV1,
+    ): BoundedCorrelationObservationDTO {
+        $currentK4 = $keysV2['k4'] ?? null;
+        $currentK5 = $keysV2['k5'] ?? null;
+        if ($currentK4 === null || $currentK5 === null) {
+            throw new RateLimiterException('Distributed account correlation requires real K4 and K5 keys.');
+        }
+
+        $prefix = "{$policyName}:rate_limiter:correlation:distributed_account_devices:v1:{$this->envScope}";
+        $currentKey = $this->hashKey("{$prefix}:scope:{$currentK4}", $this->secret);
+        // K5 is already the canonical opaque enforcement key. Do not HMAC it
+        // again: the snapshot must return a key that can be blocked directly.
+        $currentMember = $currentK5;
+
+        if (! $this->hasPreviousGeneration($device)) {
+            return new BoundedCorrelationObservationDTO($currentKey, $currentMember);
+        }
+
+        $previousK4 = $keysV1['k4'] ?? null;
+        $previousK5 = $keysV1['k5'] ?? null;
+        if ($previousK4 === null || $previousK5 === null) {
+            throw new RateLimiterException('Distributed account rotation requires coordinated previous K4 and K5 keys.');
+        }
+
+        $previousSecret = $this->previousSecret ?? $this->secret;
+        $previousKey = $this->hashKey("{$prefix}:scope:{$previousK4}", $previousSecret);
+
+        return new BoundedCorrelationObservationDTO(
+            $currentKey,
+            $currentMember,
+            $previousKey,
+            $previousK5,
+            $this->hashKey("{$prefix}:bridge:{$currentKey}", $this->secret),
+        );
+    }
+
+    /**
+     * Occurrence history is account-only. A fingerprint-only rotation keeps
+     * the same occurrence namespace; only an outer-secret rotation has a
+     * previous generation.
+     *
+     * @param array<string, string|null> $keysV2
+     * @param array<string, string|null> $keysV1
+     */
+    private function buildDistributedOccurrenceObservation(
+        string $policyName,
+        int $windowExpiresAt,
+        array $keysV2,
+        array $keysV1,
+    ): BoundedCorrelationObservationDTO {
+        $currentK4 = $keysV2['k4'] ?? null;
+        if ($currentK4 === null) {
+            throw new RateLimiterException('Distributed occurrence history requires a real K4 key.');
+        }
+
+        $prefix = "{$policyName}:rate_limiter:correlation:distributed_account_occurrences:v1:{$this->envScope}";
+        $currentKey = $this->hashKey("{$prefix}:scope:{$currentK4}", $this->secret);
+        $currentMember = $this->hashKey("{$prefix}:window:{$windowExpiresAt}", $this->secret);
+
+        if ($this->previousSecret === null) {
+            return new BoundedCorrelationObservationDTO($currentKey, $currentMember);
+        }
+
+        $previousK4 = $keysV1['k4'] ?? null;
+        if ($previousK4 === null) {
+            throw new RateLimiterException('Distributed occurrence rotation requires a previous K4 key.');
+        }
+
+        $previousKey = $this->hashKey("{$prefix}:scope:{$previousK4}", $this->previousSecret);
+        $previousMember = $this->hashKey("{$prefix}:window:{$windowExpiresAt}", $this->previousSecret);
+
+        return new BoundedCorrelationObservationDTO(
+            $currentKey,
+            $currentMember,
+            $previousKey,
+            $previousMember,
+            $this->hashKey("{$prefix}:bridge:{$currentKey}", $this->secret),
+        );
+    }
+
+    /**
+     * Adds the observation and returns the validated bounded snapshot.
+     *
+     * The clock is read once. That reading goes to the store as the caller's
+     * time and to the validator as the instant it judges `expiresAt` against.
+     * Two readings could straddle a second boundary and make the validator
+     * reject the store's own snapshot (#160, M-EP-DET); do not reintroduce a
+     * second `$this->clock->now()` in this method.
+     */
+    private function addBoundedSnapshot(
+        BoundedCorrelationObservationDTO $observation,
+        int $ttlSeconds,
+        int $maxDistinct,
+    ): BoundedDistinctSnapshotDTO {
+        $nowAt = $this->clock->now();
+        $now = $nowAt->getTimestamp();
+        if ($observation->previousKey === null) {
+            if (! $this->correlationStore instanceof BoundedCorrelationSnapshotStoreInterface) {
+                throw new RateLimiterException(
+                    'Bounded correlation snapshots require the BoundedCorrelationSnapshotStoreInterface capability.',
+                );
+            }
+
+            $result = CallerTimeStore::addDistinctBoundedWithSnapshot(
+                $this->correlationStore,
+                $observation->currentKey,
+                $observation->currentMember,
+                $ttlSeconds,
+                $maxDistinct,
+                $nowAt,
+            );
+
+            return BoundedCorrelationResultValidator::snapshot(
+                $result,
+                $maxDistinct,
+                $now,
+                $ttlSeconds,
+                $observation->currentMember,
+            );
+        }
+
+        if (! $this->correlationStore instanceof BoundedCorrelationSnapshotRotationStoreInterface) {
+            throw new RateLimiterException(
+                'Bounded correlation snapshot rotation requires the BoundedCorrelationSnapshotRotationStoreInterface capability.',
+            );
+        }
+        if ($observation->bridgeKey === null || $observation->previousMember === null) {
+            throw new RateLimiterException('Malformed bounded correlation snapshot rotation tuple.');
+        }
+
+        $result = CallerTimeStore::addDistinctBoundedWithSnapshotAcrossRotation(
+            $this->correlationStore,
+            $observation->currentKey,
+            $observation->bridgeKey,
+            $observation->previousKey,
+            $observation->currentMember,
+            $observation->previousMember,
+            $ttlSeconds,
+            $maxDistinct,
+            $nowAt,
+        );
+
+        return BoundedCorrelationResultValidator::snapshot(
+            $result,
+            $maxDistinct,
+            $now,
+            $ttlSeconds,
+            $observation->currentMember,
+            $observation->previousMember,
+        );
+    }
+
+    /**
+     * Resolve IPv6 macro detection scopes once for the current request.
+     *
+     * The activation chain is bounded and deliberately has no near-threshold
+     * WATCH state: /48, /40, and /32 are detection namespaces only. A macro
+     * scope is returned only after its child threshold is reached.
+     *
+     * @param array<string, string|null> $keysV2
+     * @param array<string, string|null> $keysV1
+     * @return list<array{cidr: int, currentScope: string, previousScope: ?string}>
+     */
+    private function resolveAdaptiveIpv6Scopes(
+        BlockPolicyInterface $policy,
+        RateLimitContextDTO $context,
+        RateLimitCommand $request,
+        DeviceIdentityDTO $device,
+        array $keysV2,
+        array $keysV1,
+    ): array {
+        if (! SourcePrefix::isPureIpv6($context->ip)
+            || ! $this->isAdaptiveIpv6Participant($policy, $context, $request, $device, $keysV2)) {
+            return [];
+        }
+
+        $policyName = $this->hostPolicy(fn() => $policy->getName());
+        $prefix48 = $this->getIpPrefix($context->ip, 48);
+        $prefix40 = $this->getIpPrefix($context->ip, 40);
+        $prefix32 = $this->getIpPrefix($context->ip, 32);
+        $hasPreviousOuterGeneration = $this->previousSecret !== null;
+        $previousK1 = $hasPreviousOuterGeneration ? ($keysV1['k1'] ?? null) : null;
+
+        $current48 = $this->adaptiveIpv6ScopeKey($policyName, 48, $prefix48, $this->secret);
+        $previous48 = $hasPreviousOuterGeneration
+            ? $this->adaptiveIpv6ScopeKey($policyName, 48, $prefix48, $this->previousSecret ?? $this->secret)
+            : null;
+        $scope48Observation = $this->buildAdaptiveHierarchyObservation(
+            $policyName,
+            48,
+            $prefix48,
+            $keysV2['k1'] ?? null,
+            $previous48,
+            $previousK1,
+        );
+        $scope48Count = $this->addBoundedCorrelation(
+            $scope48Observation,
+            self::IPV6_ADAPTIVE_WINDOW_SECONDS,
+            self::IPV6_ADAPTIVE_48_CAP,
+        );
+        if ($scope48Count < self::IPV6_ADAPTIVE_48_CAP) {
+            return [];
+        }
+
+        $activeScopes = [[
+            'cidr' => 48,
+            'currentScope' => $current48,
+            'previousScope' => $previous48,
+        ]];
+
+        $current40 = $this->adaptiveIpv6ScopeKey($policyName, 40, $prefix40, $this->secret);
+        $previous40 = $hasPreviousOuterGeneration
+            ? $this->adaptiveIpv6ScopeKey($policyName, 40, $prefix40, $this->previousSecret ?? $this->secret)
+            : null;
+        $scope40Observation = $this->buildAdaptiveHierarchyObservation(
+            $policyName,
+            40,
+            $prefix40,
+            $current48,
+            $previous40,
+            $previous48,
+        );
+        $scope40Count = $this->addBoundedCorrelation(
+            $scope40Observation,
+            self::IPV6_ADAPTIVE_WINDOW_SECONDS,
+            self::IPV6_ADAPTIVE_40_CAP,
+        );
+        if ($scope40Count < self::IPV6_ADAPTIVE_40_CAP) {
+            return $activeScopes;
+        }
+
+        $activeScopes[] = [
+            'cidr' => 40,
+            'currentScope' => $current40,
+            'previousScope' => $previous40,
+        ];
+
+        $current32 = $this->adaptiveIpv6ScopeKey($policyName, 32, $prefix32, $this->secret);
+        $previous32 = $hasPreviousOuterGeneration
+            ? $this->adaptiveIpv6ScopeKey($policyName, 32, $prefix32, $this->previousSecret ?? $this->secret)
+            : null;
+        $scope32Observation = $this->buildAdaptiveHierarchyObservation(
+            $policyName,
+            32,
+            $prefix32,
+            $current40,
+            $previous32,
+            $previous40,
+        );
+        $scope32Count = $this->addBoundedCorrelation(
+            $scope32Observation,
+            self::IPV6_ADAPTIVE_WINDOW_SECONDS,
+            self::IPV6_ADAPTIVE_32_CAP,
+        );
+        if ($scope32Count >= self::IPV6_ADAPTIVE_32_CAP) {
+            $activeScopes[] = [
+                'cidr' => 32,
+                'currentScope' => $current32,
+                'previousScope' => $previous32,
+            ];
+        }
+
+        return $activeScopes;
+    }
+
+    /**
+     * A request participates in hierarchy state only through an eligible
+     * pre-check spray observation or the existing bounded fingerprint path.
+     *
+     * @param array<string, string|null> $keysV2
+     */
+    private function isAdaptiveIpv6Participant(
+        BlockPolicyInterface $policy,
+        RateLimitContextDTO $context,
+        RateLimitCommand $request,
+        DeviceIdentityDTO $device,
+        array $keysV2,
+    ): bool {
+        $spraySubject = IdentityPresence::subject($context);
+        $sprayEligible = $request->isPreCheck
+            && $this->isCredentialSprayPolicy($policy)
+            && $spraySubject !== null
+            && ($keysV2['k1'] ?? null) !== null;
+
+        return $sprayEligible || IdentityPresence::fingerprint($device);
+    }
+
+    private function adaptiveIpv6ScopeKey(string $policyName, int $cidr, string $prefix, string $secret): string
+    {
+        return $this->hashKey(
+            "{$policyName}:rate_limiter:ipv6_adaptive:hierarchy:v1:{$cidr}:{$this->envScope}:{$prefix}",
+            $secret,
+        );
+    }
+
+    private function buildAdaptiveHierarchyObservation(
+        string $policyName,
+        int $cidr,
+        string $currentPrefix,
+        ?string $currentMember,
+        ?string $previousScope,
+        ?string $previousMember,
+    ): BoundedCorrelationObservationDTO {
+        $currentScope = $this->adaptiveIpv6ScopeKey($policyName, $cidr, $currentPrefix, $this->secret);
+        if ($currentMember === null) {
+            throw new RateLimiterException('IPv6 adaptive hierarchy requires a canonical K1 member.');
+        }
+
+        if ($previousScope === null) {
+            return new BoundedCorrelationObservationDTO($currentScope, $currentMember);
+        }
+        if ($this->previousSecret === null || $previousMember === null) {
+            throw new RateLimiterException(
+                'IPv6 adaptive hierarchy rotation requires coordinated previous outer-key state.',
+            );
+        }
+
+        return new BoundedCorrelationObservationDTO(
+            $currentScope,
+            $currentMember,
+            $previousScope,
+            $previousMember,
+            $this->hashKey(
+                "{$policyName}:rate_limiter:ipv6_adaptive:hierarchy:v1:{$cidr}:{$this->envScope}:bridge:{$currentScope}",
+                $this->secret,
+            ),
+        );
+    }
+
+    private function buildAdaptiveCorrelationObservation(
+        string $policyName,
+        string $purpose,
+        int $cidr,
+        string $currentAnchor,
+        string $currentMemberSeed,
+        ?string $previousAnchor,
+        ?string $previousMemberSeed,
+    ): BoundedCorrelationObservationDTO {
+        $namespace = "{$policyName}:rate_limiter:ipv6_adaptive:{$purpose}:v1:{$cidr}:{$this->envScope}";
+        $currentKey = $this->hashKey("{$namespace}:scope:{$currentAnchor}", $this->secret);
+        $currentMember = $this->hashKey("{$namespace}:member:{$currentMemberSeed}", $this->secret);
+        $hasPrevious = $previousAnchor !== null
+            && ($this->previousSecret !== null || $previousMemberSeed !== null);
+        if (! $hasPrevious) {
+            return new BoundedCorrelationObservationDTO($currentKey, $currentMember);
+        }
+
+        $previousSecret = $this->previousSecret ?? $this->secret;
+        $previousMemberSeed ??= $currentMemberSeed;
+        $previousKey = $this->hashKey("{$namespace}:scope:{$previousAnchor}", $previousSecret);
+        $previousMember = $this->hashKey("{$namespace}:member:{$previousMemberSeed}", $previousSecret);
+
+        return new BoundedCorrelationObservationDTO(
+            $currentKey,
+            $currentMember,
+            $previousKey,
+            $previousMember,
+            $this->hashKey("{$namespace}:bridge:{$currentKey}", $this->secret),
+        );
+    }
+
+    /**
+     * @param array{cidr: int, currentScope: string, previousScope: ?string} $scope
+     */
+    private function buildAdaptiveChurnObservation(
+        string $policyName,
+        DeviceIdentityDTO $device,
+        array $scope,
+    ): BoundedCorrelationObservationDTO {
+        if (! IdentityPresence::fingerprint($device)) {
+            throw new RateLimiterException('IPv6 adaptive churn requires a current fingerprint hash.');
+        }
+
+        $currentAnchor = $this->adaptiveChurnAnchor(
+            $policyName,
+            $scope['cidr'],
+            $scope['currentScope'],
+            $device->normalizedUa,
+            $this->secret,
+        );
+        $previousAnchor = null;
+        $previousMemberSeed = null;
+        if ($scope['previousScope'] !== null) {
+            $previousAnchor = $this->adaptiveChurnAnchor(
+                $policyName,
+                $scope['cidr'],
+                $scope['previousScope'],
+                $device->normalizedUa,
+                $this->previousSecret ?? $this->secret,
+            );
+            $previousMemberSeed = $this->previousFingerprintHash($device);
+        } elseif ($device->previousFingerprintHash !== null) {
+            // Fingerprint-only rotation changes members, not the hierarchy
+            // scope. It must not create a previous hierarchy generation.
+            $previousAnchor = $currentAnchor;
+            $previousMemberSeed = $device->previousFingerprintHash;
+        }
+
+        return $this->buildAdaptiveCorrelationObservation(
+            $policyName,
+            'churn',
+            $scope['cidr'],
+            $currentAnchor,
+            $device->fingerprintHash,
+            $previousAnchor,
+            $previousMemberSeed,
+        );
+    }
+
+    private function adaptiveChurnAnchor(
+        string $policyName,
+        int $cidr,
+        string $adaptiveScope,
+        string $normalizedUa,
+        string $secret,
+    ): string {
+        return $this->hashKey(
+            "{$policyName}:rate_limiter:ipv6_adaptive:churn_anchor:v1:{$cidr}:{$this->envScope}:{$adaptiveScope}:{$normalizedUa}",
+            $secret,
+        );
+    }
+
+    /**
+     * @param array<string, string|null> $keysV2
+     * @param array<string, string|null> $keysV1
+     * @param list<array{cidr: int, currentScope: string, previousScope: ?string}> $adaptiveIpv6Scopes
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}|null
+     */
+    private function checkCorrelationRules(
+        DeviceIdentityDTO $device,
+        string $policyName,
+        bool $isEphemeral,
+        array $keysV2,
+        array $keysV1,
+        array $adaptiveIpv6Scopes,
+    ): ?array {
+        if (! IdentityPresence::fingerprint($device)) {
+            return null;
+        }
+
+        $churn = $this->buildCorrelationObservation(
+            $policyName,
+            'churn',
+            $keysV2['k2'] ?? null,
+            $device->fingerprintHash,
+            $keysV1['k2'] ?? null,
+            $this->previousFingerprintHash($device),
+        );
+        $churnTriggered = $this->observeChurn(
+            $churn,
+            $this->correlationStateKey($policyName, 'churn_watch', $churn->currentKey, $this->secret),
+            $churn->previousKey === null
+                ? null
+                : $this->correlationStateKey(
+                    $policyName,
+                    'churn_watch',
+                    $churn->previousKey,
+                    $this->previousSecret ?? $this->secret,
+                ),
+        );
+
+        // Every active macro churn scope is observed before selecting a
+        // candidate. Macro scopes never become enforcement keys.
+        foreach ($adaptiveIpv6Scopes as $scope) {
+            $macroChurn = $this->buildAdaptiveChurnObservation($policyName, $device, $scope);
+            $macroChurnTriggered = $this->observeChurn(
+                $macroChurn,
+                $macroChurn->currentKey . ':watch',
+                $macroChurn->previousKey === null ? null : $macroChurn->previousKey . ':watch',
+            );
+            $churnTriggered = $churnTriggered || $macroChurnTriggered;
+        }
+
+        if ($churnTriggered) {
+            return $this->candidate(
+                RateLimitResultDTO::DECISION_HARD_BLOCK,
+                2,
+                60,
+                'correlation',
+                isset($keysV2['k2'])
+                    ? [[
+                        'key' => $keysV2['k2'],
+                        'previousKey' => $keysV1['k2'] ?? null,
+                        'level' => 2,
+                        'duration' => 60,
+                        'retryAfter' => 60,
+                    ]]
+                    : [],
+            );
+        }
+
+        // Ephemeral overflow has no durable per-fingerprint dilution state.
+        // Churn above remains available because it is a bounded K2 signal.
+        if ($isEphemeral) {
+            return null;
+        }
+
+        $dilution = $this->buildCorrelationObservation(
+            $policyName,
+            'dilution',
+            $device->fingerprintHash,
+            $keysV2['k1'] ?? null,
+            $this->previousFingerprintHash($device),
+            $keysV1['k1'] ?? null,
+        );
+        if ($dilution->currentMember === '') {
+            return null;
+        }
+
+        $dilutionCount = $this->addBoundedCorrelation($dilution, 600, 6);
+        $thresholdMet = $dilutionCount >= 6;
+        if ($dilutionCount === 5) {
+            $watchCount = $this->incrementWatchAcrossRotation(
+                $this->correlationStateKey($policyName, 'dilution_watch', $dilution->currentKey, $this->secret),
+                $dilution->previousKey === null
+                    ? null
+                    : $this->correlationStateKey(
+                        $policyName,
+                        'dilution_watch',
+                        $dilution->previousKey,
+                        $this->previousSecret ?? $this->secret,
+                    ),
+                1800,
+            );
+            $thresholdMet = $watchCount >= 2;
+        }
+
+        if (! $thresholdMet) {
+            return null;
+        }
+
+        if ($device->confidence === 'LOW') {
+            return $this->candidate(
+                RateLimitResultDTO::DECISION_HARD_BLOCK,
+                2,
+                60,
+                'correlation',
+                isset($keysV2['k2'])
+                    ? [[
+                        'key' => $keysV2['k2'],
+                        'previousKey' => $keysV1['k2'] ?? null,
+                        'level' => 2,
+                        'duration' => 60,
+                        'retryAfter' => 60,
+                    ]]
+                    : [],
+            );
+        }
+
+        $windowId = (int) floor($this->clock->now()->getTimestamp() / 600);
+        CallerTimeStore::incrementWatchFlag(
+            $this->correlationStore,
+            $this->correlationStateKey($policyName, 'dilution_confirmation', $dilution->currentKey . ':' . $windowId, $this->secret),
+            1200,
+            $this->clock->now(),
+        );
+        $previousWindowId = $windowId - 1;
+        $previousWindowCount = $this->correlationStore->getWatchFlag(
+            $this->correlationStateKey(
+                $policyName,
+                'dilution_confirmation',
+                $dilution->currentKey . ':' . $previousWindowId,
+                $this->secret,
+            ),
+        );
+        if ($dilution->previousKey !== null) {
+            $previousWindowCount = max(
+                $previousWindowCount,
+                $this->correlationStore->getWatchFlag(
+                    $this->correlationStateKey(
+                        $policyName,
+                        'dilution_confirmation',
+                        $dilution->previousKey . ':' . $previousWindowId,
+                        $this->previousSecret ?? $this->secret,
+                    ),
+                ),
+            );
+        }
+
+        if ($previousWindowCount === 0 || $keysV2['k3'] === null) {
+            return null;
+        }
+
+        $persistence = [[
+            'key' => $keysV2['k3'],
+            'previousKey' => $keysV1['k3'] ?? null,
+            'level' => 2,
+            'duration' => 60,
+            'retryAfter' => 60,
+        ]];
+
+        return $this->candidate(
+            RateLimitResultDTO::DECISION_HARD_BLOCK,
+            2,
+            60,
+            'correlation',
+            $persistence,
+        );
+    }
+
+    private function observeChurn(
+        BoundedCorrelationObservationDTO $observation,
+        string $currentWatchKey,
+        ?string $previousWatchKey,
+    ): bool {
+        $store = $this->correlationStore;
+        if ($store instanceof RedisFullCapabilityStore && $observation->previousKey === null && $previousWatchKey === null) {
+            $now = $this->clock->now()->getTimestamp();
+
+            return $store->commitBoundedObservationGroup(static function () use ($store, $observation, $currentWatchKey, $now): array {
+                [$snapshot, $plan] = $store->readBoundedObservationPlanAt($observation->currentKey, $observation->currentMember, 3, 600, $now);
+                if ($snapshot->count !== 2) {
+                    return [$snapshot->count >= 3, [$plan]];
+                }
+
+                [$watch, $watchPlan] = $store->readWatchObservationPlanAt($currentWatchKey, 1800, $now);
+
+                return [$watch >= 2, [$plan, $watchPlan]];
+            });
+        }
+
+        $count = $this->addBoundedCorrelation($observation, 600, 3);
+        if ($count >= 3) {
+            return true;
+        }
+
+        if ($count !== 2) {
+            return false;
+        }
+
+        return $this->incrementWatchAcrossRotation($currentWatchKey, $previousWatchKey, 1800) >= 2;
+    }
+
+    private function addBoundedCorrelation(
+        BoundedCorrelationObservationDTO $observation,
+        int $ttlSeconds,
+        int $maxDistinct,
+    ): int {
+        if ($observation->previousKey === null) {
+            if (! $this->correlationStore instanceof BoundedCorrelationStoreInterface) {
+                throw new RateLimiterException(
+                    'Bounded correlation requires the BoundedCorrelationStoreInterface capability.',
+                );
+            }
+
+            $result = CallerTimeStore::addDistinctBounded(
+                $this->correlationStore,
+                $observation->currentKey,
+                $observation->currentMember,
+                $ttlSeconds,
+                $maxDistinct,
+                $this->clock->now(),
+            );
+
+            return BoundedCorrelationResultValidator::count($result, $maxDistinct);
+        }
+
+        if (! $this->correlationStore instanceof BoundedCorrelationRotationStoreInterface) {
+            throw new RateLimiterException(
+                'Bounded correlation rotation requires the BoundedCorrelationRotationStoreInterface capability.',
+            );
+        }
+        if ($observation->bridgeKey === null || $observation->previousMember === null) {
+            throw new RateLimiterException('Malformed bounded correlation observation rotation tuple.');
+        }
+
+        $result = CallerTimeStore::addDistinctBoundedAcrossRotation(
+            $this->correlationStore,
+            $observation->currentKey,
+            $observation->bridgeKey,
+            $observation->previousKey,
+            $observation->currentMember,
+            $observation->previousMember,
+            $ttlSeconds,
+            $maxDistinct,
+            $this->clock->now(),
+        );
+
+        return BoundedCorrelationResultValidator::count($result, $maxDistinct);
+    }
+
+    private function incrementWatchAcrossRotation(
+        string $currentKey,
+        ?string $previousKey,
+        int $ttlSeconds,
+    ): int {
+        if ($previousKey === null || $previousKey === $currentKey) {
+            return CallerTimeStore::incrementWatchFlag($this->correlationStore, $currentKey, $ttlSeconds, $this->clock->now());
+        }
+        if (! $this->correlationStore instanceof CorrelationRotationStoreInterface) {
+            throw new RateLimiterException(
+                'Correlation WATCH rotation requires the CorrelationRotationStoreInterface capability.',
+            );
+        }
+
+        return CallerTimeStore::incrementWatchFlagAcrossRotation($this->correlationStore, $currentKey, $previousKey, $ttlSeconds, $this->clock->now());
+    }
+
+    private function buildCorrelationObservation(
+        string $policyName,
+        string $purpose,
+        ?string $currentAnchor,
+        ?string $currentMemberSeed,
+        ?string $previousAnchor,
+        ?string $previousMemberSeed,
+    ): BoundedCorrelationObservationDTO {
+        if ($currentAnchor === null || $currentMemberSeed === null) {
+            throw new RateLimiterException("Missing current opaque anchor for {$purpose} correlation state.");
+        }
+
+        $prefix = "{$policyName}:rate_limiter:correlation:{$purpose}:v1:{$this->envScope}";
+        $currentKey = $this->hashKey("{$prefix}:scope:{$currentAnchor}", $this->secret);
+        $currentMember = $this->hashKey("{$prefix}:member:{$currentMemberSeed}", $this->secret);
+
+        $hasPrevious = $previousAnchor !== null
+            && ($this->previousSecret !== null || $previousMemberSeed !== null);
+        if (! $hasPrevious) {
+            return new BoundedCorrelationObservationDTO($currentKey, $currentMember);
+        }
+
+        $previousSecret = $this->previousSecret ?? $this->secret;
+        $previousMemberSeed ??= $currentMemberSeed;
+        $previousKey = $this->hashKey("{$prefix}:scope:{$previousAnchor}", $previousSecret);
+        $previousMember = $this->hashKey("{$prefix}:member:{$previousMemberSeed}", $previousSecret);
+        $bridgeKey = $this->hashKey("{$prefix}:bridge:{$currentKey}", $this->secret);
+
+        return new BoundedCorrelationObservationDTO(
+            $currentKey,
+            $currentMember,
+            $previousKey,
+            $previousMember,
+            $bridgeKey,
+        );
+    }
+
+    /**
+     * @param array<string, string|null> $keys
+     */
+    private function accountAnchor(array $keys): ?string
+    {
+        if (($keys['k4'] ?? null) === null || ($keys['k1'] ?? null) === null) {
+            return null;
+        }
+
+        return $keys['k4'] . ':' . $keys['k1'];
+    }
+
+    private function correlationStateKey(string $policyName, string $purpose, string $anchor, string $secret): string
+    {
+        return $this->hashKey(
+            "{$policyName}:rate_limiter:correlation:{$purpose}:v1:{$this->envScope}:{$anchor}",
+            $secret,
+        );
+    }
+
+    /**
+     * Observe credential spray subjects for authentication pre-checks only.
+     *
+     * The subject member is always a domain-separated HMAC. Raw account or
+     * correlation identities never cross the correlation-store boundary.
+     *
+     * @param list<array{cidr: int, currentScope: string, previousScope: ?string}> $adaptiveIpv6Scopes
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}|null
+     */
+    private function checkCredentialSpray(
+        RateLimitContextDTO $context,
+        DeviceIdentityDTO $device,
+        BlockPolicyInterface $policy,
+        ?string $k1Key,
+        ?string $previousK1Key,
+        array $adaptiveIpv6Scopes,
+    ): ?array {
+        $subject = IdentityPresence::subject($context);
+        if ($subject === null || $k1Key === null) {
+            return null;
+        }
+
+        $observations = [$this->buildCredentialSprayObservation($subject, $k1Key, $previousK1Key)];
+
+        // The current canonical K1 remains the only persistence key.
+        foreach ($adaptiveIpv6Scopes as $scope) {
+            $observations[] = $this->buildAdaptiveCorrelationObservation(
+                $this->hostPolicy(fn() => $policy->getName()),
+                'spray',
+                $scope['cidr'],
+                $scope['currentScope'],
+                $subject,
+                $scope['previousScope'],
+                $subject,
+            );
+        }
+
+        $thresholdMet = $this->observeCredentialSprayScopes($observations);
+
+        if (! $thresholdMet) {
+            return null;
+        }
+
+        $source = $this->isTrustedAuthenticationPolicy($policy, $device)
+            ? 'trusted_advisory:credential_spray'
+            : 'credential_spray';
+
+        $persistence = [[
+            'key' => $k1Key,
+            'previousKey' => $previousK1Key,
+            'level' => 2,
+            'duration' => PenaltyLadder::getDuration(2),
+            'retryAfter' => PenaltyLadder::getDuration(2),
+        ]];
+
+        return $this->candidate(
+            RateLimitResultDTO::DECISION_HARD_BLOCK,
+            2,
+            PenaltyLadder::getDuration(2),
+            $source,
+            $persistence,
+        );
+    }
+
+    /** @param non-empty-list<BoundedCorrelationObservationDTO> $observations */
+    private function observeCredentialSprayScopes(array $observations): bool
+    {
+        $store = $this->correlationStore;
+        $rotates = array_any($observations, static fn(BoundedCorrelationObservationDTO $observation): bool => $observation->previousKey !== null);
+        if ($store instanceof RedisFullCapabilityStore && ! $rotates) {
+            $now = $this->clock->now()->getTimestamp();
+
+            return $store->commitBoundedObservationGroup(static function () use ($store, $observations, $now): array {
+                $thresholdMet = false;
+                $plans = [];
+                foreach ($observations as $observation) {
+                    [$snapshot, $plan] = $store->readBoundedObservationPlanAt($observation->currentKey, $observation->currentMember, 5, 600, $now);
+                    $plans[] = $plan;
+                    if ($snapshot->count === 4) {
+                        [$watch, $watchPlan] = $store->readWatchObservationPlanAt($observation->currentKey . ':watch', 1800, $now);
+                        $plans[] = $watchPlan;
+                        $thresholdMet = $watch >= 2 || $thresholdMet;
+                    } else {
+                        $thresholdMet = $snapshot->count >= 5 || $thresholdMet;
+                    }
+                }
+
+                return [$thresholdMet, $plans];
+            });
+        }
+
+        $thresholdMet = false;
+        foreach ($observations as $observation) {
+            $observed = $store instanceof RedisFullCapabilityStore && $observation->previousKey === null
+                ? $this->observeCredentialSprayScopes([$observation])
+                : $this->observeCredentialSpray($observation);
+            $thresholdMet = $observed || $thresholdMet;
+        }
+
+        return $thresholdMet;
+    }
+
+    private function observeCredentialSpray(BoundedCorrelationObservationDTO $observation): bool
+    {
+        $count = $this->addBoundedCorrelation($observation, 600, 5);
+        if ($count >= 5) {
+            return true;
+        }
+
+        if ($count !== 4) {
+            return false;
+        }
+
+        $watchCount = $this->incrementWatchAcrossRotation(
+            $observation->currentKey . ':watch',
+            $observation->previousKey === null ? null : $observation->previousKey . ':watch',
+            1800,
+        );
+
+        return $watchCount >= 2;
+    }
+
+    private function buildCredentialSprayObservation(
+        string $subject,
+        string $k1Key,
+        ?string $previousK1Key,
+    ): BoundedCorrelationObservationDTO {
+        $currentKey = 'credential_spray:' . $k1Key;
+        $currentMember = $this->hashKey('credential_spray:subject:v1:' . $subject, $this->secret);
+        if ($this->previousSecret === null) {
+            return new BoundedCorrelationObservationDTO($currentKey, $currentMember);
+        }
+
+        if ($previousK1Key === null) {
+            throw new RateLimiterException('Credential-spray key rotation requires a previous K1 correlation key.');
+        }
+
+        return new BoundedCorrelationObservationDTO(
+            $currentKey,
+            $currentMember,
+            'credential_spray:' . $previousK1Key,
+            $this->hashKey('credential_spray:subject:v1:' . $subject, $this->previousSecret),
+            'credential_spray:bridge:' . $k1Key,
+        );
+    }
+
+    /**
+     * @param array<string, string|null> $keys
+     * @param array<string, string|null> $keysV1
+     * @param array<string, ?PipelineScoreDTO> $rawScores
+     * @return array{
+     *     candidates: list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}>,
+     *     budgetState: ?BudgetStateDTO,
+     *     budgetRequestEligible: bool,
+     *     budgetSuppressed: bool
+     * }
+     */
+    private function processUpdates(
+        BlockPolicyInterface $policy,
+        RateLimitContextDTO $context,
+        RateLimitCommand $request,
+        DeviceIdentityDTO $device,
+        bool $isEphemeral,
+        array $keys,
+        array $keysV1,
+        array $rawScores,
+        ?AdmissionLaneEnum $lane,
+    ): array {
+        $deltas = $this->calculateDeltas($policy, $context, $device, $request, $isEphemeral);
+
+        // A known-device failure always consumes the fingerprint-independent
+        // account allowance. Once it is spent, the failure is also scored on
+        // K4, so device rotation and pacing below K5 decay cannot keep a
+        // known device less bounded than an unknown one.
+        if ($request->isFailure
+            && $policy instanceof KnownDeviceAccountAllowancePolicyInterface
+            && ! $isEphemeral
+            && IdentityPresence::account($context)
+            && ($keys['k4'] ?? null) !== null
+            && $deltas['k5'] > 0
+            && $deltas['k4'] === 0
+            && $this->isKnownForAccount($device)
+            && ($allowanceLimit = $this->hostPolicy(fn() => $policy->getKnownDeviceAccountAllowance())) !== null) {
+            $allowance = $this->incrementBudgetAcrossRotation(
+                $this->auxiliaryAccountKey($this->hostPolicy(fn() => $policy->getName()), $this->laneAuxiliaryPurpose($lane, 'known_device_allowance'), $context->accountId, $this->secret),
+                $this->previousAuxiliaryAccountKey($this->hostPolicy(fn() => $policy->getName()), $this->laneAuxiliaryPurpose($lane, 'known_device_allowance'), $context->accountId),
+            );
+            if ($allowance->count > $allowanceLimit) {
+                $deltas['k4'] = $this->hostPolicy(fn() => $policy->getScoreDeltas())->k4_failure;
+            }
+        }
+
+        $k4Repeated = $this->hostPolicy(fn() => $policy->getScoreDeltas())->k4_repeated_missing_fp;
+        if ($request->isFailure && ! IdentityPresence::fingerprint($device) && IdentityPresence::account($context) && $k4Repeated > 0) {
+            $key = $this->auxiliaryAccountKey(
+                $this->hostPolicy(fn() => $policy->getName()),
+                'last_missing_fp',
+                $context->accountId,
+                $this->secret,
+            );
+            // #185 F-185-17 (DEC-031): the marker is read and written in one atomic step, so of two concurrent
+            // failures the second sees the first one's marker. The previous generation stays a read-only fallback.
+            $replaces = $this->accountStore instanceof ScoreReplaceStoreInterface;
+            $last = $this->accountStore instanceof ScoreReplaceStoreInterface
+                ? CallerTimeStore::replaceScore($this->accountStore, $key, $this->clock->now()->getTimestamp(), 3600, $this->clock->now())
+                : $this->accountStore->get($key);
+            if ($last === null) {
+                $previousKey = $this->previousAuxiliaryAccountKey(
+                    $this->hostPolicy(fn() => $policy->getName()),
+                    'last_missing_fp',
+                    $context->accountId,
+                );
+                if ($previousKey !== null && $previousKey !== $key) {
+                    $last = $this->accountStore->get($previousKey);
+                }
+            }
+            if ($last && ($this->clock->now()->getTimestamp() - $last->value) <= 1800) {
+                $deltas['k4'] = ScoreArithmetic::sum($deltas['k4'], $k4Repeated, 'K4 delta');
+            }
+            if (! $replaces) {
+                CallerTimeStore::set($this->accountStore, $key, $this->clock->now()->getTimestamp(), 3600, $this->clock->now());
+            }
+        }
+
+        $newMaxLevel = 0;
+        /** @var array<string, int> $levelsByKeyType */
+        $levelsByKeyType = [];
+        /** @var array<string, int> $retryAfterByKeyType */
+        $retryAfterByKeyType = [];
+
+        foreach ($keys as $keyType => $key) {
+            if (! $key) {
+                continue;
+            }
+
+            $delta = $deltas[$keyType] ?? 0;
+            if ($delta > 0) {
+                $scoreDto = $rawScores[$keyType] ?? null;
+                $rawVal = $scoreDto ? $scoreDto->value : 0;
+                $updatedAt = $scoreDto ? $scoreDto->updatedAt : $this->clock->now()->getTimestamp();
+
+                $decayed = $this->calculateDecayedScore(
+                    $rawVal,
+                    $updatedAt,
+                    $keyType,
+                    $key,
+                    $keysV1[$keyType] ?? null,
+                );
+                $baseValue = ($scoreDto && ! $scoreDto->isFromV1) ? $rawVal : 0;
+                $netChange = ScoreArithmetic::difference(ScoreArithmetic::sum($decayed, $delta, $keyType . ' decayed score + delta'), $baseValue, $keyType . ' net change');
+
+                $newScore = null;
+                $mutation = null;
+                if ($keyType === 'k4' && $policy instanceof PostPunishmentReentryPolicyInterface
+                    && $this->accountStore instanceof PunishmentLifecycleStoreInterface) {
+                    for ($attempt = 0; $attempt < 3; $attempt++) {
+                        $expected = CallerTimeStore::readGenerationBoundScoreState($this->accountStore, $key, $keysV1[$keyType] ?? null, $this->clock->now());
+                        $observedValue = $expected === null ? $rawVal : $expected->value;
+                        $observedAt = $expected === null ? $updatedAt : $expected->updatedAt;
+                        $decayed = $this->calculateDecayedScore($observedValue, $observedAt, $keyType, $key, $keysV1[$keyType] ?? null);
+                        $mutation = CallerTimeStore::mutateGenerationBoundScore($this->accountStore, $key, $keysV1[$keyType] ?? null, $expected, 86400, ScoreArithmetic::sum($decayed, $delta, 'k4 decayed score + delta'), $this->clock->now());
+                        if ($mutation->applied) {
+                            $newScore = $mutation->state?->value;
+                            break;
+                        }
+                    }
+                    if ($newScore === null) {
+                        throw new RateLimitConcurrencyException('K4 generation mutation conflict budget exhausted.');
+                    }
+                } else {
+                    $newScore = $this->writeScore($key, $keyType, $keysV1[$keyType] ?? null, $scoreDto, $delta, $netChange);
+                }
+                if ($this->ignoresCollectiveKeyType($lane, $keyType)) {
+                    // The collective score is written (the observation stays); no level,
+                    // watch flag or candidate derives from it on the proven lane.
+                    continue;
+                }
+                $actualScoreLevel = $this->determineLevel($newScore, $keyType, $policy);
+                if ($keyType === 'k4' && $policy instanceof PostPunishmentReentryPolicyInterface
+                    && $this->accountStore instanceof PunishmentLifecycleStoreInterface
+                    && $actualScoreLevel >= 2 && $mutation?->state?->generation !== null
+                ) {
+                    $this->lifecycleEligibleKeys[$key] = $mutation->state->generation;
+                }
+                $level = $actualScoreLevel;
+
+                $watchEscalated = false;
+
+                $thresholdsDto = $this->getScopedThresholds($keyType, $policy);
+                if ($thresholdsDto) {
+                    // Check each represented threshold once. Equal threshold
+                    // values imply the highest represented level.
+                    foreach ($this->normalizedWatchThresholds($thresholdsDto) as $thresh => $impliedLevel) {
+                        if ($newScore == $thresh - 1) {
+                            $wKey = "watch:{$key}";
+                            $flags = CallerTimeStore::incrementWatchFlag($this->correlationStore, $wKey, 1800, $this->clock->now());
+                            // If watched twice, upgrade level effectively
+                            if ($flags >= 2) {
+                                if ($impliedLevel > $level) {
+                                    $watchEscalated = true;
+                                    $level = $impliedLevel;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                $newMaxLevel = max($newMaxLevel, $level);
+                if ($level <= 0) {
+                    continue;
+                }
+
+                $levelsByKeyType[$keyType] = $level;
+                $retryAfterByKeyType[$keyType] = PenaltyLadder::getDuration($level);
+                $freshK4LifecycleHard = $keyType === 'k4'
+                    && $policy instanceof PostPunishmentReentryPolicyInterface
+                    && isset($this->lifecycleEligibleKeys[$key]);
+                if (! $freshK4LifecycleHard && ! $watchEscalated && $actualScoreLevel > 0 && $thresholdsDto !== null) {
+                    $exitThreshold = $level >= 2 ? $thresholdsDto->l2 : $thresholdsDto->l1;
+                    $pauseState = $this->decayPauseState(
+                        $key,
+                        $keysV1[$keyType] ?? null,
+                        $this->clock->now()->getTimestamp(),
+                    );
+                    $retryAfterByKeyType[$keyType] = $this->decayCalculator->secondsUntilBelowThreshold(
+                        $newScore,
+                        $this->clock->now()->getTimestamp(),
+                        $this->currentBlockLevel($key, $keysV1[$keyType] ?? null),
+                        $this->scopeForKeyType($keyType),
+                        $exitThreshold,
+                        $pauseState->elapsedPausedSeconds,
+                        $pauseState->activePauseUntil,
+                    );
+                }
+            }
+        }
+
+        $budgetConfig = $this->hostPolicy(fn() => $policy->getBudgetConfig());
+        $budgetState = $budgetConfig !== null
+            ? $this->resolveActiveBudgetState($keys['k4'] ?? null, $keysV1['k4'] ?? null)
+            : null;
+        $budgetRequestEligible = false;
+        $budgetSuppressed = false;
+
+        if (($keys['k4'] ?? null) !== null && $budgetConfig !== null && $request->isFailure) {
+            $config = $budgetConfig;
+            $shouldCount = false;
+
+            // New/unverified-device and repeated-missing-fingerprint failures
+            // contribute directly to the account budget.
+            if ($deltas['k4'] > 0 || ! IdentityPresence::fingerprint($device)) {
+                $shouldCount = true;
+            }
+
+            // A policy-owned micro-cap gates known-device failures when
+            // configured. A null cap means known-device failures are directly
+            // budget-eligible; the engine does not identify policy presets.
+            if (! $isEphemeral && $deltas['k5'] > 0 && IdentityPresence::account($context) && IdentityPresence::fingerprint($device)
+                && $this->isKnownForAccount($device)) {
+                if ($config->known_device_micro_cap === null) {
+                    $shouldCount = true;
+                } else {
+                    $microPurpose = $this->microCapPurpose($lane);
+                    $microKeyV2 = $this->deriveAccountKey($microPurpose, $this->hostPolicy(fn() => $policy->getName()), $context->accountId, $this->secret, $this->k5Material($device, $lane) ?? '');
+                    $microKeyV1 = null;
+
+                    if ($this->hasPreviousGeneration($device)) {
+                        $microKeyV1 = $this->deriveAccountKey($microPurpose, $this->hostPolicy(fn() => $policy->getName()), $context->accountId, $this->previousSecret ?? $this->secret, $this->previousK5Material($device, $lane) ?? '');
+                    }
+
+                    $microState = $this->incrementBudgetAcrossRotation($microKeyV2, $microKeyV1);
+                    if ($microState->count > $config->known_device_micro_cap) {
+                        $shouldCount = true;
+                    }
+                }
+            }
+
+            $budgetRequestEligible = $shouldCount;
+
+            if ($shouldCount) {
+                $previousBudgetState = $budgetState;
+                $budgetState = $this->incrementBudgetAcrossRotation($keys['k4'], $keysV1['k4'] ?? null);
+                if ($config->recovery_collision_guard_enabled
+                    && $previousBudgetState !== null
+                    && $previousBudgetState->count === $config->threshold - 1
+                    && $budgetState->count === $config->threshold
+                    && ($device->confidence === 'HIGH' || $this->isKnownForAccount($device))) {
+                    $budgetSuppressed = true;
+                    $budgetRequestEligible = false;
+                    // Recovery Guard is a one-shot normal soft candidate. It
+                    // deliberately does not acquire budget cooldown.
+                    $recoveryCandidate = $this->candidate(
+                        RateLimitResultDTO::DECISION_SOFT_BLOCK,
+                        2,
+                        PenaltyLadder::getDuration(2),
+                        'recovery_guard',
+                    );
+                } else {
+                    $recoveryCandidate = null;
+                }
+            } else {
+                $recoveryCandidate = null;
+            }
+        } else {
+            $recoveryCandidate = null;
+        }
+
+        $candidates = [];
+        if ($newMaxLevel > 0) {
+            if ($this->isApiHeavyPolicy($policy)) {
+                foreach ($levelsByKeyType as $keyType => $level) {
+                    if ($level <= 0 || ! $this->isApiHeavyKeyType($keyType)) {
+                        continue;
+                    }
+
+                    $candidateKeyType = $keyType;
+                    $candidateLevel = $level;
+                    if ($keyType === 'k3' && $device->confidence === 'LOW' && $level >= 2) {
+                        $candidateKeyType = 'k2';
+                        $candidateLevel = 2;
+                    }
+
+                    $decision = $candidateLevel >= 2
+                        ? RateLimitResultDTO::DECISION_HARD_BLOCK
+                        : RateLimitResultDTO::DECISION_SOFT_BLOCK;
+                    $duration = PenaltyLadder::getDuration($candidateLevel);
+                    $persistenceKey = $this->isCanonicalApiHeavyEnforcementKeyType($candidateKeyType)
+                        ? $keys[$candidateKeyType] ?? null
+                        : null;
+                    $persistence = $persistenceKey === null
+                        ? []
+                        : [[
+                            'key' => $persistenceKey,
+                            'previousKey' => $keysV1[$candidateKeyType] ?? null,
+                            'level' => $candidateLevel,
+                            'duration' => $duration,
+                            'retryAfter' => $retryAfterByKeyType[$keyType] ?? $duration,
+                        ]];
+
+                    $candidates[] = $this->candidate(
+                        $decision,
+                        $candidateLevel,
+                        $retryAfterByKeyType[$keyType] ?? $duration,
+                        $keyType === 'k3' && $candidateKeyType === 'k2'
+                            ? 'score_update:low_confidence_k3_to_k2'
+                            : 'score_update',
+                        $persistence,
+                    );
+                }
+            } elseif ($this->isTrustedAuthenticationPolicy($policy, $device)) {
+                foreach ($levelsByKeyType as $keyType => $level) {
+                    if ($level <= 0) {
+                        continue;
+                    }
+                    $decision = ($level >= 2) ? RateLimitResultDTO::DECISION_HARD_BLOCK : RateLimitResultDTO::DECISION_SOFT_BLOCK;
+                    $duration = PenaltyLadder::getDuration($level);
+                    $retryAfter = $retryAfterByKeyType[$keyType] ?? $duration;
+                    $isAdvisory = $this->isK1Key($keyType);
+                    // A K5 level is device scoped and never locks the account.
+                    $persistenceKeyType = $keyType === 'k5' ? 'k5' : 'k4';
+                    $persistence = [];
+                    if (! $isAdvisory && IdentityPresence::account($context) && ($keys[$persistenceKeyType] ?? null) !== null) {
+                        $persistence[] = [
+                            'key' => $keys[$persistenceKeyType],
+                            'previousKey' => $keysV1[$persistenceKeyType] ?? null,
+                            'level' => $level,
+                            'duration' => $duration,
+                            'retryAfter' => $retryAfter,
+                        ];
+                    }
+                    $candidates[] = $this->candidate(
+                        $decision,
+                        $level,
+                        $retryAfter,
+                        $isAdvisory ? 'trusted_advisory:score_update' : 'score_update',
+                        $persistence,
+                        $keyType === 'k5' ? [self::SCOPE_DEVICE] : [self::SCOPE_ACCOUNT],
+                    );
+                }
+            } else {
+                $decision = ($newMaxLevel >= 2) ? RateLimitResultDTO::DECISION_HARD_BLOCK : RateLimitResultDTO::DECISION_SOFT_BLOCK;
+                $duration = PenaltyLadder::getDuration($newMaxLevel);
+                $retryAfter = 0;
+                foreach ($levelsByKeyType as $keyType => $level) {
+                    $keyDecision = $level >= 2
+                        ? RateLimitResultDTO::DECISION_HARD_BLOCK
+                        : RateLimitResultDTO::DECISION_SOFT_BLOCK;
+                    if ($keyDecision === $decision) {
+                        $retryAfter = max($retryAfter, $retryAfterByKeyType[$keyType] ?? $duration);
+                    }
+                }
+                if ($retryAfter === 0) {
+                    $retryAfter = $duration;
+                }
+                $persistence = [];
+
+                // K5 levels persist on the device key only; every other
+                // scored level keeps its account-wide K4 persistence.
+                $k5Level = $levelsByKeyType['k5'] ?? 0;
+                $accountLevel = 0;
+                // F-172-02: each persisted key carries the retryAfter of its own
+                // contribution, so a dropped K4 leaves the others' values intact.
+                $accountRetryAfter = 0;
+                foreach ($levelsByKeyType as $keyType => $level) {
+                    if ($keyType !== 'k5') {
+                        $accountLevel = max($accountLevel, $level);
+                        $accountRetryAfter = max($accountRetryAfter, $retryAfterByKeyType[$keyType] ?? PenaltyLadder::getDuration($level));
+                    }
+                }
+
+                if ($accountLevel > 0 && IdentityPresence::account($context) && ($keys['k4'] ?? null) !== null) {
+                    $k4LifecycleLevel = $levelsByKeyType['k4'] ?? 0;
+                    $k4IsLifecycleEligible = $policy instanceof PostPunishmentReentryPolicyInterface
+                        && $k4LifecycleLevel >= 2
+                        && isset($this->lifecycleEligibleKeys[$keys['k4']]);
+                    $persistenceLevel = $k4IsLifecycleEligible ? $k4LifecycleLevel : $accountLevel;
+                    $persistence[] = [
+                        'key' => $keys['k4'],
+                        'previousKey' => $keysV1['k4'] ?? null,
+                        'level' => $persistenceLevel,
+                        'duration' => PenaltyLadder::getDuration($persistenceLevel),
+                        'retryAfter' => $accountRetryAfter,
+                    ];
+                }
+
+                if ($k5Level > 0 && IdentityPresence::account($context) && ($keys['k5'] ?? null) !== null) {
+                    $persistence[] = [
+                        'key' => $keys['k5'],
+                        'previousKey' => $keysV1['k5'] ?? null,
+                        'level' => $k5Level,
+                        'duration' => PenaltyLadder::getDuration($k5Level),
+                        'retryAfter' => $retryAfterByKeyType['k5'] ?? PenaltyLadder::getDuration($k5Level),
+                    ];
+                }
+
+                $scopes = [];
+                if ($accountLevel > 0) {
+                    $scopes[] = self::SCOPE_ACCOUNT;
+                }
+                if ($k5Level > 0) {
+                    $scopes[] = self::SCOPE_DEVICE;
+                }
+
+                $candidates[] = $this->candidate($decision, $newMaxLevel, $retryAfter, 'score_update', $persistence, $scopes);
+            }
+        }
+
+        if ($recoveryCandidate !== null) {
+            $candidates[] = $recoveryCandidate;
+        }
+
+        return [
+            'candidates' => $candidates,
+            'budgetState' => $budgetState,
+            'budgetRequestEligible' => $budgetRequestEligible,
+            'budgetSuppressed' => $budgetSuppressed,
+        ];
+    }
+
+    /**
+     * @param list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}> $persistence
+     * @param list<string> $scopes Anti-Equilibrium scopes of an issued SOFT_BLOCK
+     *     from this candidate: SCOPE_DEVICE only when the level comes from K5
+     *     alone; SCOPE_ACCOUNT is the conservative §2.5 default.
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}
+     */
+    private function candidate(string $decision, int $level, int $retryAfter, string $source, array $persistence = [], array $scopes = [self::SCOPE_ACCOUNT]): array
+    {
+        return [
+            'decision' => $decision,
+            'level' => $level,
+            'retryAfter' => max(0, $retryAfter),
+            'source' => $source,
+            'persistence' => $persistence,
+            'scopes' => $scopes,
+        ];
+    }
+
+    /**
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}> $candidates
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}|null
+     */
+    private function aggregateCandidates(array $candidates): ?array
+    {
+        if ($candidates === []) {
+            return null;
+        }
+
+        $winningClass = RateLimitResultDTO::DECISION_ALLOW;
+        foreach ($candidates as $candidate) {
+            if ($candidate['decision'] === RateLimitResultDTO::DECISION_HARD_BLOCK) {
+                $winningClass = RateLimitResultDTO::DECISION_HARD_BLOCK;
+                break;
+            }
+            if ($candidate['decision'] === RateLimitResultDTO::DECISION_SOFT_BLOCK) {
+                $winningClass = RateLimitResultDTO::DECISION_SOFT_BLOCK;
+            }
+        }
+
+        if ($winningClass === RateLimitResultDTO::DECISION_ALLOW) {
+            return null;
+        }
+
+        $classCandidates = array_values(array_filter(
+            $candidates,
+            static fn(array $candidate): bool => $candidate['decision'] === $winningClass,
+        ));
+
+        $highestLevel = 0;
+        $longestRetryAfter = 0;
+        foreach ($classCandidates as $candidate) {
+            $highestLevel = max($highestLevel, $candidate['level']);
+            $longestRetryAfter = max($longestRetryAfter, $candidate['retryAfter']);
+        }
+
+        return $this->candidate($winningClass, $highestLevel, $longestRetryAfter, 'aggregate');
+    }
+
+    /**
+     * Persists the blocks of the winning candidates.
+     *
+     * DEC-029: the K4 punishment publication behind the DEC-007 generation
+     * fence makes at most PUBLICATION_ATTEMPTS calls and reads the coherent
+     * snapshot between calls (so at most one read fewer than calls). It never
+     * throws RateLimitConcurrencyException: by then the request's K4 mutation
+     * and K5 increment are committed, so the failure must not be reported as
+     * "nothing recorded". A publication that is still not applied is reported
+     * per key in the return value and the block is left to the first later
+     * publisher that succeeds; no committed write is rolled back.
+     *
+     * - PUBLICATION_DEFERRED: the budget is exhausted, or no snapshot is
+     *   readable. The caller keeps the decision it computed from the state
+     *   this request wrote.
+     * - PUBLICATION_DROPPED: the re-read K4 level is below 2, so the state no
+     *   longer carries a K4 block. The caller recomputes its decision without
+     *   the K4 contribution.
+     *
+     * The remaining blocks are always persisted. The K4 mutation exhaustion
+     * (RateLimitConcurrencyException before any K4 or K5 write) is not here.
+     *
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}> $candidates
+     * @return array<string, string> key => PUBLICATION_DEFERRED|PUBLICATION_DROPPED, only for unpublished K4 keys
+     */
+    private function persistWinningCandidates(BlockPolicyInterface $policy, array $candidates, ?string $winningClass, bool $persistAllCandidates = false): array
+    {
+        /** @var array<string, string> $unpublished */
+        $unpublished = [];
+        /** @var array<string, array{previousKey: ?string, level: int, duration: int}> $blocks */
+        $blocks = [];
+        foreach ($candidates as $candidate) {
+            if (! $persistAllCandidates && $winningClass !== null && $candidate['decision'] !== $winningClass) {
+                continue;
+            }
+
+            foreach ($candidate['persistence'] as $block) {
+                $current = $blocks[$block['key']] ?? ['previousKey' => null, 'level' => 0, 'duration' => 0];
+                $blocks[$block['key']] = [
+                    'previousKey' => $block['previousKey'] ?? $current['previousKey'],
+                    'level' => max($current['level'], $block['level']),
+                    'duration' => max($current['duration'], $block['duration']),
+                ];
+            }
+        }
+
+        foreach ($blocks as $block) {
+            if ($block['level'] >= 2 && ! $this->store instanceof HardBlockCycleStoreInterface) {
+                throw new RateLimiterException(
+                    'Persisted L2+ blocks require the HardBlockCycleStoreInterface capability.',
+                );
+            }
+        }
+
+        foreach ($blocks as $key => $block) {
+            $keyStore = $this->storeFor((string) $key);
+            $cycleStore = $keyStore instanceof HardBlockCycleStoreInterface ? $keyStore : null;
+            if ($policy instanceof PostPunishmentReentryPolicyInterface
+                && $keyStore instanceof PunishmentLifecycleStoreInterface
+                && $block['level'] >= 2
+                && isset($this->lifecycleEligibleKeys[$key])) {
+                $applied = false;
+                $expectedGeneration = $this->lifecycleEligibleKeys[$key];
+                $publicationLevel = $block['level'];
+                $publicationDuration = $block['duration'];
+                $outcome = self::PUBLICATION_DEFERRED;
+                for ($attempt = 0; $attempt < self::PUBLICATION_ATTEMPTS; $attempt++) {
+                    $transition = CallerTimeStore::blockWithPunishmentLifecycleTracking(
+                        $keyStore,
+                        $key,
+                        $block['previousKey'],
+                        $expectedGeneration,
+                        bin2hex(random_bytes(16)),
+                        $publicationLevel,
+                        $publicationDuration,
+                        self::CYCLE_WINDOW_SECONDS,
+                        self::CYCLE_THRESHOLD,
+                        self::DECAY_PAUSE_SECONDS,
+                        self::PAUSE_HISTORY_RETENTION_SECONDS,
+                        $this->clock->now(),
+                    );
+                    if ($transition->applied) {
+                        $applied = true;
+                        break;
+                    }
+
+                    if ($attempt === self::PUBLICATION_ATTEMPTS - 1) {
+                        break;
+                    }
+
+                    // A failed publication is a generation race, not a reason
+                    // to replay the stale block tuple. Re-read the coherent
+                    // lifecycle snapshot and recompute the current K4 level.
+                    $latest = CallerTimeStore::readGenerationBoundScoreState($keyStore, $key, $block['previousKey'], $this->clock->now());
+                    if ($latest?->generation === null) {
+                        break;
+                    }
+                    $latestScore = $this->calculateDecayedScore(
+                        $latest->value,
+                        $latest->updatedAt,
+                        'k4',
+                        $key,
+                        $block['previousKey'],
+                    );
+                    $latestLevel = $this->determineLevel($latestScore, 'k4', $policy);
+                    if ($latestLevel < 2) {
+                        $outcome = self::PUBLICATION_DROPPED;
+                        break;
+                    }
+                    $expectedGeneration = $latest->generation;
+                    $publicationLevel = $latestLevel;
+                    $publicationDuration = PenaltyLadder::getDuration($latestLevel);
+                }
+                if (! $applied) {
+                    $unpublished[$key] = $outcome;
+                }
+                continue;
+            }
+            if ($block['level'] >= 2) {
+                if ($cycleStore === null) {
+                    throw new RateLimiterException(
+                        'Persisted L2+ blocks require the HardBlockCycleStoreInterface capability.',
+                    );
+                }
+                $cycleStore->blockWithCycleTracking(
+                    $key,
+                    $block['previousKey'],
+                    $block['level'],
+                    $block['duration'],
+                    $this->clock->now()->getTimestamp(),
+                    self::CYCLE_WINDOW_SECONDS,
+                    self::CYCLE_THRESHOLD,
+                    self::DECAY_PAUSE_SECONDS,
+                    self::PAUSE_HISTORY_RETENTION_SECONDS,
+                );
+                continue;
+            }
+
+            CallerTimeStore::block($keyStore, $key, $block['level'], $block['duration'], $this->clock->now());
+        }
+
+        return $unpublished;
+    }
+
+    /**
+     * DEC-029: the candidates of a request whose K4 block was dropped, without
+     * the K4 contribution. A candidate that persisted only a dropped key is
+     * removed; one that also persisted another key keeps that key and takes
+     * the highest level and the longest retryAfter of the kept entries; every
+     * other candidate is unchanged.
+     *
+     * P3 (the decision follows the state): the result must be the decision the
+     * same request makes without any K4 contribution, so each persistence
+     * entry carries the retryAfter of its own key's contribution, set when the
+     * candidate is built. Taking the kept block's ladder duration instead
+     * replaced a K5 retryAfter derived from its decay by the shorter ladder
+     * value (F-172-02, #160: 599 against 1,199 for the same K5 state alone).
+     *
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}> $candidates
+     * @param list<string> $droppedKeys
+     * @return list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}>
+     */
+    private function withoutDroppedK4Contribution(array $candidates, array $droppedKeys): array
+    {
+        $remaining = [];
+        foreach ($candidates as $candidate) {
+            $kept = array_values(array_filter(
+                $candidate['persistence'],
+                static fn(array $block): bool => ! in_array($block['key'], $droppedKeys, true),
+            ));
+            if (count($kept) === count($candidate['persistence'])) {
+                $remaining[] = $candidate;
+                continue;
+            }
+            if ($kept === []) {
+                continue;
+            }
+
+            $level = max(array_column($kept, 'level'));
+            $candidate['persistence'] = $kept;
+            $candidate['level'] = $level;
+            $candidate['retryAfter'] = max(array_column($kept, 'retryAfter'));
+            $candidate['decision'] = $level >= 2
+                ? RateLimitResultDTO::DECISION_HARD_BLOCK
+                : RateLimitResultDTO::DECISION_SOFT_BLOCK;
+            $remaining[] = $candidate;
+        }
+
+        return $remaining;
+    }
+
+    /**
+     * @param array<string, string|null> $keysV2
+     * @param array<string, string|null> $keysV1
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}> $candidates
+     */
+    private function finalizeDecision(
+        BlockPolicyInterface $policy,
+        RateLimitContextDTO $context,
+        RateLimitCommand $request,
+        DeviceIdentityDTO $device,
+        array $keysV2,
+        array $keysV1,
+        array $candidates,
+        ?BudgetStateDTO $budgetState,
+        bool $budgetRequestEligible,
+        bool $budgetSuppressed,
+        ?AdmissionLaneEnum $lane,
+    ): RateLimitResultDTO {
+        $advisoryCandidates = array_values(array_filter(
+            $candidates,
+            fn(array $candidate): bool => str_starts_with($candidate['source'], 'trusted_advisory:'),
+        ));
+        $candidates = array_values(array_filter(
+            $candidates,
+            fn(array $candidate): bool => ! str_starts_with($candidate['source'], 'trusted_advisory:'),
+        ));
+
+        // Unproven lane of an opted policy: no account-scoped candidate (K4U
+        // score levels, account watcher, distributed-account and flood
+        // reactions, recovery guard) refuses or persists, the device-scoped
+        // (K5) parts are kept, and the 24 h budget never adds a candidate.
+        // Scores are still written and read, so they stay observable.
+        if ($this->keepsDeviceScopeOnly($lane)) {
+            $candidates = $this->deviceScopedOnly($candidates, $keysV2, $keysV1);
+        }
+        $budgetSuppressed = $budgetSuppressed || $this->suppressesBudget($lane);
+
+        // A post-punishment K4 mutation is the authoritative candidate for
+        // that same logical K4 request. The pre-mutation score candidate can
+        // still carry a longer decay horizon, so remove only that marked K4
+        // residual. Correlation, budget, flood, and other independent gates
+        // remain eligible to contribute their own retry-after values.
+        if ($this->lifecycleEligibleKeys !== []) {
+            $candidates = array_values(array_filter(
+                $candidates,
+                static fn(array $candidate): bool => $candidate['source'] !== 'score:k4',
+            ));
+        }
+
+        $normalCandidate = $this->aggregateCandidates($candidates);
+        $config = $this->hostPolicy(fn() => $policy->getBudgetConfig());
+        $budgetKey = $this->resolveActiveBudgetKeyV2ThenV1($keysV2['k4'] ?? null, $keysV1['k4'] ?? null);
+        $budgetActive = $config !== null
+            && $budgetState !== null
+            && $budgetKey !== null
+            && $this->budgetTracker->isExceeded($budgetKey, $config->threshold);
+
+        if ($budgetActive
+            && ! $budgetSuppressed
+            && $this->isBudgetCommandEligible($config, $request, $budgetRequestEligible)
+            && ($normalCandidate === null || $normalCandidate['decision'] !== RateLimitResultDTO::DECISION_HARD_BLOCK)
+            && ($request->isFailure || $normalCandidate === null || $normalCandidate['decision'] === RateLimitResultDTO::DECISION_ALLOW)) {
+            $cooldown = $this->acquireBudgetCooldown(
+                $policy,
+                $context->accountId,
+                $device,
+                $config->cooldown_seconds,
+                $lane,
+            );
+
+            if ($cooldown['issued']) {
+                $level = $config->block_level;
+                if ($device->isTrustedSession) {
+                    $level = max($config->trusted_session_floor_level, $level - 1);
+                }
+                $candidates[] = $this->candidate(
+                    RateLimitResultDTO::DECISION_SOFT_BLOCK,
+                    $level,
+                    $cooldown['retryAfter'],
+                    'budget',
+                );
+            }
+        }
+
+        $final = $this->aggregateCandidates($candidates);
+        $this->collectIssuedSoftScopes($final, $candidates);
+        if ($final === null) {
+            $this->persistWinningCandidates($policy, $advisoryCandidates, null);
+
+            return $this->createAllowResult();
+        }
+
+        $unpublished = $this->persistWinningCandidates(
+            $policy,
+            $candidates,
+            $final['decision'],
+            $this->isApiHeavyPolicy($policy),
+        );
+        $this->persistWinningCandidates($policy, $advisoryCandidates, null);
+
+        // DEC-029: a K4 block dropped because the re-read K4 level is below 2
+        // is not part of the decision of the written state; recompute it
+        // through the same aggregation without that contribution.
+        $dropped = array_keys(array_filter(
+            $unpublished,
+            static fn(string $outcome): bool => $outcome === self::PUBLICATION_DROPPED,
+        ));
+        if ($dropped !== []) {
+            $candidates = $this->withoutDroppedK4Contribution($candidates, $dropped);
+            $final = $this->aggregateCandidates($candidates);
+            $this->collectIssuedSoftScopes($final, $candidates);
+            if ($final === null) {
+                return $this->createAllowResult();
+            }
+        }
+
+        $result = $this->createBlockedResult($final['level'], $final['retryAfter'], $final['decision']);
+        if (in_array(self::PUBLICATION_DEFERRED, $unpublished, true)) {
+            return new RateLimitResultDTO(
+                $result->decision,
+                $result->blockLevel,
+                $result->retryAfter,
+                $result->failureMode,
+                new \Maatify\RateLimiter\DTO\RateLimitMetadataDTO(
+                    null,
+                    'k4_publication_deferred',
+                    new \Maatify\RateLimiter\DTO\RateLimitContextMetadataDTO('k4_publication_deferred', 'k4'),
+                ),
+            );
+        }
+
+        return $result;
+    }
+
+    /**
+     * Provenance of the issued SOFT_BLOCK: the union of the winning SOFT
+     * candidates' scopes. It is only collected here; process() then records
+     * exactly one event on one watcher: the account watcher for any account
+     * scope (mixed K4 + K5 included), the device watcher only for a K5-only
+     * SOFT with an eligible device, and the account watcher otherwise.
+     *
+     * @param array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}|null $final
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}> $candidates
+     */
+    private function collectIssuedSoftScopes(?array $final, array $candidates): void
+    {
+        if ($final === null || $final['decision'] !== RateLimitResultDTO::DECISION_SOFT_BLOCK) {
+            return;
+        }
+        foreach ($candidates as $candidate) {
+            if ($candidate['decision'] === RateLimitResultDTO::DECISION_SOFT_BLOCK) {
+                $this->issuedSoftScopes = array_values(array_unique(array_merge($this->issuedSoftScopes, $candidate['scopes'])));
+            }
+        }
+    }
+
+    private function isBudgetCommandEligible(
+        \Maatify\RateLimiter\DTO\BudgetConfigDTO $config,
+        RateLimitCommand $request,
+        bool $failureEligible,
+    ): bool {
+        if ($request->isSuccess) {
+            return false;
+        }
+
+        if ($request->isPreCheck) {
+            return $config->precheck_enforcement;
+        }
+
+        return $request->isFailure && $failureEligible;
+    }
+
+    /**
+     * @return array{issued: bool, retryAfter: int}
+     */
+    private function acquireBudgetCooldown(
+        BlockPolicyInterface $policy,
+        ?string $accountId,
+        DeviceIdentityDTO $device,
+        int $cooldownSeconds,
+        ?AdmissionLaneEnum $lane,
+    ): array {
+        if (! IdentityPresence::isPresent($accountId)) {
+            return ['issued' => false, 'retryAfter' => 0];
+        }
+
+        $currentKey = $this->budgetCooldownKey($this->hostPolicy(fn() => $policy->getName()), $accountId, $this->secret, $lane);
+        $currentMarker = $this->accountStore->get($currentKey);
+        if ($currentMarker !== null) {
+            return [
+                'issued' => false,
+                'retryAfter' => max(0, $currentMarker->updatedAt + $cooldownSeconds - $this->clock->now()->getTimestamp()),
+            ];
+        }
+
+        if ($this->hasPreviousGeneration($device)) {
+            $previousKey = $this->budgetCooldownKey(
+                $this->hostPolicy(fn() => $policy->getName()),
+                $accountId,
+                $this->previousSecret ?? $this->secret,
+                $lane,
+            );
+            if ($previousKey !== $currentKey) {
+                $previousMarker = $this->accountStore->get($previousKey);
+                if ($previousMarker !== null) {
+                    return [
+                        'issued' => false,
+                        'retryAfter' => max(0, $previousMarker->updatedAt + $cooldownSeconds - $this->clock->now()->getTimestamp()),
+                    ];
+                }
+            }
+        }
+
+        // This is the issuance gate. It must stay atomic and must not be
+        // replaced with get()+set().
+        $value = CallerTimeStore::increment($this->accountStore, $currentKey, $cooldownSeconds, 1, $this->clock->now());
+        if ($value !== 1) {
+            return ['issued' => false, 'retryAfter' => 0];
+        }
+
+        return ['issued' => true, 'retryAfter' => max(0, $cooldownSeconds)];
+    }
+
+    private function budgetCooldownKey(string $policyName, string $accountId, string $secret, ?AdmissionLaneEnum $lane): string
+    {
+        return $this->deriveAccountKey($this->laneAuxiliaryPurpose($lane, 'budget_cooldown'), $policyName, $accountId, $secret);
+    }
+
+    private function microCapPurpose(?AdmissionLaneEnum $lane): string
+    {
+        return $lane === AdmissionLaneEnum::P ? AccountScopePurpose::MICROCAP_K5P : AccountScopePurpose::MICROCAP_K5;
+    }
+
+    /**
+     * Scopes of the SOFT_BLOCK issued by the last finalized decision.
+     *
+     * @return list<string>
+     */
+    private function issuedSoftScopes(): array
+    {
+        return $this->issuedSoftScopes;
+    }
+
+    /**
+     * Current and previous device Anti-Equilibrium watcher keys for the
+     * account + device of a non-ephemeral, fingerprinted, account-bound
+     * request under a budgeted, non-API policy with K5 thresholds (DEC-026);
+     * null otherwise.
+     *
+     * @return array{current: string, previous: ?string}|null
+     */
+    private function deviceAntiEquilibriumKeys(
+        BlockPolicyInterface $policy,
+        RateLimitContextDTO $context,
+        DeviceIdentityDTO $device,
+        bool $isEphemeral,
+        ?AdmissionLaneEnum $lane,
+    ): ?array {
+        // Same eligibility as the account watcher (a budgeted policy), and
+        // only where a K5 level can exist: never for API_OVERUSE.
+        if ($this->hostPolicy(fn() => $policy->getBudgetConfig()) === null
+            || $this->isApiHeavyPolicy($policy)
+            || $this->hostPolicy(fn() => $policy->getScoreThresholds())->k5 === null
+            || $isEphemeral
+            || ! IdentityPresence::account($context)
+            || ! IdentityPresence::fingerprint($device)) {
+            return null;
+        }
+
+        $purpose = AccountScopePurpose::aux($this->laneAuxiliaryPurpose($lane, 'anti_equilibrium_device'));
+        $policyName = $this->hostPolicy(fn() => $policy->getName());
+        $current = $this->deriveAccountKey($purpose, $policyName, $context->accountId, $this->secret, $this->k5Material($device, $lane) ?? '');
+        $previous = null;
+        if ($this->hasPreviousGeneration($device)) {
+            $previous = $this->deriveAccountKey($purpose, $policyName, $context->accountId, $this->previousSecret ?? $this->secret, $this->previousK5Material($device, $lane) ?? '');
+            if ($previous === $current) {
+                $previous = null;
+            }
+        }
+
+        return ['current' => $current, 'previous' => $previous];
+    }
+
+    /**
+     * Derive an account-only auxiliary state key without exposing the subject
+     * to either storage boundary.
+     */
+    private function auxiliaryAccountKey(
+        string $policyName,
+        string $purpose,
+        string $accountId,
+        string $secret,
+    ): string {
+        return $this->deriveAccountKey(AccountScopePurpose::aux($purpose), $policyName, $accountId, $secret);
+    }
+
+    /**
+     * Derive the previous outer-key generation only when that generation exists.
+     */
+    private function previousAuxiliaryAccountKey(
+        string $policyName,
+        string $purpose,
+        string $accountId,
+    ): ?string {
+        return $this->previousSecret === null
+            ? null
+            : $this->auxiliaryAccountKey($policyName, $purpose, $accountId, $this->previousSecret);
+    }
+
+    private function isKnownForAccount(DeviceIdentityDTO $device): bool
+    {
+        return $device->isTrustedSession || $device->isDevicePreviouslyVerifiedForAccount;
+    }
+
+    private function isCredentialSprayPolicy(BlockPolicyInterface $policy): bool
+    {
+        return $this->hasCapability($policy, PolicyCapabilityEnum::CREDENTIAL_SPRAY);
+    }
+
+    private function isDistributedAccountPolicy(BlockPolicyInterface $policy): bool
+    {
+        return $this->hasCapability($policy, PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT);
+    }
+
+    private function isTrustedAuthenticationPolicy(BlockPolicyInterface $policy, DeviceIdentityDTO $device): bool
+    {
+        return $device->isTrustedSession && $this->hasCapability($policy, PolicyCapabilityEnum::TRUSTED_AUTHENTICATION);
+    }
+
+    private function isK1Key(string $keyType): bool
+    {
+        return $keyType === 'k1';
+    }
+
+    private function isApiHeavyPolicy(BlockPolicyInterface $policy): bool
+    {
+        return $this->hasCapability($policy, PolicyCapabilityEnum::API_OVERUSE);
+    }
+
+    private function hasCapability(BlockPolicyInterface $policy, PolicyCapabilityEnum $capability): bool
+    {
+        return $policy instanceof PolicyCapabilityProviderInterface
+            && in_array($capability, $this->hostPolicy(fn() => $policy->getCapabilities()), true);
+    }
+
+    // --- Admission lane (opted policies only; `null` is today's behaviour) ---
+
+    /**
+     * A lane is accepted only for a policy that declares the admission
+     * capability: the U and P rules never reach a policy that did not opt in.
+     */
+    private function assertLaneAllowed(BlockPolicyInterface $policy, ?AdmissionLaneEnum $lane): void
+    {
+        if ($lane !== null && ! $this->hasCapability($policy, PolicyCapabilityEnum::ADMISSION_RESERVATION)) {
+            throw new RateLimiterException('An admission lane requires a policy that declares the admission capability.');
+        }
+    }
+
+    /** Account key type: K4P on the proven lane, K4 otherwise. */
+    private function k4KeyType(?AdmissionLaneEnum $lane): string
+    {
+        return $lane === AdmissionLaneEnum::P ? 'k4p' : 'k4';
+    }
+
+    /** Device key type: K5p on the proven lane, K5 otherwise. */
+    private function k5KeyType(?AdmissionLaneEnum $lane): string
+    {
+        return $lane === AdmissionLaneEnum::P ? 'k5p' : 'k5';
+    }
+
+    /** Auxiliary purpose of the lane: the proven family is the unsuffixed purpose with `_p` appended. */
+    private function laneAuxiliaryPurpose(?AdmissionLaneEnum $lane, string $purpose): string
+    {
+        return $lane === AdmissionLaneEnum::P ? $purpose . '_p' : $purpose;
+    }
+
+    /**
+     * K5 material: with a lane, the instance-id component when the device carries one, else the fingerprint
+     * component (the A0 path); without a lane always the fingerprint (an instance id is ignored). The pipeline
+     * selects a component and never re-hashes it.
+     */
+    private function k5Material(DeviceIdentityDTO $device, ?AdmissionLaneEnum $lane): ?string
+    {
+        return $lane === null ? $device->fingerprintHash : ($device->deviceIdHash ?? $device->fingerprintHash);
+    }
+
+    /**
+     * Previous generation of the K5 material. It is the same material derived by the previous hasher (the previous
+     * secret selects the previous key); a device without an id, or no lane, keeps the fingerprint generation.
+     */
+    private function previousK5Material(DeviceIdentityDTO $device, ?AdmissionLaneEnum $lane): ?string
+    {
+        return $lane === null || $device->deviceIdHash === null
+            ? $this->previousFingerprintHash($device)
+            : ($device->previousDeviceIdHash ?? $device->deviceIdHash);
+    }
+
+    /** The collective churn, dilution and credential-spray rules apply only without a lane. */
+    private function appliesCollectiveCorrelation(?AdmissionLaneEnum $lane): bool
+    {
+        return $lane === null;
+    }
+
+    /** Proven lane: no device-cap observation, no distributed-account observation, no flood. */
+    private function isProvenLane(?AdmissionLaneEnum $lane): bool
+    {
+        return $lane === AdmissionLaneEnum::P;
+    }
+
+    /** Proven lane: a K1, K2 or K3 score yields no block read, threshold candidate or level. */
+    private function ignoresCollectiveKeyType(?AdmissionLaneEnum $lane, string $keyType): bool
+    {
+        return $lane === AdmissionLaneEnum::P && in_array($keyType, ['k1', 'k2', 'k3'], true);
+    }
+
+    /** Unproven lane: only device-scoped candidates refuse or persist. */
+    private function keepsDeviceScopeOnly(?AdmissionLaneEnum $lane): bool
+    {
+        return $lane === AdmissionLaneEnum::U;
+    }
+
+    /** Unproven lane: the 24 h account budget adds no candidate. */
+    private function suppressesBudget(?AdmissionLaneEnum $lane): bool
+    {
+        return $lane === AdmissionLaneEnum::U;
+    }
+
+    /**
+     * Keeps device-scoped candidates, rebuilds mixed account + device candidates from their K5 persistence only,
+     * and drops purely account-scoped candidates.
+     *
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}> $candidates
+     * @param array<string, string|null> $keysV2
+     * @param array<string, string|null> $keysV1
+     * @return list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}>
+     */
+    private function deviceScopedOnly(array $candidates, array $keysV2, array $keysV1): array
+    {
+        $k4 = array_values(array_filter([$keysV2['k4'] ?? null, $keysV1['k4'] ?? null], static fn(?string $k): bool => $k !== null));
+        $out = [];
+        foreach ($candidates as $candidate) {
+            if (! in_array(self::SCOPE_ACCOUNT, $candidate['scopes'], true)) {
+                $out[] = $candidate;
+                continue;
+            }
+            if (! in_array(self::SCOPE_DEVICE, $candidate['scopes'], true)) {
+                continue;
+            }
+            $persistence = array_values(array_filter(
+                $candidate['persistence'],
+                static fn(array $p): bool => ! in_array($p['key'], $k4, true),
+            ));
+            if ($persistence === []) {
+                continue;
+            }
+            $level = max(array_map(static fn(array $p): int => $p['level'], $persistence));
+            $out[] = $this->candidate(
+                $level >= 2 ? RateLimitResultDTO::DECISION_HARD_BLOCK : RateLimitResultDTO::DECISION_SOFT_BLOCK,
+                $level,
+                PenaltyLadder::getDuration($level),
+                $candidate['source'],
+                $persistence,
+                [self::SCOPE_DEVICE],
+            );
+        }
+
+        return $out;
+    }
+
+    private function isApiHeavyKeyType(string $keyType): bool
+    {
+        return $this->isK1Key($keyType) || in_array($keyType, ['k2', 'k3'], true);
+    }
+
+    private function isCanonicalApiHeavyEnforcementKeyType(string $keyType): bool
+    {
+        return in_array($keyType, ['k1', 'k2', 'k3'], true);
+    }
+
+    // --- Budget Key-Rotation Helpers ---
+    /**
+     * Resolve the single logical budget key across key rotation: V2 wins,
+     * V1 is the fallback, never a merge. Returns null when neither version
+     * holds a valid (non-expired) budget.
+     *
+     * @see docs/KEY_STRATEGY.md §4.3.1
+     */
+    private function resolveActiveBudgetState(?string $keyV2, ?string $keyV1): ?BudgetStateDTO
+    {
+        if ($keyV2 !== null) {
+            $current = CallerTimeStore::getBudget($this->accountStore, $keyV2, $this->clock->now());
+            if ($current !== null) {
+                return $current;
+            }
+        }
+
+        if ($keyV1 !== null) {
+            return CallerTimeStore::getBudget($this->accountStore, $keyV1, $this->clock->now());
+        }
+
+        return null;
+    }
+
+    private function resolveActiveBudgetKeyV2ThenV1(?string $keyV2, ?string $keyV1): ?string
+    {
+        if ($keyV2 !== null && CallerTimeStore::getBudget($this->accountStore, $keyV2, $this->clock->now()) !== null) {
+            return $keyV2;
+        }
+
+        if ($keyV1 !== null && CallerTimeStore::getBudget($this->accountStore, $keyV1, $this->clock->now()) !== null) {
+            return $keyV1;
+        }
+
+        return null;
+    }
+
+    /**
+     * Increment a budget counter across key rotation, migrating V1 epoch
+     * state into V2 atomically when required. This is used by both the K4
+     * account budget and the K5 micro-cap budget.
+     *
+     * - Active V2 → normal V2 increment (V1 ignored).
+     * - No V2 + valid V1 → atomic seed + increment into V2 via
+     *   BudgetSeedStoreInterface; explicit failure when the capability is
+     *   missing (silent reset is forbidden).
+     * - Neither valid → normal V2 increment.
+     *
+     * @see docs/KEY_STRATEGY.md §4.3.2
+     */
+    private function incrementBudgetAcrossRotation(string $keyV2, ?string $keyV1, int $amount = 1): BudgetStateDTO
+    {
+        $v2State = CallerTimeStore::getBudget($this->accountStore, $keyV2, $this->clock->now());
+        if ($v2State !== null) {
+            return CallerTimeStore::incrementBudget($this->accountStore, $keyV2, self::BUDGET_EPOCH_SECONDS, $amount, $this->clock->now());
+        }
+
+        if ($keyV1 !== null) {
+            $v1State = CallerTimeStore::getBudget($this->accountStore, $keyV1, $this->clock->now());
+            if ($v1State !== null) {
+                if (! $this->accountStore instanceof BudgetSeedStoreInterface) {
+                    throw new RateLimiterException(
+                        'Budget rotation migration requires the BudgetSeedStoreInterface capability; '
+                        . 'the configured store cannot carry the previous-secret budget state into V2 without a silent reset.',
+                    );
+                }
+
+                return CallerTimeStore::incrementBudgetWithSeed($this->accountStore, $keyV2, self::BUDGET_EPOCH_SECONDS, $v1State, $amount, $this->clock->now());
+            }
+        }
+
+        return CallerTimeStore::incrementBudget($this->accountStore, $keyV2, self::BUDGET_EPOCH_SECONDS, $amount, $this->clock->now());
+    }
+
+    private function hasPreviousGeneration(DeviceIdentityDTO $device): bool
+    {
+        return $this->previousSecret !== null || $device->previousFingerprintHash !== null;
+    }
+
+    private function previousFingerprintHash(DeviceIdentityDTO $device): ?string
+    {
+        return $device->previousFingerprintHash ?? $device->fingerprintHash;
+    }
+
+    // --- Helpers (Same as before) ---
+    /**
+     * #185 F-185-08 (DEC-030): one score write of K1, K2, K3 or K5. Without a decay credit (`$netChange >= $delta`) the
+     * write is the additive `increment()`, correct under any interleaving. A write that carries a decay credit is fenced
+     * by the snapshot it was computed from (`incrementIfSnapshot()`); on a miss the score is read again and the decay
+     * computed again, at most three attempts in all as on the K4 path. When the attempts are exhausted the request adds
+     * its own delta alone: no update is lost and no exception or block follows, the only cost being this write's decay
+     * credit (DEC-029 P1 forbids an exception after K4/K5 commit).
+     */
+    private function writeScore(string $key, string $keyType, ?string $previousKey, ?PipelineScoreDTO $snapshot, int $delta, int $netChange): int
+    {
+        $now = $this->clock->now();
+        $keyStore = $this->storeFor($key);
+        // A decay credit exists only against the current-generation score itself: an absent score or a V1 fallback has
+        // no base value, so its net change is at least the delta.
+        if ($netChange >= $delta || $snapshot === null || $snapshot->isFromV1 || ! $keyStore instanceof SnapshotFencedScoreStoreInterface) {
+            return CallerTimeStore::increment($this->storeFor($key), $key, 86400, $netChange, $now);
+        }
+        $expectedValue = $snapshot->value;
+        $expectedUpdatedAt = $snapshot->updatedAt;
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $written = CallerTimeStore::incrementIfSnapshot($keyStore, $key, 86400, $expectedValue, $expectedUpdatedAt, ScoreArithmetic::sum($expectedValue, $netChange, $keyType . ' fenced score'), $now);
+            if ($written !== null) {
+                return $written;
+            }
+            $fresh = $this->storeFor($key)->get($key);
+            if ($fresh === null) {
+                return CallerTimeStore::increment($this->storeFor($key), $key, 86400, $delta, $now);
+            }
+            // #185 F-185-11: the re-read sums are checked like the first ones, so no overflow is silent on this path.
+            $netChange = ScoreArithmetic::difference(
+                ScoreArithmetic::sum($this->calculateDecayedScore($fresh->value, $fresh->updatedAt, $keyType, $key, $previousKey), $delta, $keyType . ' decayed score + delta'),
+                $fresh->value,
+                $keyType . ' net change',
+            );
+            if ($netChange >= $delta) {
+                return CallerTimeStore::increment($this->storeFor($key), $key, 86400, $netChange, $now);
+            }
+            $expectedValue = $fresh->value;
+            $expectedUpdatedAt = $fresh->updatedAt;
+        }
+
+        return CallerTimeStore::increment($this->storeFor($key), $key, 86400, $delta, $now);
+    }
+
+    private function calculateDecayedScore(
+        int $value,
+        int $updatedAt,
+        string $keyType,
+        string $key,
+        ?string $previousKey = null,
+    ): int {
+        $pauseState = $this->decayPauseState($key, $previousKey, $updatedAt);
+        $decayAmount = $this->decayCalculator->calculateDecay(
+            $value,
+            $updatedAt,
+            $this->currentBlockLevel($key, $previousKey),
+            $this->scopeForKeyType($keyType),
+            $pauseState->elapsedPausedSeconds,
+        );
+
+        return max(0, $value - $decayAmount);
+    }
+
+    private function scoreDecayRetryAfter(
+        PipelineScoreDTO $score,
+        string $key,
+        ?string $previousKey,
+        string $keyType,
+        int $exitThreshold,
+    ): int {
+        $pauseState = $this->decayPauseState($key, $previousKey, $score->updatedAt);
+
+        return $this->decayCalculator->secondsUntilBelowThreshold(
+            $score->value,
+            $score->updatedAt,
+            $this->currentBlockLevel($key, $previousKey),
+            $this->scopeForKeyType($keyType),
+            $exitThreshold,
+            $pauseState->elapsedPausedSeconds,
+            $pauseState->activePauseUntil,
+        );
+    }
+
+    private function currentBlockLevel(string $key, ?string $previousKey = null): int
+    {
+        $block = CallerTimeStore::checkBlock($this->storeFor($key), $key, $this->clock->now());
+        $now = $this->clock->now()->getTimestamp();
+        if ($block !== null && $block->expiresAt > $now) {
+            return $block->level;
+        }
+
+        if ($previousKey !== null && $previousKey !== $key) {
+            $block = CallerTimeStore::checkBlock($this->storeFor($previousKey), $previousKey, $this->clock->now());
+            if ($block !== null && $block->expiresAt > $now) {
+                return $block->level;
+            }
+        }
+
+        return 0;
+    }
+
+    private function decayPauseState(string $key, ?string $previousKey, int $fromTimestamp): DecayPauseStateDTO
+    {
+        $keyStore = $this->storeFor($key);
+        if (! $keyStore instanceof HardBlockCycleStoreInterface) {
+            return new DecayPauseStateDTO(0, 0);
+        }
+
+        return $keyStore->readDecayPauseState(
+            $key,
+            $previousKey,
+            $fromTimestamp,
+            $this->clock->now()->getTimestamp(),
+        );
+    }
+
+    private function scopeForKeyType(string $keyType): string
+    {
+        return match ($keyType) {
+            'k4' => 'account',
+            'k3', 'k5' => 'device',
+            default => 'ip',
+        };
+    }
+    // ... other helpers identical to previous turn ...
+
+    /**
+     * @return array<string, string|null>
+     */
+    private function buildKeys(
+        RateLimitContextDTO $context,
+        string $ua,
+        ?string $fpHash,
+        string $policyName,
+        string $secret,
+        ?AdmissionLaneEnum $lane = null,
+        ?string $k5Material = null,
+    ): array {
+        // Enforce strict Key Strategy namespacing:
+        // {policy}:rate_limiter:{type}:{algo_ver}:{env}:{scope_val}
+        $base = "{$policyName}:rate_limiter";
+        $ver = "v2"; // Current algo version
+        $env = $this->envScope;
+
+        $k1 = $this->hashKey("{$base}:k1:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}", $secret);
+        $k2 = $this->hashKey("{$base}:k2:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}:{$ua}", $secret);
+        $k3 = IdentityPresence::isPresent($fpHash) ? $this->hashKey("{$base}:k3:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}:{$fpHash}", $secret) : null;
+        $k4 = IdentityPresence::account($context) ? $this->deriveAccountKey($this->k4KeyType($lane), $policyName, $context->accountId, $secret) : null;
+        $k5 = IdentityPresence::account($context) && IdentityPresence::isPresent($fpHash) ? $this->deriveAccountKey($this->k5KeyType($lane), $policyName, $context->accountId, $secret, $k5Material ?? $fpHash) : null;
+
+        return ['k1' => $k1, 'k2' => $k2, 'k3' => $k3, 'k4' => $k4, 'k5' => $k5];
+    }
+
+    /**
+     * @param   array<string, string|null>  $keysV2
+     * @param   array<string, string|null>  $keysV1
+     *
+     * @return array<string, ?PipelineScoreDTO>
+     */
+    private function fetchScores(array $keysV2, array $keysV1): array
+    {
+        $scores = [];
+        foreach ($keysV2 as $keyType => $key) {
+            $data = $key ? $this->storeFor($key)->get($key) : null;
+            $isFromV1 = false;
+            if (! $data && isset($keysV1[$keyType]) && $keysV1[$keyType]) {
+                $data = $this->storeFor($keysV1[$keyType])->get($keysV1[$keyType]);
+                if ($data) {
+                    $isFromV1 = true;
+                }
+            }
+            $scores[$keyType] = $data ? new PipelineScoreDTO($data->value, $data->updatedAt, $isFromV1) : null;
+        }
+
+        return $scores;
+    }
+
+    /**
+     * @param   array<string, ?PipelineScoreDTO>  $rawScores
+     * @param   array<string, string|null>        $keys
+     * @param   array<string, string|null>        $keysV1
+     *
+     * @return array<string, int>
+     */
+    private function applyDecay(array $rawScores, array $keys, array $keysV1): array
+    {
+        $decayed = [];
+        foreach ($keys as $keyType => $key) {
+            $dto = $rawScores[$keyType] ?? null;
+            if (! $key || ! $dto) {
+                $decayed[$keyType] = 0;
+                continue;
+            }
+            $decayed[$keyType] = $this->calculateDecayedScore(
+                $dto->value,
+                $dto->updatedAt,
+                $keyType,
+                $key,
+                $keysV1[$keyType] ?? null,
+            );
+        }
+
+        return $decayed;
+    }
+
+    /**
+     * #185 F-185-11: every score this request may write stays a PHP int. Run after the scores are read and decayed and
+     * before the first write of `processUpdates()` (the known-device allowance, the repeated-missing-fingerprint marker,
+     * the scores), on an upper bound of each key's delta: K4 may gain `k4_failure` through the known-device allowance
+     * and `k4_repeated_missing_fp` in `processUpdates()`, so both are added to the bound.
+     *
+     * @param array<string, string|null>       $keys
+     * @param array<string, ?PipelineScoreDTO> $rawScores
+     * @param array<string, int>               $decayedScores
+     */
+    private function assertScoreUpdatesRepresentable(
+        BlockPolicyInterface $policy,
+        RateLimitContextDTO $context,
+        RateLimitCommand $request,
+        DeviceIdentityDTO $device,
+        bool $isEphemeral,
+        array $keys,
+        array $rawScores,
+        array $decayedScores,
+    ): void {
+        $deltas = $this->calculateDeltas($policy, $context, $device, $request, $isEphemeral);
+        if ($request->isFailure) {
+            $dto = $this->hostPolicy(fn() => $policy->getScoreDeltas());
+            $deltas['k4'] = ScoreArithmetic::sum(max($deltas['k4'], $dto->k4_failure), $dto->k4_repeated_missing_fp, 'K4 delta bound');
+        }
+        foreach ($keys as $keyType => $key) {
+            $delta = $deltas[$keyType] ?? 0;
+            if (! $key || $delta <= 0) {
+                continue;
+            }
+            $score = $rawScores[$keyType] ?? null;
+            $baseValue = ($score && ! $score->isFromV1) ? $score->value : 0;
+            $next = ScoreArithmetic::sum($decayedScores[$keyType] ?? 0, $delta, $keyType . ' decayed score + delta');
+            ScoreArithmetic::difference($next, $baseValue, $keyType . ' net change');
+        }
+    }
+
+    /**
+     * @return array{k1: int, k2: int, k3: int, k4: int, k5: int}
+     */
+    private function calculateDeltas(
+        BlockPolicyInterface $policy,
+        RateLimitContextDTO $context,
+        DeviceIdentityDTO $device,
+        RateLimitCommand $request,
+        bool $isEphemeral,
+    ): array {
+        $deltasDto = $this->hostPolicy(fn() => $policy->getScoreDeltas());
+        // Fix Error 3: Initialize with stable shape
+        $result = ['k1' => 0, 'k2' => 0, 'k3' => 0, 'k4' => 0, 'k5' => 0];
+
+        if ($deltasDto->access > 0) {
+            $cost = ScoreArithmetic::product($deltasDto->access, $request->cost, 'access delta × command cost');
+            $result['k1'] += $cost;
+            $result['k2'] += $cost;
+            $result['k3'] += $cost;
+        }
+        if ($request->isFailure) {
+            if (! IdentityPresence::fingerprint($device)) {
+                // Missing-fingerprint scoring is independent from the
+                // Login/OTP new-device classification: one failure updates
+                // both K4 and K2 when their deltas are configured.
+                if ($deltasDto->k4_failure > 0) {
+                    $result['k4'] = $deltasDto->k4_failure;
+                }
+                if ($deltasDto->k2_missing_fp > 0) {
+                    $result['k2'] = $deltasDto->k2_missing_fp;
+                }
+            } elseif ($deltasDto->k4_failure > 0 || $deltasDto->k5_failure > 0) {
+                // Authentication-style policies express known/new-device
+                // classification through their K4/K5 failure deltas. API
+                // Heavy keeps its existing access/spray behavior because it
+                // has no authentication failure deltas.
+                if ($isEphemeral && ! $this->isApiHeavyPolicy($policy) && $deltasDto->k4_failure > 0) {
+                    // An ephemeral overflow fingerprint has been rejected by
+                    // the bounded device cap. Keep the authentication failure
+                    // on the account path without creating any K5 identity or
+                    // known-device micro-cap state.
+                    $result['k4'] = $deltasDto->k4_failure;
+                } elseif ($this->isKnownForAccount($device)) {
+                    if ($deltasDto->k5_failure > 0) {
+                        $result['k5'] = $deltasDto->k5_failure;
+                    }
+                } elseif ($deltasDto->k4_failure > 0) {
+                    $result['k4'] = $deltasDto->k4_failure;
+                }
+            }
+            if ($deltasDto->k1_spray > 0) {
+                $result['k1'] = $deltasDto->k1_spray;
+            }
+        }
+
+        return $result;
+    }
+
+    private function getScopedThresholds(string $keyType, BlockPolicyInterface $policy): ?ScoreThresholdsDTO
+    {
+        $thresholds = $this->hostPolicy(fn() => $policy->getScoreThresholds());
+
+        return match ($keyType) {
+            'k1' => $thresholds->k1,
+            'k2' => $thresholds->k2,
+            'k3' => $thresholds->k3,
+            'k4' => $thresholds->k4,
+            'k5' => $thresholds->k5,
+            default => $thresholds->default,
+        };
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function normalizedWatchThresholds(ScoreThresholdsDTO $thresholds): array
+    {
+        $levelsByThreshold = [];
+        foreach ([1 => $thresholds->l1, 2 => $thresholds->l2, 3 => $thresholds->l3] as $level => $threshold) {
+            if ($threshold === PHP_INT_MAX) {
+                continue;
+            }
+
+            $levelsByThreshold[$threshold] = max($levelsByThreshold[$threshold] ?? 0, $level);
+        }
+
+        return $levelsByThreshold;
+    }
+
+    private function determineLevel(int $score, string $keyType, BlockPolicyInterface $policy): int
+    {
+        $dto = $this->getScopedThresholds($keyType, $policy);
+        if (! $dto) {
+            return 0;
+        }
+
+        if ($score >= $dto->l3) {
+            return 3;
+        }
+        if ($score >= $dto->l2) {
+            return 2;
+        }
+        if ($score >= $dto->l1) {
+            return 1;
+        }
+
+        return 0;
+    }
+
+    private function hashKey(string $input, string $secret): string
+    {
+        return hash_hmac('sha256', $input, $secret);
+    }
+
+    private function getIpPrefix(string $ip, int $cidr = 64): string
+    {
+        return SourcePrefix::of($ip, $cidr);
+    }
+
+    private function createBlockedResult(int $level, int $retryAfter, string $decision): RateLimitResultDTO
+    {
+        return new RateLimitResultDTO($decision, $level, $retryAfter, 'NORMAL', null);
+    }
+
+    private function createAllowResult(): RateLimitResultDTO
+    {
+        return new RateLimitResultDTO(RateLimitResultDTO::DECISION_ALLOW, 0, 0, 'NORMAL', null);
+    }
+
+    /** @return list<object> */
+    public function ownedResources(): array
+    {
+        return OwnershipRegistry::collect([$this->store, $this->correlationStore, $this->budgetTracker, $this->antiEquilibriumGate, $this->decayCalculator, $this->ephemeralBucket], [], [$this->clock]);
+    }
+
+    /**
+     * DEC-041: a policy getter is Host code: a call it makes into the library from this stack is a re-entry, not a nested operation.
+     *
+     * @template T
+     * @param callable(): T $call
+     * @return T
+     */
+    private function hostPolicy(callable $call): mixed
+    {
+        return OwnershipRegistry::crossing($this->store, $call);
+    }
+}

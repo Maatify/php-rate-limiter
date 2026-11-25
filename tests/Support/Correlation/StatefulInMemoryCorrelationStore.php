@@ -17,6 +17,7 @@ use Maatify\RateLimiter\Repository\CallerTimeBoundedCorrelationSnapshotRotationS
 
 class StatefulInMemoryCorrelationStore implements \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface, BoundedCorrelationSnapshotRotationStoreInterface, CallerTimeBoundedCorrelationSnapshotRotationStoreInterface, CallerTimeDecimalMillisecondsCorrelationRotationStoreInterface, CallerTimeDecimalMillisecondsBoundedCorrelationRotationStoreInterface, CallerTimeDecimalMillisecondsBoundedCorrelationSnapshotRotationStoreInterface
 {
+    use \Maatify\RateLimiter\Tests\Support\E1View;
     /** @var array<string, array{items: array<string, bool>, expiresAt: int|null}> */
     private array $sets = [];
 
@@ -34,12 +35,6 @@ class StatefulInMemoryCorrelationStore implements \Maatify\RateLimiter\Repositor
     private static ?\WeakMap $callerTimes = null;
 
     public function __construct(private readonly ClockInterface $clock) {}
-
-    /** DEC-044: the in-memory store keys by the plain logical string, which already differs between V2 and E1; its view is itself. */
-    public function e1Keyspace(): static
-    {
-        return $this;
-    }
 
     public function addDistinct(string $key, string $item, int $ttlSeconds): int
     {

@@ -43,7 +43,7 @@ final class RateLimiterBuilderWorkflowTest extends TestCase
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $loginResult->decision);
         self::assertSame(
             3,
-            $store->get($this->scopeKey('login_protection', 'k4', $loginContext, 'key-secret', 'fingerprint-secret'))?->value,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->scopeKey('login_protection', 'k4', $loginContext, 'key-secret', 'fingerprint-secret'))->get($this->scopeKey('login_protection', 'k4', $loginContext, 'key-secret', 'fingerprint-secret'))?->value,
         );
 
         $otpContext = $this->context('default-otp-account', ['device' => 'otp']);
@@ -56,7 +56,7 @@ final class RateLimiterBuilderWorkflowTest extends TestCase
         self::assertSame(1, $otpResult->blockLevel);
         self::assertSame(
             5,
-            $store->get($this->scopeKey('otp_protection', 'k4', $otpContext, 'key-secret', 'fingerprint-secret'))?->value,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->scopeKey('otp_protection', 'k4', $otpContext, 'key-secret', 'fingerprint-secret'))->get($this->scopeKey('otp_protection', 'k4', $otpContext, 'key-secret', 'fingerprint-secret'))?->value,
         );
 
         $apiContext = $this->context('default-api-account', ['device' => 'api']);
@@ -69,7 +69,13 @@ final class RateLimiterBuilderWorkflowTest extends TestCase
         foreach (['k1', 'k2', 'k3'] as $scope) {
             self::assertSame(
                 1,
-                $store->get($this->scopeKey(
+                \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->scopeKey(
+                    'api_heavy_protection',
+                    $scope,
+                    $apiContext,
+                    'key-secret',
+                    'fingerprint-secret',
+                ))->get($this->scopeKey(
                     'api_heavy_protection',
                     $scope,
                     $apiContext,
@@ -113,7 +119,7 @@ final class RateLimiterBuilderWorkflowTest extends TestCase
             $currentOuter,
             $currentFingerprint,
         );
-        $store->block($previousKey, 2, 600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousKey)->block($previousKey, 2, 600);
 
         $limiter = $this->buildLimiter(
             new RateLimiterConfig(
@@ -134,18 +140,30 @@ final class RateLimiterBuilderWorkflowTest extends TestCase
 
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         self::assertSame(2, $result->blockLevel);
-        self::assertSame(2, $store->checkBlock($previousKey)?->level);
-        self::assertNull($store->checkBlock($currentKey));
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousKey)->checkBlock($previousKey)?->level);
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $currentKey)->checkBlock($currentKey));
 
         if ($previousOuter !== null && $previousFingerprint !== null) {
-            self::assertNull($store->checkBlock($this->scopeKey(
+            self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->scopeKey(
+                'login_protection',
+                'k5',
+                $context,
+                $currentOuter,
+                $previousFingerprint,
+            ))->checkBlock($this->scopeKey(
                 'login_protection',
                 'k5',
                 $context,
                 $currentOuter,
                 $previousFingerprint,
             )));
-            self::assertNull($store->checkBlock($this->scopeKey(
+            self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->scopeKey(
+                'login_protection',
+                'k5',
+                $context,
+                $previousOuter,
+                $currentFingerprint,
+            ))->checkBlock($this->scopeKey(
                 'login_protection',
                 'k5',
                 $context,
@@ -187,7 +205,7 @@ final class RateLimiterBuilderWorkflowTest extends TestCase
             $currentOuter,
             $currentFingerprint,
         );
-        $store->set($previousKey, 2, 86400);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousKey)->set($previousKey, 2, 86400);
 
         $limiter = $this->buildLimiter(
             new RateLimiterConfig(
@@ -207,18 +225,30 @@ final class RateLimiterBuilderWorkflowTest extends TestCase
         );
 
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
-        self::assertSame(2, $store->get($previousKey)?->value);
-        self::assertSame(4, $store->get($currentKey)?->value);
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousKey)->get($previousKey)?->value);
+        self::assertSame(4, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $currentKey)->get($currentKey)?->value);
 
         if ($previousOuter !== null && $previousFingerprint !== null) {
-            self::assertNull($store->get($this->scopeKey(
+            self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->scopeKey(
+                'login_protection',
+                'k5',
+                $context,
+                $currentOuter,
+                $previousFingerprint,
+            ))->get($this->scopeKey(
                 'login_protection',
                 'k5',
                 $context,
                 $currentOuter,
                 $previousFingerprint,
             )));
-            self::assertNull($store->get($this->scopeKey(
+            self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->scopeKey(
+                'login_protection',
+                'k5',
+                $context,
+                $previousOuter,
+                $currentFingerprint,
+            ))->get($this->scopeKey(
                 'login_protection',
                 'k5',
                 $context,
@@ -247,8 +277,8 @@ final class RateLimiterBuilderWorkflowTest extends TestCase
             'current-outer',
             'current-fingerprint',
         );
-        $store->block($foreignKey, 2, 600);
-        $store->set($foreignKey, 2, 86400);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $foreignKey)->block($foreignKey, 2, 600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $foreignKey)->set($foreignKey, 2, 86400);
 
         $limiter = $this->buildLimiter(
             new RateLimiterConfig('current-outer', 'current-fingerprint', 'prod'),
@@ -263,10 +293,10 @@ final class RateLimiterBuilderWorkflowTest extends TestCase
 
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
         self::assertSame(0, $result->blockLevel);
-        self::assertSame(2, $store->checkBlock($foreignKey)?->level);
-        self::assertSame(2, $store->get($foreignKey)?->value);
-        self::assertNull($store->checkBlock($currentKey));
-        self::assertNull($store->get($currentKey));
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $foreignKey)->checkBlock($foreignKey)?->level);
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $foreignKey)->get($foreignKey)?->value);
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $currentKey)->checkBlock($currentKey));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $currentKey)->get($currentKey));
     }
 
     /**
@@ -350,6 +380,10 @@ final class RateLimiterBuilderWorkflowTest extends TestCase
     ): string {
         $base = "{$policy}:rate_limiter:{$scope}:v2:prod:";
         $fingerprintHash = $this->fingerprintHash($context, $fingerprintSecret);
+        if (in_array($scope, ['k4', 'k5'], true)) {
+            self::assertNotNull($context->accountId);
+            return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive($scope, $policy, $context->accountId, $outerSecret, $scope === 'k5' ? $fingerprintHash : null);
+        }
         $raw = match ($scope) {
             'k1' => $base . $context->ip,
             'k2' => $base . $context->ip . ':' . DeviceIdentityResolver::normalizeUserAgent($context->ua),

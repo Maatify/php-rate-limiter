@@ -30,9 +30,7 @@ use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
 use Maatify\RateLimiter\Repository\ScoreReplaceStoreInterface;
 use Maatify\RateLimiter\DTO\DecayPauseStateDTO;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
-use Maatify\RateLimiter\Enum\KeyScopeEncodingEnum;
 use Maatify\RateLimiter\Exception\RateLimiterException;
-use Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface;
 use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
 use Maatify\RateLimiter\Command\RateLimitCommand;
@@ -73,13 +71,20 @@ class EvaluationPipeline
     private const IPV6_ADAPTIVE_40_CAP = 4;
     private const IPV6_ADAPTIVE_32_CAP = 8;
 
+    /** @var array<string, mixed> Immutable getter results retained for one processing call and its retries. */
+    private array $policyValues = [];
+
     private string $secret;
     private ?string $previousSecret;
 
-    private readonly AccountScopeKeyDeriverInterface $accountKeys;
+    private readonly E1AccountScopeKeyDeriver $accountKeys;
 
-    /** The store of the account-bearing keys: the E1 view under E1, otherwise the store itself. */
+    /** The captured E1 view for account-bearing keys. */
     private readonly RateLimitStoreInterface $accountStore;
+
+    private readonly BudgetTracker $budgetTracker;
+    private readonly AntiEquilibriumGate $antiEquilibriumGate;
+    private readonly EphemeralBucket $ephemeralBucket;
 
     private readonly CorrelationStoreInterface $accountCorrelationStore;
 
@@ -101,15 +106,15 @@ class EvaluationPipeline
     /**
      * @param RateLimitStoreInterface $store Score and block persistence boundary.
      * @param CorrelationStoreInterface $correlationStore Correlation persistence boundary.
-     * @param BudgetTracker $budgetTracker Account-budget service.
-     * @param AntiEquilibriumGate $antiEquilibriumGate Repeated-soft-block guard.
      * @param DecayCalculator $decayCalculator Score decay service.
-     * @param EphemeralBucket $ephemeralBucket Device-cap key resolver.
      * @param string $keySecret Active, non-blank key-generation secret. Not
      *     trimmed or otherwise normalized: accepted surrounding whitespace is
      *     retained byte-for-byte.
      * @param string $envScope Non-blank environment namespace included in derived keys.
      * @param ClockInterface $clock Source of current timestamps.
+     * @param ClockInterface $budgetClock Existing account-budget time authority.
+     * @param ?ClockInterface $antiEquilibriumClock Null retains the backend-time watch path.
+     * @param ?ClockInterface $ephemeralClock Null retains the backend-time distinct path.
      * @param ?string $previousKeySecret Optional previous-generation secret;
      *     null means no previous generation. When provided, it must not be
      *     empty or whitespace-only, and is likewise never trimmed or normalized.
@@ -120,16 +125,18 @@ class EvaluationPipeline
     public function __construct(
         private readonly RateLimitStoreInterface $store,
         private readonly CorrelationStoreInterface $correlationStore,
-        private readonly BudgetTracker $budgetTracker,
-        private readonly AntiEquilibriumGate $antiEquilibriumGate,
         private readonly DecayCalculator $decayCalculator,
-        private readonly EphemeralBucket $ephemeralBucket,
         string $keySecret,
         private readonly string $envScope, // e.g. 'prod', 'staging'
         private ClockInterface $clock,
+        ClockInterface $budgetClock,
+        ?ClockInterface $antiEquilibriumClock,
+        ?ClockInterface $ephemeralClock,
         ?string $previousKeySecret = null,
-        ?AccountScopeKeyDeriverInterface $accountKeys = null,
     ) {
+        if (func_num_args() > 10) {
+            throw new \ArgumentCountError('EvaluationPipeline does not accept injected helpers or a key deriver.');
+        }
         $this->clock = HostClock::of($this->clock);
         if (trim($keySecret) === '') {
             throw new RateLimiterException('Active key secret must not be empty or whitespace-only.');
@@ -143,23 +150,25 @@ class EvaluationPipeline
 
         $this->secret = $keySecret;
         $this->previousSecret = $previousKeySecret;
-        // DEC-044: the single derivation source of the account-bearing keys. V2 is the default.
-        $this->accountKeys = $accountKeys ?? new V2AccountScopeKeyDeriver($this->envScope);
-        if ($this->accountKeys->encoding() === KeyScopeEncodingEnum::E1) {
-            if (! $this->store instanceof E1KeyspaceStoreInterface || ! $this->correlationStore instanceof E1KeyspaceStoreInterface) {
-                throw new RateLimiterException('The E1 key encoding requires a store and a correlation store implementing E1KeyspaceStoreInterface (DEC-044).');
-            }
-            // Views of the very same store instances: one request state, one ownership, one transactRequest().
-            $this->accountStore = $this->store->e1Keyspace();
-            $this->accountCorrelationStore = $this->correlationStore->e1Keyspace();
-        } else {
-            $this->accountStore = $this->store;
-            $this->accountCorrelationStore = $this->correlationStore;
+        $this->accountKeys = new E1AccountScopeKeyDeriver($this->envScope);
+        $rateBinding = E1StoreBinding::capture($this->store);
+        $correlationBinding = $this->correlationStore === $this->store
+            ? $rateBinding
+            : E1StoreBinding::capture($this->correlationStore);
+        $accountRate = $rateBinding->forRoot($this->store);
+        $accountCorrelation = $correlationBinding->forRoot($this->correlationStore);
+        if (! $accountRate instanceof RateLimitStoreInterface || ! $accountCorrelation instanceof CorrelationStoreInterface) {
+            throw new RateLimiterException('The account views must preserve their storage roles.');
         }
+        $this->accountStore = $accountRate;
+        $this->accountCorrelationStore = $accountCorrelation;
+        $this->budgetTracker = new BudgetTracker($accountRate, $budgetClock);
+        $this->antiEquilibriumGate = new AntiEquilibriumGate($accountCorrelation, $antiEquilibriumClock);
+        $this->ephemeralBucket = new EphemeralBucket($this->correlationStore, $ephemeralClock);
     }
 
     /**
-     * The store that holds the account-bearing keys of this evaluation: the E1 view under the E1 encoding, the store itself under V2.
+     * Registry membership selects the captured account view; string contents never select a layout.
      */
     private function storeFor(?string $key): RateLimitStoreInterface
     {
@@ -177,16 +186,14 @@ class EvaluationPipeline
 
     /**
      * A key that came back from state this runtime stored (a snapshot member that is blocked later). Under E1 it must have the exact E1 key
-     * form; it is then handled in the E1 layout. Under V2 nothing changes.
+     * form; it is then registered and handled in the E1 layout.
      */
     private function adoptStoredAccountKey(string $member): string
     {
-        if ($this->accountKeys->encoding() === KeyScopeEncodingEnum::E1) {
-            if (! E1AccountScopeKeyDeriver::hasKeyForm($member)) {
-                throw new RateLimiterException('A stored account key does not have the E1 key form.');
-            }
-            $this->accountScopedKeys[$member] = true;
+        if (! E1AccountScopeKeyDeriver::hasKeyForm($member)) {
+            throw new RateLimiterException('A stored account key does not have the E1 key form.');
         }
+        $this->accountScopedKeys[$member] = true;
 
         return $member;
     }
@@ -200,7 +207,7 @@ class EvaluationPipeline
      */
     public function isBackendHealthy(): bool
     {
-        return $this->store->isHealthy();
+        return $this->withinCall('isBackendHealthy', fn(): bool => $this->store->isHealthy());
     }
 
     /**
@@ -227,20 +234,22 @@ class EvaluationPipeline
         string $lifecycleId,
         ?AdmissionLaneEnum $lane = null,
     ): bool {
-        if (! $this->accountStore instanceof PunishmentLifecycleStoreInterface) {
-            throw new RateLimiterException('Post-punishment re-entry requires PunishmentLifecycleStoreInterface.');
-        }
-        $this->accountScopedKeys = [];
-        $current = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $policyName, $this->secret, $lane, $this->k5Material($device, $lane));
-        $previous = $this->hasPreviousGeneration($device)
-            ? $this->buildKeys($context, $device->normalizedUa, $this->previousFingerprintHash($device), $policyName, $this->previousSecret ?? $this->secret, $lane, $this->previousK5Material($device, $lane))
-            : [];
-        $currentKey = $current['k4'] ?? null;
-        if ($currentKey === null) {
-            return false;
-        }
+        return $this->withinCall('claimPostPunishmentReentry', function () use ($context, $device, $policyName, $lifecycleId, $lane): bool {
+            if (! $this->accountStore instanceof PunishmentLifecycleStoreInterface) {
+                throw new RateLimiterException('Post-punishment re-entry requires PunishmentLifecycleStoreInterface.');
+            }
+            $this->accountScopedKeys = [];
+            $current = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $policyName, $this->secret, $lane, $this->k5Material($device, $lane));
+            $previous = $this->hasPreviousGeneration($device)
+                ? $this->buildKeys($context, $device->normalizedUa, $this->previousFingerprintHash($device), $policyName, $this->previousSecret ?? $this->secret, $lane, $this->previousK5Material($device, $lane))
+                : [];
+            $currentKey = $current['k4'] ?? null;
+            if ($currentKey === null) {
+                return false;
+            }
 
-        return CallerTimeStore::claimPostPunishmentReentry($this->accountStore, $currentKey, $previous['k4'] ?? null, $lifecycleId, $this->clock->now());
+            return CallerTimeStore::claimPostPunishmentReentry($this->accountStore, $currentKey, $previous['k4'] ?? null, $lifecycleId, $this->clock->now());
+        });
     }
 
     /** T-5: the store that saves one request at once, or null when the store cannot (DEC-037). */
@@ -279,18 +288,22 @@ class EvaluationPipeline
         DeviceIdentityDTO $device,
         ?AdmissionLaneEnum $lane = null,
     ): RateLimitResultDTO {
-        $this->assertLaneAllowed($policy, $lane);
-        // One request is one save: a store that can hold every write back until
-        // the decision is final saves them together, or not at all. The
-        // evaluation repeats from a fresh read when another request changed
-        // any state it read. Other stores keep the sequential writes.
-        if ($this->store instanceof RequestAtomicStoreInterface && $this->correlationStore === $this->store) {
-            return $this->store->transactRequest(
-                fn(): RateLimitResultDTO => $this->evaluate($policy, $context, $request, $device, $lane),
-            );
-        }
+        return $this->withinCall('process', function () use ($policy, $context, $request, $device, $lane): RateLimitResultDTO {
+            $this->policyValues = [];
+            $this->assertProcessingCapabilities($policy, $context, $request, $device, $lane);
+            $this->assertLaneAllowed($policy, $lane);
+            // One request is one save: a store that can hold every write back until
+            // the decision is final saves them together, or not at all. The
+            // evaluation repeats from a fresh read when another request changed
+            // any state it read. Other stores keep the sequential writes.
+            if ($this->store instanceof RequestAtomicStoreInterface && $this->correlationStore === $this->store) {
+                return $this->store->transactRequest(
+                    fn(): RateLimitResultDTO => $this->evaluate($policy, $context, $request, $device, $lane),
+                );
+            }
 
-        return $this->evaluate($policy, $context, $request, $device, $lane);
+            return $this->evaluate($policy, $context, $request, $device, $lane);
+        });
     }
 
     private function evaluate(
@@ -305,13 +318,13 @@ class EvaluationPipeline
         $this->accountScopedKeys = [];
         // 1. Build keys for the current generation, then the one previous
         // generation when either generation component is present.
-        $realKeysV2 = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $this->hostPolicy(fn() => $policy->getName()), $this->secret, $lane, $this->k5Material($device, $lane));
+        $realKeysV2 = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $this->policyValue('getName', fn() => $policy->getName()), $this->secret, $lane, $this->k5Material($device, $lane));
         $realKeysV1 = $this->hasPreviousGeneration($device)
             ? $this->buildKeys(
                 $context,
                 $device->normalizedUa,
                 $this->previousFingerprintHash($device),
-                $this->hostPolicy(fn() => $policy->getName()),
+                $this->policyValue('getName', fn() => $policy->getName()),
                 $this->previousSecret ?? $this->secret,
                 $lane,
                 $this->previousK5Material($device, $lane),
@@ -332,7 +345,7 @@ class EvaluationPipeline
         $ephemeralState = null;
         if (IdentityPresence::fingerprint($device) && ! $this->isProvenLane($lane)) {
             $ipObservation = $this->buildCorrelationObservation(
-                $this->hostPolicy(fn() => $policy->getName()),
+                $this->policyValue('getName', fn() => $policy->getName()),
                 'device_cap_ip',
                 $realKeysV2['k1'] ?? null,
                 $device->fingerprintHash,
@@ -341,7 +354,7 @@ class EvaluationPipeline
             );
             $accountObservation = IdentityPresence::account($context)
                 ? $this->buildCorrelationObservation(
-                    $this->hostPolicy(fn() => $policy->getName()),
+                    $this->policyValue('getName', fn() => $policy->getName()),
                     'device_cap_account',
                     $this->accountAnchor($realKeysV2),
                     $device->fingerprintHash,
@@ -375,7 +388,7 @@ class EvaluationPipeline
         // 5. Fetch & Decay Scores (Using Effective Keys)
         $rawScores = $this->fetchScores($effectiveKeysV2, $effectiveKeysV1);
         $decayedScores = $this->applyDecay($rawScores, $effectiveKeysV2, $effectiveKeysV1);
-        if (! $request->isPreCheck && ($request->isFailure || $this->hostPolicy(fn() => $policy->getScoreDeltas())->access > 0)) {
+        if (! $request->isPreCheck && ($request->isFailure || $this->policyValue('getScoreDeltas', fn() => $policy->getScoreDeltas())->access > 0)) {
             $this->assertScoreUpdatesRepresentable($policy, $context, $request, $device, $isEphemeral, $effectiveKeysV2, $rawScores, $decayedScores);
         }
 
@@ -415,7 +428,7 @@ class EvaluationPipeline
             if ($candidate = $this->checkDistributedAccountAttack(
                 $context,
                 $device,
-                $this->hostPolicy(fn() => $policy->getName()),
+                $this->policyValue('getName', fn() => $policy->getName()),
                 $isEphemeral,
                 $realKeysV2,
                 $realKeysV1,
@@ -429,7 +442,7 @@ class EvaluationPipeline
         // observations.
         if ($this->appliesCollectiveCorrelation($lane) && ($candidate = $this->checkCorrelationRules(
             $device,
-            $this->hostPolicy(fn() => $policy->getName()),
+            $this->policyValue('getName', fn() => $policy->getName()),
             $isEphemeral,
             $realKeysV2,
             $realKeysV1,
@@ -459,13 +472,13 @@ class EvaluationPipeline
         if ($ephemeralState !== null && IdentityPresence::account($context) && ! $this->isApiHeavyPolicy($policy)
             && $ephemeralState->accountDeviceCount >= 6) {
             $floodKey = $this->auxiliaryAccountKey(
-                $this->hostPolicy(fn() => $policy->getName()),
+                $this->policyValue('getName', fn() => $policy->getName()),
                 'flood_stage',
                 $context->accountId,
                 $this->secret,
             );
             $previousFloodKey = $this->previousAuxiliaryAccountKey(
-                $this->hostPolicy(fn() => $policy->getName()),
+                $this->policyValue('getName', fn() => $policy->getName()),
                 'flood_stage',
                 $context->accountId,
             );
@@ -510,7 +523,7 @@ class EvaluationPipeline
         $budgetState = $this->resolveActiveBudgetState($realKeysV2['k4'] ?? null, $realKeysV1['k4'] ?? null);
         $budgetRequestEligible = false;
         $budgetSuppressed = false;
-        if (! $request->isPreCheck && ($request->isFailure || $this->hostPolicy(fn() => $policy->getScoreDeltas())->access > 0)) {
+        if (! $request->isPreCheck && ($request->isFailure || $this->policyValue('getScoreDeltas', fn() => $policy->getScoreDeltas())->access > 0)) {
             // We write only to V2 (Active Key); V1 stays read-only
             $updates = $this->processUpdates(
                 $policy,
@@ -534,10 +547,10 @@ class EvaluationPipeline
         // account watcher keeps the §2.5 account-wide escalation; the device
         // watcher (DEC-026) escalates SOFT_BLOCKs that came from K5
         // alone on that account + device only.
-        if ($request->isFailure && IdentityPresence::account($context) && $this->hostPolicy(fn() => $policy->getBudgetConfig()) !== null
+        if ($request->isFailure && IdentityPresence::account($context) && $this->policyValue('getBudgetConfig', fn() => $policy->getBudgetConfig()) !== null
             && $this->antiEquilibriumGate->shouldEscalate(
-                $this->auxiliaryAccountKey($this->hostPolicy(fn() => $policy->getName()), $this->laneAuxiliaryPurpose($lane, 'anti_equilibrium'), $context->accountId, $this->secret),
-                $this->previousAuxiliaryAccountKey($this->hostPolicy(fn() => $policy->getName()), $this->laneAuxiliaryPurpose($lane, 'anti_equilibrium'), $context->accountId),
+                $this->auxiliaryAccountKey($this->policyValue('getName', fn() => $policy->getName()), $this->laneAuxiliaryPurpose($lane, 'anti_equilibrium'), $context->accountId, $this->secret),
+                $this->previousAuxiliaryAccountKey($this->policyValue('getName', fn() => $policy->getName()), $this->laneAuxiliaryPurpose($lane, 'anti_equilibrium'), $context->accountId),
             )) {
             $persistence = ($realKeysV2['k4'] ?? null) !== null
                 ? [[
@@ -593,7 +606,7 @@ class EvaluationPipeline
         if ($final->decision === RateLimitResultDTO::DECISION_SOFT_BLOCK
             && ! $request->isSuccess
             && IdentityPresence::account($context)
-            && $this->hostPolicy(fn() => $policy->getBudgetConfig()) !== null) {
+            && $this->policyValue('getBudgetConfig', fn() => $policy->getBudgetConfig()) !== null) {
             // Exactly one watcher write per issued SOFT_BLOCK: the account
             // watcher whenever any winning SOFT candidate has account scope
             // (mixed K4 + K5 included, the stronger account protection), the
@@ -606,7 +619,7 @@ class EvaluationPipeline
             $this->antiEquilibriumGate->recordSoftBlock(
                 $deviceOnly
                     ? $deviceWatcher['current']
-                    : $this->auxiliaryAccountKey($this->hostPolicy(fn() => $policy->getName()), $this->laneAuxiliaryPurpose($lane, 'anti_equilibrium'), $context->accountId, $this->secret),
+                    : $this->auxiliaryAccountKey($this->policyValue('getName', fn() => $policy->getName()), $this->laneAuxiliaryPurpose($lane, 'anti_equilibrium'), $context->accountId, $this->secret),
             );
         }
 
@@ -1070,7 +1083,7 @@ class EvaluationPipeline
             return [];
         }
 
-        $policyName = $this->hostPolicy(fn() => $policy->getName());
+        $policyName = $this->policyValue('getName', fn() => $policy->getName());
         $prefix48 = $this->getIpPrefix($context->ip, 48);
         $prefix40 = $this->getIpPrefix($context->ip, 40);
         $prefix32 = $this->getIpPrefix($context->ip, 32);
@@ -1676,7 +1689,7 @@ class EvaluationPipeline
         // The current canonical K1 remains the only persistence key.
         foreach ($adaptiveIpv6Scopes as $scope) {
             $observations[] = $this->buildAdaptiveCorrelationObservation(
-                $this->hostPolicy(fn() => $policy->getName()),
+                $this->policyValue('getName', fn() => $policy->getName()),
                 'spray',
                 $scope['cidr'],
                 $scope['currentScope'],
@@ -1831,20 +1844,20 @@ class EvaluationPipeline
             && $deltas['k5'] > 0
             && $deltas['k4'] === 0
             && $this->isKnownForAccount($device)
-            && ($allowanceLimit = $this->hostPolicy(fn() => $policy->getKnownDeviceAccountAllowance())) !== null) {
+            && ($allowanceLimit = $this->policyValue('getKnownDeviceAccountAllowance', fn() => $policy->getKnownDeviceAccountAllowance())) !== null) {
             $allowance = $this->incrementBudgetAcrossRotation(
-                $this->auxiliaryAccountKey($this->hostPolicy(fn() => $policy->getName()), $this->laneAuxiliaryPurpose($lane, 'known_device_allowance'), $context->accountId, $this->secret),
-                $this->previousAuxiliaryAccountKey($this->hostPolicy(fn() => $policy->getName()), $this->laneAuxiliaryPurpose($lane, 'known_device_allowance'), $context->accountId),
+                $this->auxiliaryAccountKey($this->policyValue('getName', fn() => $policy->getName()), $this->laneAuxiliaryPurpose($lane, 'known_device_allowance'), $context->accountId, $this->secret),
+                $this->previousAuxiliaryAccountKey($this->policyValue('getName', fn() => $policy->getName()), $this->laneAuxiliaryPurpose($lane, 'known_device_allowance'), $context->accountId),
             );
             if ($allowance->count > $allowanceLimit) {
-                $deltas['k4'] = $this->hostPolicy(fn() => $policy->getScoreDeltas())->k4_failure;
+                $deltas['k4'] = $this->policyValue('getScoreDeltas', fn() => $policy->getScoreDeltas())->k4_failure;
             }
         }
 
-        $k4Repeated = $this->hostPolicy(fn() => $policy->getScoreDeltas())->k4_repeated_missing_fp;
+        $k4Repeated = $this->policyValue('getScoreDeltas', fn() => $policy->getScoreDeltas())->k4_repeated_missing_fp;
         if ($request->isFailure && ! IdentityPresence::fingerprint($device) && IdentityPresence::account($context) && $k4Repeated > 0) {
             $key = $this->auxiliaryAccountKey(
-                $this->hostPolicy(fn() => $policy->getName()),
+                $this->policyValue('getName', fn() => $policy->getName()),
                 'last_missing_fp',
                 $context->accountId,
                 $this->secret,
@@ -1857,7 +1870,7 @@ class EvaluationPipeline
                 : $this->accountStore->get($key);
             if ($last === null) {
                 $previousKey = $this->previousAuxiliaryAccountKey(
-                    $this->hostPolicy(fn() => $policy->getName()),
+                    $this->policyValue('getName', fn() => $policy->getName()),
                     'last_missing_fp',
                     $context->accountId,
                 );
@@ -1986,7 +1999,7 @@ class EvaluationPipeline
             }
         }
 
-        $budgetConfig = $this->hostPolicy(fn() => $policy->getBudgetConfig());
+        $budgetConfig = $this->policyValue('getBudgetConfig', fn() => $policy->getBudgetConfig());
         $budgetState = $budgetConfig !== null
             ? $this->resolveActiveBudgetState($keys['k4'] ?? null, $keysV1['k4'] ?? null)
             : null;
@@ -2012,11 +2025,11 @@ class EvaluationPipeline
                     $shouldCount = true;
                 } else {
                     $microPurpose = $this->microCapPurpose($lane);
-                    $microKeyV2 = $this->deriveAccountKey($microPurpose, $this->hostPolicy(fn() => $policy->getName()), $context->accountId, $this->secret, $this->k5Material($device, $lane) ?? '');
+                    $microKeyV2 = $this->deriveAccountKey($microPurpose, $this->policyValue('getName', fn() => $policy->getName()), $context->accountId, $this->secret, $this->k5Material($device, $lane) ?? '');
                     $microKeyV1 = null;
 
                     if ($this->hasPreviousGeneration($device)) {
-                        $microKeyV1 = $this->deriveAccountKey($microPurpose, $this->hostPolicy(fn() => $policy->getName()), $context->accountId, $this->previousSecret ?? $this->secret, $this->previousK5Material($device, $lane) ?? '');
+                        $microKeyV1 = $this->deriveAccountKey($microPurpose, $this->policyValue('getName', fn() => $policy->getName()), $context->accountId, $this->previousSecret ?? $this->secret, $this->previousK5Material($device, $lane) ?? '');
                     }
 
                     $microState = $this->incrementBudgetAcrossRotation($microKeyV2, $microKeyV1);
@@ -2508,7 +2521,7 @@ class EvaluationPipeline
         }
 
         $normalCandidate = $this->aggregateCandidates($candidates);
-        $config = $this->hostPolicy(fn() => $policy->getBudgetConfig());
+        $config = $this->policyValue('getBudgetConfig', fn() => $policy->getBudgetConfig());
         $budgetKey = $this->resolveActiveBudgetKeyV2ThenV1($keysV2['k4'] ?? null, $keysV1['k4'] ?? null);
         $budgetActive = $config !== null
             && $budgetState !== null
@@ -2644,7 +2657,7 @@ class EvaluationPipeline
             return ['issued' => false, 'retryAfter' => 0];
         }
 
-        $currentKey = $this->budgetCooldownKey($this->hostPolicy(fn() => $policy->getName()), $accountId, $this->secret, $lane);
+        $currentKey = $this->budgetCooldownKey($this->policyValue('getName', fn() => $policy->getName()), $accountId, $this->secret, $lane);
         $currentMarker = $this->accountStore->get($currentKey);
         if ($currentMarker !== null) {
             return [
@@ -2655,7 +2668,7 @@ class EvaluationPipeline
 
         if ($this->hasPreviousGeneration($device)) {
             $previousKey = $this->budgetCooldownKey(
-                $this->hostPolicy(fn() => $policy->getName()),
+                $this->policyValue('getName', fn() => $policy->getName()),
                 $accountId,
                 $this->previousSecret ?? $this->secret,
                 $lane,
@@ -2718,9 +2731,9 @@ class EvaluationPipeline
     ): ?array {
         // Same eligibility as the account watcher (a budgeted policy), and
         // only where a K5 level can exist: never for API_OVERUSE.
-        if ($this->hostPolicy(fn() => $policy->getBudgetConfig()) === null
+        if ($this->policyValue('getBudgetConfig', fn() => $policy->getBudgetConfig()) === null
             || $this->isApiHeavyPolicy($policy)
-            || $this->hostPolicy(fn() => $policy->getScoreThresholds())->k5 === null
+            || $this->policyValue('getScoreThresholds', fn() => $policy->getScoreThresholds())->k5 === null
             || $isEphemeral
             || ! IdentityPresence::account($context)
             || ! IdentityPresence::fingerprint($device)) {
@@ -2728,7 +2741,7 @@ class EvaluationPipeline
         }
 
         $purpose = AccountScopePurpose::aux($this->laneAuxiliaryPurpose($lane, 'anti_equilibrium_device'));
-        $policyName = $this->hostPolicy(fn() => $policy->getName());
+        $policyName = $this->policyValue('getName', fn() => $policy->getName());
         $current = $this->deriveAccountKey($purpose, $policyName, $context->accountId, $this->secret, $this->k5Material($device, $lane) ?? '');
         $previous = null;
         if ($this->hasPreviousGeneration($device)) {
@@ -2800,7 +2813,7 @@ class EvaluationPipeline
     private function hasCapability(BlockPolicyInterface $policy, PolicyCapabilityEnum $capability): bool
     {
         return $policy instanceof PolicyCapabilityProviderInterface
-            && in_array($capability, $this->hostPolicy(fn() => $policy->getCapabilities()), true);
+            && in_array($capability, $this->policyValue('getCapabilities', fn() => $policy->getCapabilities()), true);
     }
 
     // --- Admission lane (opted policies only; `null` is today's behaviour) ---
@@ -3249,7 +3262,7 @@ class EvaluationPipeline
     ): void {
         $deltas = $this->calculateDeltas($policy, $context, $device, $request, $isEphemeral);
         if ($request->isFailure) {
-            $dto = $this->hostPolicy(fn() => $policy->getScoreDeltas());
+            $dto = $this->policyValue('getScoreDeltas', fn() => $policy->getScoreDeltas());
             $deltas['k4'] = ScoreArithmetic::sum(max($deltas['k4'], $dto->k4_failure), $dto->k4_repeated_missing_fp, 'K4 delta bound');
         }
         foreach ($keys as $keyType => $key) {
@@ -3274,7 +3287,7 @@ class EvaluationPipeline
         RateLimitCommand $request,
         bool $isEphemeral,
     ): array {
-        $deltasDto = $this->hostPolicy(fn() => $policy->getScoreDeltas());
+        $deltasDto = $this->policyValue('getScoreDeltas', fn() => $policy->getScoreDeltas());
         // Fix Error 3: Initialize with stable shape
         $result = ['k1' => 0, 'k2' => 0, 'k3' => 0, 'k4' => 0, 'k5' => 0];
 
@@ -3324,7 +3337,7 @@ class EvaluationPipeline
 
     private function getScopedThresholds(string $keyType, BlockPolicyInterface $policy): ?ScoreThresholdsDTO
     {
-        $thresholds = $this->hostPolicy(fn() => $policy->getScoreThresholds());
+        $thresholds = $this->policyValue('getScoreThresholds', fn() => $policy->getScoreThresholds());
 
         return match ($keyType) {
             'k1' => $thresholds->k1,
@@ -3393,10 +3406,115 @@ class EvaluationPipeline
         return new RateLimitResultDTO(RateLimitResultDTO::DECISION_ALLOW, 0, 0, 'NORMAL', null);
     }
 
+    /**
+     * Admit advanced direct processing too, before new preflight Host callbacks. Calls already inside the engine join its ownership;
+     * independent direct calls acquire their complete resource set atomically, and a nested call is admitted only when every resource of the set is. Only the holds created here are released here.
+     *
+     * @template T
+     * @param callable(): T $operation
+     * @return T
+     */
+    private function withinCall(string $entry, callable $operation): mixed
+    {
+        $resources = $this->ownedResources();
+        foreach ($resources as $resource) {
+            if (OwnershipRegistry::isOccupied($resource)) {
+                // F300-03: a call nested in an owner's call is admitted only when EVERY resource of the Pipeline is, not just the anchor:
+                // a member owned by another context refuses here, before any state, Host callback, clock or backend work.
+                $scope = OwnershipRegistry::admitSet($resources, $entry);
+                try {
+                    return $operation();
+                } finally {
+                    $scope->release();
+                }
+            }
+        }
+        $domain = OwnershipRegistry::adopt($resources, $this);
+        try {
+            $scope = OwnershipRegistry::acquire($resources, $entry, $domain);
+            try {
+                return $operation();
+            } finally {
+                $scope->release();
+            }
+        } finally {
+            OwnershipRegistry::releaseAdoptions($this);
+        }
+    }
+
+    /**
+     * Validate the actual operation targets before the first store access. Values fetched through Host crossings are memoized for
+     * the whole call, including retries, so a later getter cannot change the capability requirement after preflight.
+     */
+    private function assertProcessingCapabilities(BlockPolicyInterface $policy, RateLimitContextDTO $context, RateLimitCommand $request, DeviceIdentityDTO $device, ?AdmissionLaneEnum $lane): void
+    {
+        $deltas = $this->policyValue('getScoreDeltas', fn() => $policy->getScoreDeltas());
+        $budget = $this->policyValue('getBudgetConfig', fn() => $policy->getBudgetConfig());
+        $previous = $this->hasPreviousGeneration($device);
+        $requirements = [[$this->store, HardBlockCycleStoreInterface::class], [$this->accountStore, HardBlockCycleStoreInterface::class]];
+        $hasSubject = IdentityPresence::account($context) || $device->fingerprintHash !== null || $context->correlationId !== null || str_contains($context->ip, ':');
+        if ($hasSubject) {
+            $requirements[] = [$this->correlationStore, BoundedCorrelationStoreInterface::class];
+        }
+        if ($previous && $hasSubject) {
+            $requirements[] = [$this->correlationStore, BoundedCorrelationRotationStoreInterface::class];
+        }
+        if ($request->isPreCheck && $lane !== AdmissionLaneEnum::P && IdentityPresence::account($context) && $device->fingerprintHash !== null && $this->hasCapability($policy, PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT)) {
+            $requirements[] = [$this->correlationStore, $previous ? BoundedCorrelationSnapshotRotationStoreInterface::class : BoundedCorrelationSnapshotStoreInterface::class];
+        }
+        if ($policy instanceof PostPunishmentReentryPolicyInterface) {
+            $requirements[] = [$this->accountStore, PunishmentLifecycleStoreInterface::class];
+        }
+        if (max($deltas->access, $deltas->k1_spray, $deltas->k2_missing_fp, $deltas->k4_failure, $deltas->k4_repeated_missing_fp, $deltas->k5_failure) > 0) {
+            $requirements[] = [$this->store, SnapshotFencedScoreStoreInterface::class];
+            $requirements[] = [$this->accountStore, SnapshotFencedScoreStoreInterface::class];
+        }
+        if ($deltas->k4_repeated_missing_fp > 0) {
+            $requirements[] = [$this->accountStore, ScoreReplaceStoreInterface::class];
+        }
+        $rotatingBudget = $budget !== null && (($this->previousSecret !== null) || ($previous && $budget->known_device_micro_cap !== null));
+        // The fingerprint-independent allowance has no dependency on getBudgetConfig(). Before reading the device caps we
+        // cannot know whether this device will be ephemeral, so cover every request that can reach the allowance write.
+        $rotatingAllowance = ! $rotatingBudget
+            && $this->previousSecret !== null
+            && ! $request->isPreCheck
+            && $request->isFailure
+            && IdentityPresence::account($context)
+            && IdentityPresence::fingerprint($device)
+            && $deltas->k5_failure > 0
+            && $this->isKnownForAccount($device)
+            && $policy instanceof KnownDeviceAccountAllowancePolicyInterface
+            && $this->policyValue('getKnownDeviceAccountAllowance', fn() => $policy->getKnownDeviceAccountAllowance()) !== null;
+        if ($rotatingBudget || $rotatingAllowance) {
+            $requirements[] = [$this->accountStore, BudgetSeedStoreInterface::class];
+        }
+        foreach ($requirements as [$target, $capability]) {
+            if (! $target instanceof $capability) {
+                throw new RateLimiterException('Processing requires the actual store/view to implement ' . $capability . '.');
+            }
+        }
+    }
+
+    /**
+     * @template T
+     * @param callable(): T $getter
+     * @return T
+     */
+    private function policyValue(string $method, callable $getter): mixed
+    {
+        if (! array_key_exists($method, $this->policyValues)) {
+            $this->policyValues[$method] = $this->hostPolicy($getter);
+        }
+        /** @var T $value */
+        $value = $this->policyValues[$method];
+
+        return $value;
+    }
+
     /** @return list<object> */
     public function ownedResources(): array
     {
-        return OwnershipRegistry::collect([$this->store, $this->correlationStore, $this->budgetTracker, $this->antiEquilibriumGate, $this->decayCalculator, $this->ephemeralBucket], [], [$this->clock]);
+        return OwnershipRegistry::collect([$this->store, $this->accountStore, $this->correlationStore, $this->accountCorrelationStore, $this->budgetTracker, $this->antiEquilibriumGate, $this->decayCalculator, $this->ephemeralBucket], [], [$this->clock]);
     }
 
     /**

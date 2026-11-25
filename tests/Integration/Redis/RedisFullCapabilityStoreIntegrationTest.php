@@ -2537,7 +2537,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         )->withClock($clock)->build();
         $oldLimiter->limit($context, RateLimitCommand::recordFailure('login_protection'));
 
-        $previousKeys = $this->redisKeys('budget');
+        $previousKeys = $this->redisKeys('budget', true);
         self::assertNotEmpty($previousKeys);
         $previousKey = $previousKeys[0];
         $previousState = $this->hashMap($previousKey);
@@ -2558,7 +2558,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         )->withClock($clock)->build();
         $currentLimiter->limit($context, RateLimitCommand::recordFailure('login_protection'));
 
-        $currentKeys = array_values(array_diff($this->redisKeys('budget'), $previousKeys));
+        $currentKeys = array_values(array_diff($this->redisKeys('budget', true), $previousKeys));
         self::assertNotEmpty($currentKeys);
         $currentState = $this->hashMap($currentKeys[0]);
         self::assertSame((int) $previousState['count'] + 1, (int) $currentState['count']);
@@ -2616,10 +2616,10 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $second = $limiter->limit($context, RateLimitCommand::recordFailure('public_hard_cycle'));
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $second->decision);
 
-        $pauseKeys = $this->redisKeys('pause');
+        $pauseKeys = $this->redisKeys('pause', true);
         self::assertNotEmpty($pauseKeys);
         self::assertGreaterThan(0, $this->integer($this->raw(['PTTL', $pauseKeys[0]])));
-        self::assertNotEmpty($this->redisKeys('cycle'));
+        self::assertNotEmpty($this->redisKeys('cycle', true));
     }
 
     public function testPublicBuilderWorkflowUsesOfficialRedisBudgetAndCircuitProbePaths(): void
@@ -4024,9 +4024,13 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
     /**
      * @return list<string>
      */
-    private function redisKeys(string $family): array
+    private function redisKeys(string $family, bool $accountLayout = false): array
     {
-        $keys = $this->raw(['KEYS', $this->familyPrefix($family) . ':*']);
+        $prefix = $this->familyPrefix($family);
+        if ($accountLayout) {
+            $prefix = str_replace('maatify:rate-limiter:v1:', 'maatify:rate-limiter:e1:', $prefix);
+        }
+        $keys = $this->raw(['KEYS', $prefix . ':*']);
         self::assertIsArray($keys);
         $result = [];
         foreach ($keys as $key) {

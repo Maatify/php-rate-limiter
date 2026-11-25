@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Maatify\RateLimiter\Enum;
+namespace Maatify\RateLimiter\Tests\Fixtures\PreG1;
 
 /**
  * The derivation of the account-bearing keys of a runtime (DEC-044, `docs/KEY_SCOPE_ENCODING_E1.md`).

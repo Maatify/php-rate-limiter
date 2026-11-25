@@ -203,13 +203,13 @@ final class OwnershipCrossingsRedisTest extends TestCase
         $store = $this->store(new ProbeClock($probe), static function () use ($probe): void {
             $probe->suspendHere();
         });
-        $fiber = new Fiber(fn() => $store->get('held'));
+        $fiber = new Fiber(fn() => \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, 'held')->get('held'));
         $probe->suspendIn = $fiber;
         $fiber->start();
         self::assertFalse($fiber->isTerminated());
 
         $before = $probe->reads;
-        $other = new Fiber(fn() => $store->increment('k', 60));
+        $other = new Fiber(fn() => \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, 'k')->increment('k', 60));
         $outcome = null;
         try {
             $other->start();
@@ -228,7 +228,7 @@ final class OwnershipCrossingsRedisTest extends TestCase
     {
         $probe = new CrossingProbe();
         $store = $this->store(new ProbeClock($probe));
-        $a = new Fiber(fn() => $store->increment('k', 60));
+        $a = new Fiber(fn() => \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, 'k')->increment('k', 60));
         $probe->suspendIn = $a;
         $a->start();
         self::assertFalse($a->isTerminated(), 'call A is suspended inside the store clock');
@@ -254,17 +254,17 @@ final class OwnershipCrossingsRedisTest extends TestCase
         $probe = new CrossingProbe();
         $store = $this->store(new ProbeClock($probe));
         $probe->store = $store;
-        $store->increment('control', 60);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, 'control')->increment('control', 60);
 
         $probe->armed = true;
         $this->commands = [];
-        self::assertSame(self::REFUSAL, $this->refusalOf(fn() => $store->increment('k', 60)), 'seconds path');
+        self::assertSame(self::REFUSAL, $this->refusalOf(fn() => \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, 'k')->increment('k', 60)), 'seconds path');
         self::assertSame(self::REFUSAL, $this->refusalOf(fn() => $store->addDistinctAcrossRotation('a', 'b', 'c', 'm1', 'm0', 60)), 'milliseconds path');
         self::assertSame(0, $this->pings());
         self::assertSame([], $this->commands, 'no command was sent by either refused call');
 
         $probe->armed = false;
-        self::assertSame(2, $store->increment('control', 60), 'the store serves the next call with its own clock authority');
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, 'control')->increment('control', 60), 'the store serves the next call with its own clock authority');
         self::assertFalse(OwnershipRegistry::isOccupied($store));
     }
 
@@ -727,7 +727,7 @@ final class OwnershipCrossingsRedisTest extends TestCase
         $gate = new AntiEquilibriumGate($store, $clock);
         $decay = new DecayCalculator($clock);
         $bucket = new EphemeralBucket($store, $clock);
-        $pipeline = new EvaluationPipeline($store, $store, $budgetTracker, $gate, $decay, $bucket, 'test_secret', 'prod', $clock, null);
+        $pipeline = new EvaluationPipeline($store, $store, $decay, 'test_secret', 'prod', $clock, $clock, $clock, $clock, null);
 
         return new RateLimiterEngine(
             new DeviceIdentityResolver(new FingerprintHasher('test_fp')),

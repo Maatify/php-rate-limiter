@@ -17,9 +17,7 @@ use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore;
@@ -50,22 +48,22 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
         $device = $this->missingDevice();
 
         $pipeline->process($login, $this->context($accountId), RateLimitCommand::recordFailure($login->getName()), $device);
-        $this->assertSame(3, $this->store->get($this->scoreKey($login->getName(), $accountId))?->value);
+        $this->assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->scoreKey($login->getName(), $accountId))->get($this->scoreKey($login->getName(), $accountId))?->value);
         $this->assertSame(
             $this->clock->now()->getTimestamp(),
-            $this->store->get($this->auxiliaryKey($login->getName(), 'last_missing_fp', $accountId))?->value,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->auxiliaryKey($login->getName(), 'last_missing_fp', $accountId))->get($this->auxiliaryKey($login->getName(), 'last_missing_fp', $accountId))?->value,
         );
 
         $pipeline->process($otp, $this->context($accountId), RateLimitCommand::recordFailure($otp->getName()), $device);
-        $this->assertSame(5, $this->store->get($this->scoreKey($otp->getName(), $accountId))?->value);
+        $this->assertSame(5, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->scoreKey($otp->getName(), $accountId))->get($this->scoreKey($otp->getName(), $accountId))?->value);
 
         $pipeline->process($login, $this->context($accountId), RateLimitCommand::recordFailure($login->getName()), $device);
-        $this->assertSame(12, $this->store->get($this->scoreKey($login->getName(), $accountId))?->value);
+        $this->assertSame(12, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->scoreKey($login->getName(), $accountId))->get($this->scoreKey($login->getName(), $accountId))?->value);
 
         $pipeline->process($otp, $this->context($accountId), RateLimitCommand::recordFailure($otp->getName()), $device);
-        $this->assertSame(18, $this->store->get($this->scoreKey($otp->getName(), $accountId))?->value);
+        $this->assertSame(18, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->scoreKey($otp->getName(), $accountId))->get($this->scoreKey($otp->getName(), $accountId))?->value);
 
-        $this->assertNull($this->store->get("last_missing_fp:acc:{$accountId}"));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, "last_missing_fp:acc:{$accountId}")->get("last_missing_fp:acc:{$accountId}"));
         $this->assertStringNotContainsString($accountId, $this->auxiliaryKey($login->getName(), 'last_missing_fp', $accountId));
         $this->assertNotSame(
             $this->auxiliaryKey($login->getName(), 'last_missing_fp', $accountId),
@@ -84,7 +82,7 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
         $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:30:01'));
         $pipeline->process($policy, $this->context($accountId), RateLimitCommand::recordFailure($policy->getName()), $device);
 
-        $this->assertSame(3, $this->store->get($this->scoreKey($policy->getName(), $accountId))?->value);
+        $this->assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->scoreKey($policy->getName(), $accountId))->get($this->scoreKey($policy->getName(), $accountId))?->value);
     }
 
     public function testApiHeavyMissingFingerprintDoesNotReadOrCreateAnAuxiliaryMarker(): void
@@ -99,10 +97,10 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
             $this->missingDevice(),
         );
 
-        $this->assertNull($this->store->get("last_missing_fp:acc:{$accountId}"));
-        $this->assertNull($this->store->get($this->auxiliaryKey($policy->getName(), 'last_missing_fp', $accountId)));
-        $this->assertSame(0, $this->correlationStore->getWatchFlag("gate:soft:{$accountId}"));
-        $this->assertSame(0, $this->correlationStore->getWatchFlag("flood_stage:acc:{$accountId}"));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, "last_missing_fp:acc:{$accountId}")->get("last_missing_fp:acc:{$accountId}"));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->auxiliaryKey($policy->getName(), 'last_missing_fp', $accountId))->get($this->auxiliaryKey($policy->getName(), 'last_missing_fp', $accountId)));
+        $this->assertSame(0, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, "gate:soft:{$accountId}")->getWatchFlag("gate:soft:{$accountId}"));
+        $this->assertSame(0, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, "flood_stage:acc:{$accountId}")->getWatchFlag("flood_stage:acc:{$accountId}"));
     }
 
     public function testAuxiliaryMarkersAreSeparatedByEnvironment(): void
@@ -119,9 +117,9 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
         $prodKey = $this->auxiliaryKey($policy->getName(), 'last_missing_fp', $accountId, 'test_secret', 'prod');
         $stagingKey = $this->auxiliaryKey($policy->getName(), 'last_missing_fp', $accountId, 'test_secret', 'staging');
         $this->assertNotSame($prodKey, $stagingKey);
-        $this->assertNotNull($this->store->get($prodKey));
-        $this->assertNotNull($this->store->get($stagingKey));
-        $this->assertSame(3, $this->store->get($this->scoreKey($policy->getName(), $accountId, 'test_secret', 'staging'))?->value);
+        $this->assertNotNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $prodKey)->get($prodKey));
+        $this->assertNotNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $stagingKey)->get($stagingKey));
+        $this->assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->scoreKey($policy->getName(), $accountId, 'test_secret', 'staging'))->get($this->scoreKey($policy->getName(), $accountId, 'test_secret', 'staging'))?->value);
     }
 
     public function testPreviousMissingMarkerIsReadAfterOuterRotationButNeverWrittenOrRefreshed(): void
@@ -133,8 +131,8 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
         $old->process($policy, $this->context($accountId), RateLimitCommand::recordFailure($policy->getName()), $device);
 
         $previousKey = $this->auxiliaryKey($policy->getName(), 'last_missing_fp', $accountId, 'old-secret');
-        $previousBefore = $this->store->get($previousKey);
-        $previousExpiryBefore = $this->store->expiresAt($previousKey);
+        $previousBefore = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $previousKey)->get($previousKey);
+        $previousExpiryBefore = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $previousKey)->expiresAt($previousKey);
         $this->assertNotNull($previousBefore);
         $this->assertNotNull($previousExpiryBefore);
 
@@ -143,13 +141,13 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
         $current->process($policy, $this->context($accountId), RateLimitCommand::recordFailure($policy->getName()), $device);
 
         $currentKey = $this->auxiliaryKey($policy->getName(), 'last_missing_fp', $accountId, 'new-secret');
-        $this->assertSame(12, $this->store->get($this->scoreKey($policy->getName(), $accountId, 'new-secret'))?->value);
-        $this->assertSame($this->clock->now()->getTimestamp(), $this->store->get($currentKey)?->value);
-        $previousAfter = $this->store->get($previousKey);
+        $this->assertSame(12, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->scoreKey($policy->getName(), $accountId, 'new-secret'))->get($this->scoreKey($policy->getName(), $accountId, 'new-secret'))?->value);
+        $this->assertSame($this->clock->now()->getTimestamp(), \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $currentKey)->get($currentKey)?->value);
+        $previousAfter = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $previousKey)->get($previousKey);
         $this->assertNotNull($previousAfter);
         $this->assertSame($previousBefore->value, $previousAfter->value);
         $this->assertSame($previousBefore->updatedAt, $previousAfter->updatedAt);
-        $this->assertSame($previousExpiryBefore, $this->store->expiresAt($previousKey));
+        $this->assertSame($previousExpiryBefore, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $previousKey)->expiresAt($previousKey));
     }
 
     public function testCurrentMissingMarkerIsAuthoritativeOverPreviousGeneration(): void
@@ -158,8 +156,8 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
         $accountId = 'current-marker-authority';
         $currentKey = $this->auxiliaryKey($policy->getName(), 'last_missing_fp', $accountId, 'new-secret');
         $previousKey = $this->auxiliaryKey($policy->getName(), 'last_missing_fp', $accountId, 'old-secret');
-        $this->store->set($currentKey, $this->clock->now()->getTimestamp() - 60, 3600);
-        $this->store->set($previousKey, $this->clock->now()->getTimestamp() - 2000, 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $currentKey)->set($currentKey, $this->clock->now()->getTimestamp() - 60, 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $previousKey)->set($previousKey, $this->clock->now()->getTimestamp() - 2000, 3600);
 
         $this->pipeline(keySecret: 'new-secret', previousSecret: 'old-secret')->process(
             $policy,
@@ -168,7 +166,7 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
             $this->missingDevice(),
         );
 
-        $this->assertSame(9, $this->store->get($this->scoreKey($policy->getName(), $accountId, 'new-secret'))?->value);
+        $this->assertSame(9, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->scoreKey($policy->getName(), $accountId, 'new-secret'))->get($this->scoreKey($policy->getName(), $accountId, 'new-secret'))?->value);
     }
 
     public function testPreviousFingerprintHashAloneDoesNotCreatePreviousAuxiliaryGeneration(): void
@@ -176,7 +174,7 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
         $policy = new LoginProtectionPolicy();
         $accountId = 'fingerprint-only-rotation';
         $oldKey = $this->auxiliaryKey($policy->getName(), 'last_missing_fp', $accountId, 'old-secret');
-        $this->store->set($oldKey, $this->clock->now()->getTimestamp(), 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $oldKey)->set($oldKey, $this->clock->now()->getTimestamp(), 3600);
 
         $device = new DeviceIdentityDTO(null, 'LOW', false, false, 'other/0', false, 'previous-fingerprint-hash');
         $this->pipeline(keySecret: 'new-secret')->process(
@@ -186,28 +184,28 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
             $device,
         );
 
-        $this->assertSame(3, $this->store->get($this->scoreKey($policy->getName(), $accountId, 'new-secret'))?->value);
+        $this->assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->scoreKey($policy->getName(), $accountId, 'new-secret'))->get($this->scoreKey($policy->getName(), $accountId, 'new-secret'))?->value);
     }
 
     public function testAntiEquilibriumCombinesDistinctCurrentAndPreviousCountersWithoutDoubleCounting(): void
     {
-        $gate = new AntiEquilibriumGate($this->correlationStore);
+        $gate = new AntiEquilibriumGate($this->correlationStore->e1Keyspace());
         $currentKey = $this->auxiliaryKey('login_protection', 'anti_equilibrium', 'rotation-account', 'new-secret');
         $previousKey = $this->auxiliaryKey('login_protection', 'anti_equilibrium', 'rotation-account', 'old-secret');
 
         $gate->recordSoftBlock($currentKey);
         $gate->recordSoftBlock($currentKey);
-        $this->correlationStore->incrementWatchFlag($previousKey, 21600);
-        $previousExpiry = $this->correlationStore->watchExpiresAt($previousKey);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousKey)->incrementWatchFlag($previousKey, 21600);
+        $previousExpiry = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousKey)->watchExpiresAt($previousKey);
 
         $this->assertTrue($gate->shouldEscalate($currentKey, $previousKey));
-        $this->assertSame(2, $this->correlationStore->watchValue($currentKey));
-        $this->assertSame(1, $this->correlationStore->watchValue($previousKey));
-        $this->assertSame($previousExpiry, $this->correlationStore->watchExpiresAt($previousKey));
+        $this->assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $currentKey)->watchValue($currentKey));
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousKey)->watchValue($previousKey));
+        $this->assertSame($previousExpiry, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousKey)->watchExpiresAt($previousKey));
 
         $sameKey = $this->auxiliaryKey('login_protection', 'anti_equilibrium', 'same-key-account', 'same-secret');
-        $this->correlationStore->incrementWatchFlag($sameKey, 21600);
-        $this->correlationStore->incrementWatchFlag($sameKey, 21600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $sameKey)->incrementWatchFlag($sameKey, 21600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $sameKey)->incrementWatchFlag($sameKey, 21600);
         $this->assertFalse($gate->shouldEscalate($sameKey, $sameKey));
     }
 
@@ -231,11 +229,11 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
 
         $this->assertSame(
             3,
-            $this->correlationStore->watchValue($this->auxiliaryKey('login_protection', 'anti_equilibrium', $accountId)),
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $this->auxiliaryKey('login_protection', 'anti_equilibrium', $accountId))->watchValue($this->auxiliaryKey('login_protection', 'anti_equilibrium', $accountId)),
         );
         $this->assertSame(
             3,
-            $this->correlationStore->watchValue($this->auxiliaryKey('otp_protection', 'anti_equilibrium', $accountId)),
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $this->auxiliaryKey('otp_protection', 'anti_equilibrium', $accountId))->watchValue($this->auxiliaryKey('otp_protection', 'anti_equilibrium', $accountId)),
         );
 
         $nextLogin = $pipeline->process(
@@ -266,12 +264,12 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
             RateLimitResultDTO::DECISION_HARD_BLOCK,
             $this->floodRequest($pipeline, $login, $accountId, 'login-device-6')->decision,
         );
-        self::assertSame(2, $this->store->checkBlock($this->deviceKey($login->getName(), $accountId, 'login-device-6'))?->level);
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->deviceKey($login->getName(), $accountId, 'login-device-6'))->checkBlock($this->deviceKey($login->getName(), $accountId, 'login-device-6'))?->level);
         $this->assertSame(
             RateLimitResultDTO::DECISION_HARD_BLOCK,
             $this->floodRequest($pipeline, $login, $accountId, 'login-device-7')->decision,
         );
-        self::assertSame(2, $this->store->checkBlock($this->deviceKey($login->getName(), $accountId, 'login-device-7'))?->level);
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->deviceKey($login->getName(), $accountId, 'login-device-7'))->checkBlock($this->deviceKey($login->getName(), $accountId, 'login-device-7'))?->level);
 
         for ($index = 8; $index <= 10; $index++) {
             $this->assertSame(
@@ -283,8 +281,8 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
         $ephemeralOverflow = $this->floodRequest($pipeline, $login, $accountId, 'login-device-11');
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $ephemeralOverflow->decision);
         $overflowK5 = $this->deviceKey($login->getName(), $accountId, 'login-device-11');
-        self::assertNull($this->store->checkBlock($overflowK5));
-        self::assertNull($this->store->get($overflowK5));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $overflowK5)->checkBlock($overflowK5));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $overflowK5)->get($overflowK5));
         self::assertSame(
             10,
             $this->correlationStore->distinctCount($this->deviceCapAccountKey($login->getName(), $accountId)),
@@ -292,8 +290,8 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
 
         $loginStageKey = $this->auxiliaryKey($login->getName(), 'flood_stage', $accountId);
         $otpStageKey = $this->auxiliaryKey($otp->getName(), 'flood_stage', $accountId);
-        $this->assertSame(1, $this->correlationStore->watchValue($loginStageKey));
-        $this->assertSame(0, $this->correlationStore->watchValue($otpStageKey));
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $loginStageKey)->watchValue($loginStageKey));
+        $this->assertSame(0, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $otpStageKey)->watchValue($otpStageKey));
         for ($index = 1; $index <= 5; $index++) {
             $this->assertSame(
                 $index <= 3 ? RateLimitResultDTO::DECISION_ALLOW : RateLimitResultDTO::DECISION_HARD_BLOCK,
@@ -304,20 +302,20 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
             RateLimitResultDTO::DECISION_HARD_BLOCK,
             $this->floodRequest($pipeline, $otp, $accountId, 'otp-device-6')->decision,
         );
-        $this->assertSame(1, $this->correlationStore->watchValue($otpStageKey));
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $otpStageKey)->watchValue($otpStageKey));
         $this->assertSame(
             RateLimitResultDTO::DECISION_HARD_BLOCK,
             $this->floodRequest($pipeline, $otp, $accountId, 'otp-device-7')->decision,
         );
 
-        $previousExpiry = $this->correlationStore->watchExpiresAt($loginStageKey);
+        $previousExpiry = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $loginStageKey)->watchExpiresAt($loginStageKey);
         $rotated = $this->pipeline(keySecret: 'new-secret', previousSecret: 'test_secret');
         $rotatedResult = $this->floodRequest($rotated, $login, $accountId, 'login-device-13');
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $rotatedResult->decision);
-        $this->assertSame(0, $this->correlationStore->watchValue($this->auxiliaryKey($login->getName(), 'flood_stage', $accountId, 'new-secret')));
-        $this->assertSame(1, $this->correlationStore->watchValue($loginStageKey));
-        $this->assertSame($previousExpiry, $this->correlationStore->watchExpiresAt($loginStageKey));
-        $this->assertSame(0, $this->correlationStore->getWatchFlag("flood_stage:acc:{$accountId}"));
+        $this->assertSame(0, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $this->auxiliaryKey($login->getName(), 'flood_stage', $accountId, 'new-secret'))->watchValue($this->auxiliaryKey($login->getName(), 'flood_stage', $accountId, 'new-secret')));
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $loginStageKey)->watchValue($loginStageKey));
+        $this->assertSame($previousExpiry, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $loginStageKey)->watchExpiresAt($loginStageKey));
+        $this->assertSame(0, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, "flood_stage:acc:{$accountId}")->getWatchFlag("flood_stage:acc:{$accountId}"));
     }
 
     private function pipeline(
@@ -328,13 +326,13 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
         return new EvaluationPipeline(
             $this->store,
             $this->correlationStore,
-            new BudgetTracker($this->store, $this->clock),
-            new AntiEquilibriumGate($this->correlationStore),
             new DecayCalculator($this->clock),
-            new EphemeralBucket($this->correlationStore),
             $keySecret,
             $envScope,
             $this->clock,
+            $this->clock,
+            null,
+            null,
             $previousSecret,
         );
     }
@@ -369,7 +367,7 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
         string $secret = 'test_secret',
         string $env = 'prod',
     ): string {
-        return hash_hmac('sha256', "{$policy}:rate_limiter:k4:v2:{$env}:{$accountId}", $secret);
+        return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver(($env)))->derive('k4', ($policy), ($accountId), $secret);
     }
 
     private function auxiliaryKey(
@@ -379,20 +377,12 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
         string $secret = 'test_secret',
         string $env = 'prod',
     ): string {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:aux:{$purpose}:v1:{$env}:{$accountId}",
-            $secret,
-        );
+        return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver(($env)))->derive('aux.' . ($purpose), ($policy), ($accountId), $secret);
     }
 
     private function deviceKey(string $policy, string $accountId, string $fingerprint): string
     {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:k5:v2:prod:{$accountId}:{$fingerprint}",
-            'test_secret',
-        );
+        return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k5', ($policy), ($accountId), 'test_secret', ($fingerprint));
     }
 
     private function deviceCapAccountKey(string $policy, string $accountId): string
@@ -402,11 +392,7 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
             "{$policy}:rate_limiter:k1:v2:prod:198.51.100.90",
             'test_secret',
         );
-        $k4 = hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:k4:v2:prod:{$accountId}",
-            'test_secret',
-        );
+        $k4 = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', ($policy), ($accountId), 'test_secret');
 
         return hash_hmac(
             'sha256',

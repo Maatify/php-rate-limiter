@@ -122,7 +122,7 @@ final class BoundedSnapshotSingleClockReadTest extends TestCase
 
     private function newWorker(FullCapabilityInMemoryStore $store, ClockInterface $clock): EvaluationPipeline
     {
-        return new EvaluationPipeline($store, $store, new BudgetTracker($store, $clock), new AntiEquilibriumGate($store), new DecayCalculator($clock), new EphemeralBucket($store), 'test_secret', 'prod', $clock, null);
+        return new EvaluationPipeline($store, $store, new DecayCalculator($clock), 'test_secret', 'prod', $clock, $clock, null, null, null);
     }
 
     private function s0Worker(FullCapabilityInMemoryStore $store, ClockInterface $clock): S0EvaluationPipeline

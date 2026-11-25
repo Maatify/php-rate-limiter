@@ -13,10 +13,6 @@ use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface;
-use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
-use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\CircuitBreaker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
@@ -24,7 +20,6 @@ use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\Service\RateLimiterEngine;
-use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\SharedCommon\Infrastructure\SystemClock;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
@@ -32,8 +27,67 @@ require dirname(__DIR__) . '/vendor/autoload.php';
 /**
  * Host-side adapter that deterministically simulates an unavailable backend.
  */
-final class InfrastructureFailureRateLimitStore implements RateLimitStoreInterface
+final class InfrastructureFailureRateLimitStore implements \Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface, \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface, \Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface, \Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface, \Maatify\RateLimiter\Repository\ScoreReplaceStoreInterface
 {
+    public function readGenerationBoundScoreState(string $currentKey, ?string $previousKey): ?\Maatify\RateLimiter\DTO\GenerationBoundScoreStateDTO
+    {
+        $this->fail();
+    }
+
+    public function mutateGenerationBoundScore(string $currentKey, ?string $previousKey, ?\Maatify\RateLimiter\DTO\GenerationBoundScoreStateDTO $expectedState, int $ttlSeconds, int $newValue): \Maatify\RateLimiter\DTO\GenerationBoundScoreMutationDTO
+    {
+        $this->fail();
+    }
+
+    public function blockWithPunishmentLifecycleTracking(string $currentKey, ?string $previousKey, int $expectedGeneration, string $proposedLifecycleId, int $level, int $durationSeconds, int $cycleWindowSeconds, int $cycleThreshold, int $pauseSeconds, int $pauseHistoryRetentionSeconds): \Maatify\RateLimiter\DTO\PunishmentLifecycleTransitionDTO
+    {
+        $this->fail();
+    }
+
+    public function claimPostPunishmentReentry(string $currentKey, ?string $previousKey, string $lifecycleId): bool
+    {
+        $this->fail();
+    }
+
+    public function incrementIfSnapshot(string $key, int $ttlSeconds, ?int $expectedValue, ?int $expectedUpdatedAt, int $newValue): ?int
+    {
+        $this->fail();
+    }
+
+    public function replaceScore(string $key, int $value, int $ttlSeconds): ?\Maatify\RateLimiter\DTO\RateLimitStateDTO
+    {
+        $this->fail();
+    }
+
+
+    private bool $accountLayout = false;
+    private ?self $accountView = null;
+
+    /** Example-local isolated in-memory account layout; production Redis shares a transaction through its official view. */
+    public function e1Keyspace(): static
+    {
+        if ($this->accountLayout) {
+            return $this;
+        }
+        if ($this->accountView === null) {
+            $view = clone $this;
+            $view->accountLayout = true;
+            $view->accountView = null;
+            $this->accountView = $view;
+        }
+        return $this->accountView;
+    }
+
+    public function blockWithCycleTracking(string $currentKey, ?string $previousKey, int $level, int $durationSeconds, int $now, int $cycleWindowSeconds, int $cycleThreshold, int $pauseSeconds, int $pauseHistoryRetentionSeconds): \Maatify\RateLimiter\DTO\HardBlockCycleResultDTO
+    {
+        $this->fail();
+    }
+
+    public function readDecayPauseState(string $currentKey, ?string $previousKey, int $fromTimestamp, int $now): \Maatify\RateLimiter\DTO\DecayPauseStateDTO
+    {
+        $this->fail();
+    }
+
     private function fail(): never
     {
         throw new BackendFailureException('deterministic backend failure');
@@ -80,8 +134,37 @@ final class InfrastructureFailureRateLimitStore implements RateLimitStoreInterfa
     }
 }
 
-final class InfrastructureFailureCorrelationStore implements CorrelationStoreInterface
+final class InfrastructureFailureCorrelationStore implements \Maatify\RateLimiter\Repository\BoundedCorrelationStoreInterface, \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface, \Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotStoreInterface
 {
+    public function addDistinctBoundedWithSnapshot(string $key, string $item, int $ttlSeconds, int $maxDistinct): \Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO
+    {
+        $this->fail();
+    }
+
+
+    private bool $accountLayout = false;
+    private ?self $accountView = null;
+
+    /** Example-local isolated in-memory account layout; production Redis shares a transaction through its official view. */
+    public function e1Keyspace(): static
+    {
+        if ($this->accountLayout) {
+            return $this;
+        }
+        if ($this->accountView === null) {
+            $view = clone $this;
+            $view->accountLayout = true;
+            $view->accountView = null;
+            $this->accountView = $view;
+        }
+        return $this->accountView;
+    }
+
+    public function addDistinctBounded(string $key, string $item, int $ttlSeconds, int $maxDistinct): \Maatify\RateLimiter\DTO\BoundedDistinctResultDTO
+    {
+        $this->fail();
+    }
+
     private function fail(): never
     {
         throw new BackendFailureException('deterministic backend failure');
@@ -152,13 +235,13 @@ $signalEmitter = new InfrastructureFailureSignalEmitter();
 $pipeline = new EvaluationPipeline(
     $rateLimitStore,
     $correlationStore,
-    new BudgetTracker($rateLimitStore, $clock),
-    new AntiEquilibriumGate($correlationStore),
     new DecayCalculator($clock),
-    new Maatify\RateLimiter\Service\EphemeralBucket($correlationStore),
     'example-key-secret',
     'example',
     $clock,
+    $clock,
+    null,
+    null,
 );
 $limiter = new RateLimiterEngine(
     new DeviceIdentityResolver(new FingerprintHasher('example-fingerprint-secret')),

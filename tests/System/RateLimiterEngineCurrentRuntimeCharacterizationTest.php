@@ -7,7 +7,6 @@ namespace Maatify\RateLimiter\Tests\System;
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
@@ -17,8 +16,6 @@ use Maatify\RateLimiter\Service\CircuitBreaker;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\RateLimiterEngine;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
@@ -66,18 +63,18 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
 
         $first = $engine->limit($context, $command);
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $first->decision);
-        $firstScore = $this->store->get($k4Key);
+        $firstScore = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->get($k4Key);
         $this->assertNotNull($firstScore);
         $this->assertSame(3, $firstScore->value);
-        $this->assertSame(1, $this->store->getBudget($k4Key)?->count);
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->getBudget($k4Key)?->count);
 
         $second = $engine->limit($context, $command);
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $second->decision);
         $this->assertSame(1, $second->blockLevel);
-        $secondScore = $this->store->get($k4Key);
+        $secondScore = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->get($k4Key);
         $this->assertNotNull($secondScore);
         $this->assertSame(6, $secondScore->value);
-        $this->assertSame(2, $this->store->getBudget($k4Key)?->count);
+        $this->assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->getBudget($k4Key)?->count);
 
         $preCheck = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $preCheck->decision);
@@ -86,10 +83,10 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $third = $engine->limit($context, $command);
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $third->decision);
         $this->assertSame(2, $third->blockLevel);
-        $thirdScore = $this->store->get($k4Key);
+        $thirdScore = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->get($k4Key);
         $this->assertNotNull($thirdScore);
         $this->assertSame(9, $thirdScore->value);
-        $this->assertSame(3, $this->store->getBudget($k4Key)?->count);
+        $this->assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->getBudget($k4Key)?->count);
     }
 
     public function testLoginBudgetOnlyCrossingRemainsSoftAndStoresNonHardBlock(): void
@@ -102,29 +99,29 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             ['device' => 'stable'],
         );
         $k4Key = $this->key('login_protection', 'k4', 'login-budget-crossing');
-        $this->store->set($k4Key, 0, 86400);
-        $this->store->incrementBudget($k4Key, 86400, 19);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->set($k4Key, 0, 86400);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->incrementBudget($k4Key, 86400, 19);
 
-        $beforeScore = $this->store->get($k4Key);
+        $beforeScore = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->get($k4Key);
         $this->assertNotNull($beforeScore);
         $this->assertSame(0, $beforeScore->value);
-        $this->assertSame(19, $this->store->getBudget($k4Key)?->count);
+        $this->assertSame(19, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->getBudget($k4Key)?->count);
 
         $result = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
 
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
         $this->assertSame(3, $result->blockLevel);
-        $this->assertSame(20, $this->store->getBudget($k4Key)?->count);
-        $afterScore = $this->store->get($k4Key);
+        $this->assertSame(20, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->getBudget($k4Key)?->count);
+        $afterScore = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->get($k4Key);
         $this->assertNotNull($afterScore);
         $this->assertSame(3, $afterScore->value);
         $this->assertLessThan(8, $afterScore->value);
-        $this->assertNull($this->store->checkBlock($k4Key));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->checkBlock($k4Key));
 
         $subsequent = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $subsequent->decision);
         $this->assertSame(1, $subsequent->blockLevel);
-        $this->assertSame(1, $this->store->checkBlock($k4Key)?->level);
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->checkBlock($k4Key)?->level);
     }
 
     public function testLoginBudgetWithMissingSessionIdentifierDoesNotReceiveTrustedDowngrade(): void
@@ -140,7 +137,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             true,
         );
         $k4Key = $this->key('login_protection', 'k4', $accountId);
-        $this->store->incrementBudget($k4Key, 86400, 20);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->incrementBudget($k4Key, 86400, 20);
 
         $result = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
 
@@ -161,7 +158,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             true,
         );
         $k4Key = $this->key('login_protection', 'k4', $accountId);
-        $this->store->incrementBudget($k4Key, 86400, 20);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->incrementBudget($k4Key, 86400, 20);
 
         $result = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
 
@@ -180,18 +177,18 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         );
         $oldK4Key = $this->key('login_protection', 'k4', $accountId, 'old_secret');
         $newK4Key = $this->key('login_protection', 'k4', $accountId, 'new_secret');
-        $oldBudget = $this->store->incrementBudget($oldK4Key, 86400, 20);
+        $oldBudget = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $oldK4Key)->incrementBudget($oldK4Key, 86400, 20);
 
         $result = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
 
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
         $this->assertSame(3, $result->blockLevel);
 
-        $storedOldBudget = $this->store->getBudget($oldK4Key);
+        $storedOldBudget = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $oldK4Key)->getBudget($oldK4Key);
         $this->assertNotNull($storedOldBudget);
         $this->assertSame(20, $storedOldBudget->count);
         $this->assertSame($oldBudget->epochStart, $storedOldBudget->epochStart);
-        $this->assertNull($this->store->getBudget($newK4Key));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $newK4Key)->getBudget($newK4Key));
     }
 
     public function testLoginActiveBudgetDoesNotMaskStrongerK4ScoreThreshold(): void
@@ -204,22 +201,18 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             $accountId,
         );
         $k4Key = $this->key('login_protection', 'k4', $accountId);
-        $this->store->set($k4Key, 8, 86400);
-        $this->store->incrementBudget($k4Key, 86400, 20);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->set($k4Key, 8, 86400);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->incrementBudget($k4Key, 86400, 20);
 
-        $this->assertNull($this->store->checkBlock($k4Key));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->checkBlock($k4Key));
 
         $result = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
 
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         $this->assertSame(2, $result->blockLevel);
-        $this->assertSame(8, $this->store->get($k4Key)?->value);
-        $cooldownKey = hash_hmac(
-            'sha256',
-            'login_protection:rate_limiter:budget_cooldown:v1:prod:' . $accountId,
-            'test_secret',
-        );
-        $this->assertNull($this->store->get($cooldownKey));
+        $this->assertSame(8, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->get($k4Key)?->value);
+        $cooldownKey = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('budget_cooldown', 'login_protection', ($accountId), 'test_secret');
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $cooldownKey)->get($cooldownKey));
     }
 
     public function testLoginActiveBudgetDoesNotShortCircuitFailureUpdates(): void
@@ -233,15 +226,15 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             ['device' => 'stable'],
         );
         $k4Key = $this->key('login_protection', 'k4', $accountId);
-        $this->store->set($k4Key, 0, 86400);
-        $this->store->incrementBudget($k4Key, 86400, 20);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->set($k4Key, 0, 86400);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->incrementBudget($k4Key, 86400, 20);
 
         $result = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
 
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
         $this->assertSame(3, $result->blockLevel);
-        $this->assertSame(3, $this->store->get($k4Key)?->value);
-        $this->assertSame(21, $this->store->getBudget($k4Key)?->count);
+        $this->assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->get($k4Key)?->value);
+        $this->assertSame(21, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->getBudget($k4Key)?->count);
     }
 
     public function testKnownTrustedLoginDeviceBuildsMicroCapBeforeAccountBudget(): void
@@ -260,18 +253,14 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $this->assertNotNull($device->fingerprintHash);
         $k4Key = $this->key('login_protection', 'k4', $accountId);
         $k5Key = $this->key('login_protection', 'k5', "{$accountId}:{$device->fingerprintHash}");
-        $microCapKey = hash_hmac(
-            'sha256',
-            "login_protection:rate_limiter:microcap:k5:v1:prod:{$accountId}:{$device->fingerprintHash}",
-            'test_secret',
-        );
+        $microCapKey = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('microcap.k5', 'login_protection', ($accountId), 'test_secret', ($device->fingerprintHash));
 
         $result = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
 
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
-        $this->assertSame(2, $this->store->get($k5Key)?->value);
-        $this->assertSame(1, $this->store->getBudget($microCapKey)?->count);
-        $this->assertNull($this->store->getBudget($k4Key));
+        $this->assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k5Key)->get($k5Key)?->value);
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $microCapKey)->getBudget($microCapKey)?->count);
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->getBudget($k4Key));
     }
 
     #[DataProvider('ephemeralOverflowTrustFacts')]
@@ -315,11 +304,11 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $k5Key = $this->key($policy, 'k5', "{$accountId}:{$overflowDevice->fingerprintHash}");
         $microCapKey = $this->microCapKey($policy, $accountId, $overflowDevice->fingerprintHash);
 
-        $this->assertSame(3, $this->store->get($k4Key)?->value);
-        $this->assertSame(1, $this->store->getBudget($k4Key)?->count);
-        $this->assertNull($this->store->get($k5Key));
-        $this->assertNull($this->store->checkBlock($k5Key));
-        $this->assertNull($this->store->getBudget($microCapKey));
+        $this->assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->get($k4Key)?->value);
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->getBudget($k4Key)?->count);
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k5Key)->get($k5Key));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k5Key)->checkBlock($k5Key));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $microCapKey)->getBudget($microCapKey));
         $this->assertSame(10, $this->correlationStore->distinctCount($this->deviceCapAccountKey($policy, $accountId)));
     }
 
@@ -355,10 +344,10 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $k4Key = $this->key($policy, 'k4', $accountId);
         $k5Key = $this->key($policy, 'k5', "{$accountId}:{$overflowDevice->fingerprintHash}");
 
-        $this->assertSame(5, $this->store->get($k4Key)?->value);
-        $this->assertSame(1, $this->store->getBudget($k4Key)?->count);
-        $this->assertNull($this->store->get($k5Key));
-        $this->assertNull($this->store->checkBlock($k5Key));
+        $this->assertSame(5, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->get($k4Key)?->value);
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->getBudget($k4Key)?->count);
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k5Key)->get($k5Key));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k5Key)->checkBlock($k5Key));
         $this->assertSame(10, $this->correlationStore->distinctCount($this->deviceCapAccountKey($policy, $accountId)));
     }
 
@@ -375,14 +364,14 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $k4Key = $this->key('login_protection', 'k4', $accountId);
 
         $first = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
-        $firstBudget = $this->store->getBudget($k4Key);
+        $firstBudget = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->getBudget($k4Key);
         $this->assertNotNull($firstBudget);
         $this->assertSame(1, $firstBudget->count);
         $epochStart = $firstBudget->epochStart;
 
         $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:00:30'));
         $second = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
-        $secondBudget = $this->store->getBudget($k4Key);
+        $secondBudget = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->getBudget($k4Key);
 
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $first->decision);
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $second->decision);
@@ -401,7 +390,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             ['device' => 'stable'],
         );
         $k4Key = $this->key('login_protection', 'k4', 'login-cooldown-absence');
-        $this->store->incrementBudget($k4Key, 86400, 20);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->incrementBudget($k4Key, 86400, 20);
 
         $first = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $first->decision);
@@ -413,13 +402,9 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $second->decision);
         $this->assertSame(1, $second->blockLevel);
         $this->assertSame(1200, $second->retryAfter);
-        $this->assertSame(22, $this->store->getBudget($k4Key)?->count);
-        $cooldownKey = hash_hmac(
-            'sha256',
-            'login_protection:rate_limiter:budget_cooldown:v1:prod:login-cooldown-absence',
-            'test_secret',
-        );
-        $this->assertSame(1, $this->store->get($cooldownKey)?->value);
+        $this->assertSame(22, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->getBudget($k4Key)?->count);
+        $cooldownKey = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('budget_cooldown', 'login_protection', 'login-cooldown-absence', 'test_secret');
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $cooldownKey)->get($cooldownKey)?->value);
     }
 
     public function testOtpRecoveryCollisionGuardSuppressesBudgetActivationAtNineToTen(): void
@@ -434,24 +419,20 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             true,
         );
         $k4Key = $this->key('otp_protection', 'k4', 'otp-recovery-collision');
-        $this->store->incrementBudget($k4Key, 86400, 9);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->incrementBudget($k4Key, 86400, 9);
 
         $result = $engine->limit($context, RateLimitCommand::recordFailure('otp_protection'));
 
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
         $this->assertSame(2, $result->blockLevel);
-        $this->assertSame(10, $this->store->getBudget($k4Key)?->count);
-        $score = $this->store->get($k4Key);
+        $this->assertSame(10, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->getBudget($k4Key)?->count);
+        $score = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->get($k4Key);
         $this->assertNull($score);
         $k5Key = $this->key('otp_protection', 'k5', 'otp-recovery-collision:' . (new DeviceIdentityResolver(new FingerprintHasher('test_secret')))->resolve($context)->fingerprintHash);
-        $this->assertSame(4, $this->store->get($k5Key)?->value);
-        $this->assertNull($this->store->checkBlock($k4Key));
-        $cooldownKey = hash_hmac(
-            'sha256',
-            'otp_protection:rate_limiter:budget_cooldown:v1:prod:otp-recovery-collision',
-            'test_secret',
-        );
-        $this->assertNull($this->store->get($cooldownKey));
+        $this->assertSame(4, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k5Key)->get($k5Key)?->value);
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->checkBlock($k4Key));
+        $cooldownKey = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('budget_cooldown', 'otp_protection', 'otp-recovery-collision', 'test_secret');
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $cooldownKey)->get($cooldownKey));
     }
 
     public function testApiK2CrossingMapsToSoftBlockL1AndOnlyK2Persistence(): void
@@ -475,17 +456,17 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             'k2',
             '198.51.100.14:' . DeviceIdentityResolver::normalizeUserAgent($context->ua),
         );
-        $block = $this->store->checkBlock($k2Key);
+        $block = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k2Key)->checkBlock($k2Key);
         $this->assertNotNull($block);
         $this->assertSame(1, $block->level);
-        $this->assertNull($this->store->checkBlock($this->key('api_heavy_protection', 'k1', '198.51.100.14')));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('api_heavy_protection', 'k1', '198.51.100.14'))->checkBlock($this->key('api_heavy_protection', 'k1', '198.51.100.14')));
         $this->assertNull($this->store->checkBlock($this->key(
             'api_heavy_protection',
             'k3',
             '198.51.100.14:' . (new DeviceIdentityResolver(new FingerprintHasher('test_secret')))->resolve($context)->fingerprintHash,
         )));
-        $this->assertNull($this->store->checkBlock($this->key('api_heavy_protection', 'k4', 'api-k2-mapping')));
-        $this->assertNull($this->store->checkBlock($this->key('api_heavy_protection', 'k5', 'api-k2-mapping')));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('api_heavy_protection', 'k4', 'api-k2-mapping'))->checkBlock($this->key('api_heavy_protection', 'k4', 'api-k2-mapping')));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('api_heavy_protection', 'k5', 'api-k2-mapping:'))->checkBlock($this->key('api_heavy_protection', 'k5', 'api-k2-mapping:')));
     }
 
     public function testApiThresholdPathDoesNotPersistAccountOrDeviceAccountBlocks(): void
@@ -508,7 +489,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $this->assertNull($policy->getBudgetConfig());
 
         $k4Key = $this->key('api_heavy_protection', 'k4', 'api-k4-mapping');
-        $block = $this->store->checkBlock($k4Key);
+        $block = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->checkBlock($k4Key);
         $this->assertNull($block);
     }
 
@@ -546,17 +527,17 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             ['device' => 'stable'],
         );
         $device = (new DeviceIdentityResolver(new FingerprintHasher('test_secret')))->resolve($context);
-        $this->store->set($this->key('api_heavy_protection', 'k1', $context->ip), 3, 3600);
-        $this->store->set($this->key('api_heavy_protection', 'k2', $context->ip . ':' . $device->normalizedUa), 3, 3600);
-        $this->store->set($this->key('api_heavy_protection', 'k3', $context->ip . ':' . $device->fingerprintHash), 3, 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('api_heavy_protection', 'k1', $context->ip))->set($this->key('api_heavy_protection', 'k1', $context->ip), 3, 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('api_heavy_protection', 'k2', $context->ip . ':' . $device->normalizedUa))->set($this->key('api_heavy_protection', 'k2', $context->ip . ':' . $device->normalizedUa), 3, 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('api_heavy_protection', 'k3', $context->ip . ':' . $device->fingerprintHash))->set($this->key('api_heavy_protection', 'k3', $context->ip . ':' . $device->fingerprintHash), 3, 3600);
 
         $result = $engine->limit($context, RateLimitCommand::checkOnly('api_heavy_protection'));
 
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         $this->assertSame(3, $result->blockLevel);
-        $this->assertSame(3, $this->store->checkBlock($this->key('api_heavy_protection', 'k1', $context->ip))?->level);
-        $this->assertSame(1, $this->store->checkBlock($this->key('api_heavy_protection', 'k2', $context->ip . ':' . $device->normalizedUa))?->level);
-        $this->assertSame(2, $this->store->checkBlock($this->key('api_heavy_protection', 'k3', $context->ip . ':' . $device->fingerprintHash))?->level);
+        $this->assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('api_heavy_protection', 'k1', $context->ip))->checkBlock($this->key('api_heavy_protection', 'k1', $context->ip))?->level);
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('api_heavy_protection', 'k2', $context->ip . ':' . $device->normalizedUa))->checkBlock($this->key('api_heavy_protection', 'k2', $context->ip . ':' . $device->normalizedUa))?->level);
+        $this->assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('api_heavy_protection', 'k3', $context->ip . ':' . $device->fingerprintHash))->checkBlock($this->key('api_heavy_protection', 'k3', $context->ip . ':' . $device->fingerprintHash))?->level);
     }
 
     public function testApiHeavyRegistrationRequiresK3Thresholds(): void
@@ -591,9 +572,9 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
 
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         $this->assertSame(2, $result->blockLevel);
-        $this->assertSame(1, $this->store->checkBlock($this->key('api_heavy_protection', 'k2', $context->ip . ':' . $device->normalizedUa))?->level);
-        $this->assertSame(2, $this->store->checkBlock($this->key('api_heavy_protection', 'k3', $context->ip . ':' . $device->fingerprintHash))?->level);
-        $this->assertNull($this->store->checkBlock($this->key('api_heavy_protection', 'k1', $context->ip)));
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('api_heavy_protection', 'k2', $context->ip . ':' . $device->normalizedUa))->checkBlock($this->key('api_heavy_protection', 'k2', $context->ip . ':' . $device->normalizedUa))?->level);
+        $this->assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('api_heavy_protection', 'k3', $context->ip . ':' . $device->fingerprintHash))->checkBlock($this->key('api_heavy_protection', 'k3', $context->ip . ':' . $device->fingerprintHash))?->level);
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('api_heavy_protection', 'k1', $context->ip))->checkBlock($this->key('api_heavy_protection', 'k1', $context->ip)));
     }
 
     public function testApiK1K2AndK3CandidatesPersistOnlyTheirOwnScopeLevels(): void
@@ -612,11 +593,11 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
 
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         $this->assertSame(3, $result->blockLevel);
-        $this->assertSame(3, $this->store->checkBlock($this->key('api_heavy_protection', 'k1', $context->ip))?->level);
-        $this->assertSame(1, $this->store->checkBlock($this->key('api_heavy_protection', 'k2', $context->ip . ':' . $device->normalizedUa))?->level);
-        $this->assertSame(2, $this->store->checkBlock($this->key('api_heavy_protection', 'k3', $context->ip . ':' . $device->fingerprintHash))?->level);
-        $this->assertNull($this->store->checkBlock($this->key('api_heavy_protection', 'k4', $context->accountId ?? '')));
-        $this->assertNull($this->store->checkBlock($this->key('api_heavy_protection', 'k5', ($context->accountId ?? '') . ':' . $device->fingerprintHash)));
+        $this->assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('api_heavy_protection', 'k1', $context->ip))->checkBlock($this->key('api_heavy_protection', 'k1', $context->ip))?->level);
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('api_heavy_protection', 'k2', $context->ip . ':' . $device->normalizedUa))->checkBlock($this->key('api_heavy_protection', 'k2', $context->ip . ':' . $device->normalizedUa))?->level);
+        $this->assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('api_heavy_protection', 'k3', $context->ip . ':' . $device->fingerprintHash))->checkBlock($this->key('api_heavy_protection', 'k3', $context->ip . ':' . $device->fingerprintHash))?->level);
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('api_heavy_protection', 'k4', $context->accountId ?? ''))->checkBlock($this->key('api_heavy_protection', 'k4', $context->accountId ?? '')));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('api_heavy_protection', 'k5', ($context->accountId ?? '') . ':' . $device->fingerprintHash))->checkBlock($this->key('api_heavy_protection', 'k5', ($context->accountId ?? '') . ':' . $device->fingerprintHash)));
     }
 
     public function testCredentialSprayBlocksTheFifthDistinctSubjectDuringPrecheck(): void
@@ -644,7 +625,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         }
 
         $k1Key = $this->key('login_protection', 'k1', $ip);
-        $this->assertSame(2, $this->store->checkBlock($k1Key)?->level);
+        $this->assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1Key)->checkBlock($k1Key)?->level);
     }
 
     public function testDistributedAccountAttackBlocksInvolvedK5sAtFourthDevice(): void
@@ -685,12 +666,12 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         }
 
         $k4Key = $this->key('login_protection', 'k4', $accountId);
-        $this->assertNull($this->store->get($k4Key));
-        $this->assertNull($this->store->checkBlock($k4Key));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->get($k4Key));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->checkBlock($k4Key));
 
         foreach ($resolvedFingerprintHashes as $fingerprintHash) {
             $k5Key = $this->key('login_protection', 'k5', "{$accountId}:{$fingerprintHash}");
-            $this->assertSame(2, $this->store->checkBlock($k5Key)?->level);
+            $this->assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k5Key)->checkBlock($k5Key)?->level);
         }
     }
 
@@ -923,13 +904,13 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $pipeline = new EvaluationPipeline(
             $this->store,
             $this->correlationStore,
-            new BudgetTracker($this->store, $this->clock),
-            new AntiEquilibriumGate($this->correlationStore),
             new DecayCalculator($this->clock),
-            new EphemeralBucket($this->correlationStore),
             $currentSecret,
             'prod',
             $this->clock,
+            $this->clock,
+            null,
+            null,
             $previousSecret,
         );
 
@@ -955,11 +936,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
 
     private function key(string $policy, string $type, string $scope, string $secret = 'test_secret'): string
     {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:{$type}:v2:prod:{$scope}",
-            $secret,
-        );
+        return \Maatify\RateLimiter\Tests\Support\FixtureKeys::scope(($type), ($policy), 'prod', ($scope), $secret);
     }
 
     private function overflowContext(
@@ -994,10 +971,6 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
 
     private function microCapKey(string $policy, string $accountId, string $fingerprint): string
     {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:microcap:k5:v1:prod:{$accountId}:{$fingerprint}",
-            'test_secret',
-        );
+        return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('microcap.k5', ($policy), ($accountId), 'test_secret', ($fingerprint));
     }
 }

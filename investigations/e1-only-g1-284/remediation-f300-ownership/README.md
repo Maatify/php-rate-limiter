@@ -1,0 +1,3 @@
+# F300-03..08 ownership-fix measurements
+
+Source before = `6e37b982` (pre-ownership fixes), after = `2875120143076068a245182990d89489963446df`. Same unchanged parent `bench.php` and 14 scenarios, Redis 7.0.15, PHP 8.4.27 (64-bit native linux/arm64, 32-bit linux/386 under emulation), concurrency 1, 3 order-rotated repeats x 100 ops. Run `bash run-bench.sh 64|32` (no concurrent suites) then `python3 summarize.py`. The harness was run once at 64-bit and twice at 32-bit; the second 32-bit run reproduced the first within 1% on every scenario (raw files hold the second run; the meta file notes dirtyFiles=1, this directory itself). Laboratory evidence only, not a production-capacity claim.

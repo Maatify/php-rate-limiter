@@ -16,10 +16,19 @@ use Maatify\RateLimiter\Repository\OperationalReadOnlyStoreInterface;
  * none of the caller-time capability interfaces, by delegating to an inner
  * store. Proves that an old-signature Host store still loads and runs (BC2).
  */
-final class LegacySignatureFullCapabilityStore implements FullCapabilityStoreInterface, SnapshotFencedScoreStoreInterface, CircuitBreakerStateCasStoreInterface, ScoreReplaceStoreInterface, OperationalReadOnlyStoreInterface
+final class LegacySignatureFullCapabilityStore implements \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface, FullCapabilityStoreInterface, SnapshotFencedScoreStoreInterface, CircuitBreakerStateCasStoreInterface, ScoreReplaceStoreInterface, OperationalReadOnlyStoreInterface
 {
-    /** @param FullCapabilityStoreInterface&SnapshotFencedScoreStoreInterface&CircuitBreakerStateCasStoreInterface&ScoreReplaceStoreInterface $inner */
-    public function __construct(private readonly FullCapabilityStoreInterface&SnapshotFencedScoreStoreInterface&CircuitBreakerStateCasStoreInterface&ScoreReplaceStoreInterface $inner) {}
+    use \Maatify\RateLimiter\Tests\Support\E1View;
+
+    /** @param FullCapabilityStoreInterface&SnapshotFencedScoreStoreInterface&CircuitBreakerStateCasStoreInterface&ScoreReplaceStoreInterface&\Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface $inner */
+    public function __construct(private FullCapabilityStoreInterface&SnapshotFencedScoreStoreInterface&CircuitBreakerStateCasStoreInterface&ScoreReplaceStoreInterface&\Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface $inner) {}
+
+    protected function initializeAccountView(object $view): void
+    {
+        if ($view instanceof self) {
+            $view->inner = $this->inner->e1Keyspace();
+        }
+    }
 
     /** @return array{0: ?\Maatify\RateLimiter\DTO\CircuitBreakerStateDTO, 1: string} */
     public function loadWithVersion(string $policyName): array

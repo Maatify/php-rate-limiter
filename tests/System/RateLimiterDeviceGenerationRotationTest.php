@@ -9,7 +9,6 @@ use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
@@ -18,8 +17,6 @@ use Maatify\RateLimiter\Service\CircuitBreaker;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\RateLimiterEngine;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
@@ -87,7 +84,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
         );
 
         $oldKey = $this->deviceKey('login_protection', 'k5', $context, $device->fingerprintHash, 'old-outer');
-        $store->block($oldKey, 2, 600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $oldKey)->block($oldKey, 2, 600);
 
         $result = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
 
@@ -111,7 +108,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
         );
 
         $oldKey = $this->deviceKey('api_heavy_protection', 'k3', $context, $device->previousFingerprintHash, 'stable-outer');
-        $store->block($oldKey, 2, 600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $oldKey)->block($oldKey, 2, 600);
 
         $result = $engine->limit($context, RateLimitCommand::checkOnly('api_heavy_protection'));
 
@@ -135,7 +132,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
         );
 
         $oldKey = $this->deviceKey('login_protection', 'k5', $context, $device->previousFingerprintHash, 'old-outer');
-        $store->block($oldKey, 2, 600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $oldKey)->block($oldKey, 2, 600);
 
         $result = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
 
@@ -163,7 +160,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
         $this->assertSame(
             2,
-            $store->get($this->deviceKey('login_protection', 'k5', $context, $device->fingerprintHash, 'stable-outer'))?->value,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->deviceKey('login_protection', 'k5', $context, $device->fingerprintHash, 'stable-outer'))->get($this->deviceKey('login_protection', 'k5', $context, $device->fingerprintHash, 'stable-outer'))?->value,
         );
     }
 
@@ -182,13 +179,13 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
             new ApiHeavyProtectionPolicy(['k3' => 2]),
         );
         $oldKey = $this->deviceKey('api_heavy_protection', 'k3', $context, $device->previousFingerprintHash, 'stable-outer');
-        $store->set($oldKey, 2, 86400);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $oldKey)->set($oldKey, 2, 86400);
 
         $result = $engine->limit($context, RateLimitCommand::checkOnly('api_heavy_protection'));
 
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         $this->assertGreaterThanOrEqual(2, $result->blockLevel);
-        $this->assertNull($store->get($this->deviceKey('api_heavy_protection', 'k3', $context, $device->fingerprintHash, 'stable-outer')));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->deviceKey('api_heavy_protection', 'k3', $context, $device->fingerprintHash, 'stable-outer'))->get($this->deviceKey('api_heavy_protection', 'k3', $context, $device->fingerprintHash, 'stable-outer')));
     }
 
     public function testBothRotatedPreviousK5ScoreIsReadButOnlyCurrentK5IsUpdated(): void
@@ -207,13 +204,13 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
         );
         $oldKey = $this->deviceKey('login_protection', 'k5', $context, $device->previousFingerprintHash, 'old-outer');
         $currentKey = $this->deviceKey('login_protection', 'k5', $context, $device->fingerprintHash, 'new-outer');
-        $store->set($oldKey, 2, 86400);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $oldKey)->set($oldKey, 2, 86400);
 
         $result = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
 
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
-        $this->assertSame(2, $store->get($oldKey)?->value);
-        $this->assertSame(4, $store->get($currentKey)?->value);
+        $this->assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $oldKey)->get($oldKey)?->value);
+        $this->assertSame(4, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $currentKey)->get($currentKey)?->value);
     }
 
     /**
@@ -246,7 +243,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
             $device->previousFingerprintHash ?? $device->fingerprintHash,
             $previousOuter ?? $currentOuter,
         );
-        $previousState = $store->incrementBudget($previousMicroKey, 86400, 7);
+        $previousState = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousMicroKey)->incrementBudget($previousMicroKey, 86400, 7);
         $currentMicroKey = $this->microKey(
             'login_protection',
             $context->accountId,
@@ -256,12 +253,12 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
 
         $result = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
 
-        $currentState = $store->getBudget($currentMicroKey);
+        $currentState = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $currentMicroKey)->getBudget($currentMicroKey);
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
         $this->assertNotNull($currentState);
         $this->assertSame(8, $currentState->count);
         $this->assertSame($previousState->epochStart, $currentState->epochStart);
-        $this->assertSame(7, $store->getBudget($previousMicroKey)?->count);
+        $this->assertSame(7, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousMicroKey)->getBudget($previousMicroKey)?->count);
     }
 
     /**
@@ -290,13 +287,13 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
         );
         $currentMicroKey = $this->microKey('login_protection', $context->accountId, $device->fingerprintHash, 'new-outer');
         $previousMicroKey = $this->microKey('login_protection', $context->accountId, $device->fingerprintHash, 'old-outer');
-        $store->incrementBudget($currentMicroKey, 86400, 3);
-        $store->incrementBudget($previousMicroKey, 86400, 100);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $currentMicroKey)->incrementBudget($currentMicroKey, 86400, 3);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousMicroKey)->incrementBudget($previousMicroKey, 86400, 100);
 
         $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
 
-        $this->assertSame(4, $store->getBudget($currentMicroKey)?->count);
-        $this->assertSame(100, $store->getBudget($previousMicroKey)?->count);
+        $this->assertSame(4, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $currentMicroKey)->getBudget($currentMicroKey)?->count);
+        $this->assertSame(100, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousMicroKey)->getBudget($previousMicroKey)?->count);
     }
 
     public function testK5MicroCapMigrationWithoutCapabilityFailsClosedThroughEngine(): void
@@ -315,12 +312,12 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
         );
         $previousMicroKey = $this->microKey('login_protection', $context->accountId, $device->fingerprintHash, 'old-outer');
         $currentMicroKey = $this->microKey('login_protection', $context->accountId, $device->fingerprintHash, 'new-outer');
-        $store->incrementBudget($previousMicroKey, 86400, 7);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousMicroKey)->incrementBudget($previousMicroKey, 86400, 7);
 
         $this->expectException(\Maatify\RateLimiter\Exception\RateLimiterException::class);
         $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
-        $this->assertSame(7, $store->getBudget($previousMicroKey)?->count);
-        $this->assertNull($store->getBudget($currentMicroKey));
+        $this->assertSame(7, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousMicroKey)->getBudget($previousMicroKey)?->count);
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $currentMicroKey)->getBudget($currentMicroKey));
     }
 
     public function testPreviousFingerprintUsesBoundedRotationWithoutCreatingRawPreviousMembers(): void
@@ -388,13 +385,13 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
         $pipeline = new EvaluationPipeline(
             $store,
             $correlationStore,
-            new BudgetTracker($store, $clock),
-            new AntiEquilibriumGate($correlationStore),
             new DecayCalculator($clock),
-            new EphemeralBucket($correlationStore),
             $currentOuter,
             'prod',
             $clock,
+            $clock,
+            null,
+            null,
             $previousOuter,
         );
 
@@ -443,6 +440,10 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
     ): string {
         $base = "{$policy}:rate_limiter:{$type}:v2:prod:";
         $normalizedUa = DeviceIdentityResolver::normalizeUserAgent($context->ua);
+        if (in_array($type, ['k4', 'k5'], true)) {
+            self::assertNotNull($context->accountId);
+            return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive($type, $policy, $context->accountId, $outer, $type === 'k5' ? $fingerprint : null);
+        }
         $raw = match ($type) {
             'k3' => $base . $context->ip . ':' . $fingerprint,
             'k5' => $base . $context->accountId . ':' . $fingerprint,
@@ -456,10 +457,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
 
     private function microKey(string $policy, ?string $accountId, ?string $fingerprint, string $outer): string
     {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:microcap:k5:v1:prod:{$accountId}:{$fingerprint}",
-            $outer,
-        );
+        self::assertNotNull($accountId);
+        return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('microcap.k5', ($policy), ($accountId), $outer, ($fingerprint));
     }
 }

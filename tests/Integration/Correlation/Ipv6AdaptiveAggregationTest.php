@@ -14,10 +14,7 @@ use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\BoundedCorrelationStoreInterface;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore;
@@ -205,7 +202,7 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         self::assertInstanceOf(RateLimitResultDTO::class, $lastResult);
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $lastResult->decision);
         $currentK1 = $this->enforcementKey('login_protection', 'k1', $ips[5]);
-        self::assertSame(2, $this->rateLimitStore->checkBlock($currentK1)?->level);
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $currentK1)->checkBlock($currentK1)?->level);
 
         $macroSpray = $this->adaptiveObservationKey(
             'login_protection',
@@ -214,10 +211,10 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
             $this->hierarchyKey('login_protection', 48, $this->prefix($ips[4], 48)),
         );
         self::assertSame(5, $this->correlationStore->distinctCount($macroSpray));
-        self::assertNull($this->rateLimitStore->checkBlock($this->legacyMacroKey('login_protection', $ips[4], 48)));
-        self::assertNull($this->rateLimitStore->get($this->legacyMacroKey('login_protection', $ips[4], 48)));
-        self::assertNull($this->rateLimitStore->get($this->legacyMacroKey('login_protection', $ips[4], 40)));
-        self::assertNull($this->rateLimitStore->get($this->legacyMacroKey('login_protection', $ips[4], 32)));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->legacyMacroKey('login_protection', $ips[4], 48))->checkBlock($this->legacyMacroKey('login_protection', $ips[4], 48)));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->legacyMacroKey('login_protection', $ips[4], 48))->get($this->legacyMacroKey('login_protection', $ips[4], 48)));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->legacyMacroKey('login_protection', $ips[4], 40))->get($this->legacyMacroKey('login_protection', $ips[4], 40)));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->legacyMacroKey('login_protection', $ips[4], 32))->get($this->legacyMacroKey('login_protection', $ips[4], 32)));
     }
 
     public function testTrustedSessionTreatsMacroSprayAsAdvisoryButStoresCanonicalK1State(): void
@@ -250,7 +247,7 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         );
 
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
-        self::assertSame(2, $this->rateLimitStore->checkBlock($this->enforcementKey('login_protection', 'k1', $ips[5]))?->level);
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->enforcementKey('login_protection', 'k1', $ips[5]))->checkBlock($this->enforcementKey('login_protection', 'k1', $ips[5]))?->level);
     }
 
     public function testMacroChurnReachesThresholdAndSecondWatchWithoutMacroK2State(): void
@@ -268,7 +265,7 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         $result = $this->observeFingerprint($pipeline, $policy, $secondIp, 'churn-2');
 
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
-        self::assertSame(2, $this->rateLimitStore->checkBlock($this->enforcementKey('api_heavy_protection', 'k2', $secondIp))?->level);
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->enforcementKey('api_heavy_protection', 'k2', $secondIp))->checkBlock($this->enforcementKey('api_heavy_protection', 'k2', $secondIp))?->level);
         $macroChurn = $this->adaptiveChurnKey(
             'api_heavy_protection',
             48,
@@ -276,8 +273,8 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
             'chrome/123',
         );
         self::assertSame(2, $this->correlationStore->distinctCount($macroChurn));
-        self::assertSame(2, $this->correlationStore->watchValue($macroChurn . ':watch'));
-        self::assertNull($this->rateLimitStore->get($this->legacyMacroKey('api_heavy_protection', $secondIp, 48)));
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $macroChurn . ':watch')->watchValue($macroChurn . ':watch'));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->legacyMacroKey('api_heavy_protection', $secondIp, 48))->get($this->legacyMacroKey('api_heavy_protection', $secondIp, 48)));
     }
 
     public function testMacroSprayAtFortyIsolatedAcrossActiveFortyEightsAndSecondWatchEscalates(): void
@@ -306,8 +303,8 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
             4,
             $this->correlationStore->distinctCount($this->adaptiveObservationKey('login_protection', 'spray', 40, $scope40)),
         );
-        self::assertNull($this->rateLimitStore->get($scope40));
-        self::assertNull($this->rateLimitStore->get($this->adaptiveObservationKey('login_protection', 'spray', 40, $scope40)));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $scope40)->get($scope40));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->adaptiveObservationKey('login_protection', 'spray', 40, $scope40))->get($this->adaptiveObservationKey('login_protection', 'spray', 40, $scope40)));
         $this->assertOpaqueMembers(
             $this->adaptiveObservationKey('login_protection', 'spray', 40, $scope40),
             ['forty-spray-0', 'forty-spray-1', 'forty-spray-2', 'forty-spray-3'],
@@ -323,7 +320,7 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         }
 
         $watchKey = $this->adaptiveObservationKey('login_protection', 'spray', 40, $scope40) . ':watch';
-        self::assertSame(1, $this->correlationStore->watchValue($watchKey));
+        self::assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $watchKey)->watchValue($watchKey));
 
         $result = $pipeline->process(
             $policy,
@@ -333,14 +330,14 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         );
 
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
-        self::assertSame(2, $this->correlationStore->watchValue($watchKey));
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $watchKey)->watchValue($watchKey));
         self::assertSame(
             2,
-            $this->rateLimitStore->checkBlock($this->enforcementKey('login_protection', 'k1', $ips[0]))?->level,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->enforcementKey('login_protection', 'k1', $ips[0]))->checkBlock($this->enforcementKey('login_protection', 'k1', $ips[0]))?->level,
         );
-        self::assertNull($this->rateLimitStore->get($this->legacyMacroKey('login_protection', $ips[0], 48)));
-        self::assertNull($this->rateLimitStore->get($this->legacyMacroKey('login_protection', $ips[0], 40)));
-        self::assertNull($this->rateLimitStore->get($this->legacyMacroKey('login_protection', $ips[0], 32)));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->legacyMacroKey('login_protection', $ips[0], 48))->get($this->legacyMacroKey('login_protection', $ips[0], 48)));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->legacyMacroKey('login_protection', $ips[0], 40))->get($this->legacyMacroKey('login_protection', $ips[0], 40)));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->legacyMacroKey('login_protection', $ips[0], 32))->get($this->legacyMacroKey('login_protection', $ips[0], 32)));
     }
 
     public function testMacroSprayAtThirtyTwoIsolatedAcrossActiveForties(): void
@@ -373,8 +370,8 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
             5,
             $this->correlationStore->distinctCount($this->adaptiveObservationKey('login_protection', 'spray', 32, $scope32)),
         );
-        self::assertNull($this->rateLimitStore->get($scope32));
-        self::assertNull($this->rateLimitStore->get($this->adaptiveObservationKey('login_protection', 'spray', 32, $scope32)));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $scope32)->get($scope32));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->adaptiveObservationKey('login_protection', 'spray', 32, $scope32))->get($this->adaptiveObservationKey('login_protection', 'spray', 32, $scope32)));
         foreach ($ips as $ip) {
             $scope40 = $this->hierarchyKey('login_protection', 40, $this->prefix($ip, 40));
             self::assertLessThan(
@@ -387,12 +384,12 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
 
         self::assertSame(
             2,
-            $this->rateLimitStore->checkBlock($this->enforcementKey('login_protection', 'k1', $ips[4]))?->level,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->enforcementKey('login_protection', 'k1', $ips[4]))->checkBlock($this->enforcementKey('login_protection', 'k1', $ips[4]))?->level,
         );
 
-        self::assertNull($this->rateLimitStore->get($this->legacyMacroKey('login_protection', $ips[0], 48)));
-        self::assertNull($this->rateLimitStore->get($this->legacyMacroKey('login_protection', $ips[0], 40)));
-        self::assertNull($this->rateLimitStore->get($this->legacyMacroKey('login_protection', $ips[0], 32)));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->legacyMacroKey('login_protection', $ips[0], 48))->get($this->legacyMacroKey('login_protection', $ips[0], 48)));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->legacyMacroKey('login_protection', $ips[0], 40))->get($this->legacyMacroKey('login_protection', $ips[0], 40)));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->legacyMacroKey('login_protection', $ips[0], 32))->get($this->legacyMacroKey('login_protection', $ips[0], 32)));
     }
 
     public function testMacroSprayOuterRotationKeepsThresholdCurrentEnforcementAndBoundedBridge(): void
@@ -454,11 +451,11 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         );
         self::assertSame(
             2,
-            $this->rateLimitStore->checkBlock($this->enforcementKey('login_protection', 'k1', $targetIp))?->level,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->enforcementKey('login_protection', 'k1', $targetIp))->checkBlock($this->enforcementKey('login_protection', 'k1', $targetIp))?->level,
         );
-        self::assertNull($this->rateLimitStore->get($this->legacyMacroKey('login_protection', $targetIp, 48)));
-        self::assertNull($this->rateLimitStore->get($this->legacyMacroKey('login_protection', $targetIp, 40)));
-        self::assertNull($this->rateLimitStore->get($this->legacyMacroKey('login_protection', $targetIp, 32)));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->legacyMacroKey('login_protection', $targetIp, 48))->get($this->legacyMacroKey('login_protection', $targetIp, 48)));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->legacyMacroKey('login_protection', $targetIp, 40))->get($this->legacyMacroKey('login_protection', $targetIp, 40)));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->legacyMacroKey('login_protection', $targetIp, 32))->get($this->legacyMacroKey('login_protection', $targetIp, 32)));
     }
 
     public function testMacroSprayOuterRotationSecondWatchAndTrustedSessionRemainAdvisory(): void
@@ -496,8 +493,8 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
             );
         }
         $oldWatch = $oldSpray . ':watch';
-        $this->correlationStore->incrementWatchFlag($oldWatch, 1800);
-        $oldWatchExpiry = $this->correlationStore->watchExpiresAt($oldWatch);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $oldWatch)->incrementWatchFlag($oldWatch, 1800);
+        $oldWatchExpiry = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $oldWatch)->watchExpiresAt($oldWatch);
         $oldSprayExpiry = $this->correlationStore->distinctExpiresAt($oldSpray);
 
         $result = $this->pipeline('prod', 'old_secret', 'test_secret')->process(
@@ -510,13 +507,13 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
         $currentScope48 = $this->hierarchyKey('login_protection', 48, $this->prefix($targetIp, 48));
         $currentSpray = $this->adaptiveObservationKey('login_protection', 'spray', 48, $currentScope48);
-        self::assertSame(1, $this->correlationStore->watchValue($currentSpray . ':watch'));
-        self::assertSame(1, $this->correlationStore->watchValue($oldWatch));
-        self::assertSame($oldWatchExpiry, $this->correlationStore->watchExpiresAt($oldWatch));
+        self::assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $currentSpray . ':watch')->watchValue($currentSpray . ':watch'));
+        self::assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $oldWatch)->watchValue($oldWatch));
+        self::assertSame($oldWatchExpiry, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $oldWatch)->watchExpiresAt($oldWatch));
         self::assertSame($oldSprayExpiry, $this->correlationStore->distinctExpiresAt($oldSpray));
         self::assertSame(
             2,
-            $this->rateLimitStore->checkBlock($this->enforcementKey('login_protection', 'k1', $targetIp))?->level,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->enforcementKey('login_protection', 'k1', $targetIp))->checkBlock($this->enforcementKey('login_protection', 'k1', $targetIp))?->level,
         );
     }
 
@@ -589,8 +586,8 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
             3,
             $this->correlationStore->distinctCount($this->adaptiveChurnKey('api_heavy_protection', 40, $scope40, 'chrome/123')),
         );
-        self::assertNull($this->rateLimitStore->get($scope40));
-        self::assertNull($this->rateLimitStore->get($this->adaptiveChurnKey('api_heavy_protection', 40, $scope40, 'chrome/123')));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $scope40)->get($scope40));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->adaptiveChurnKey('api_heavy_protection', 40, $scope40, 'chrome/123'))->get($this->adaptiveChurnKey('api_heavy_protection', 40, $scope40, 'chrome/123')));
         $this->assertOpaqueMembers(
             $this->adaptiveChurnKey('api_heavy_protection', 40, $scope40, 'chrome/123'),
             ['forty-churn-0', 'forty-churn-1', 'forty-churn-2'],
@@ -606,11 +603,11 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         }
         self::assertSame(
             2,
-            $this->rateLimitStore->checkBlock($this->enforcementKey('api_heavy_protection', 'k2', $ips[2]))?->level,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->enforcementKey('api_heavy_protection', 'k2', $ips[2]))->checkBlock($this->enforcementKey('api_heavy_protection', 'k2', $ips[2]))?->level,
         );
-        self::assertNull($this->rateLimitStore->get($this->legacyMacroKey('api_heavy_protection', $ips[2], 48)));
-        self::assertNull($this->rateLimitStore->get($this->legacyMacroKey('api_heavy_protection', $ips[2], 40)));
-        self::assertNull($this->rateLimitStore->get($this->legacyMacroKey('api_heavy_protection', $ips[2], 32)));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->legacyMacroKey('api_heavy_protection', $ips[2], 48))->get($this->legacyMacroKey('api_heavy_protection', $ips[2], 48)));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->legacyMacroKey('api_heavy_protection', $ips[2], 40))->get($this->legacyMacroKey('api_heavy_protection', $ips[2], 40)));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->legacyMacroKey('api_heavy_protection', $ips[2], 32))->get($this->legacyMacroKey('api_heavy_protection', $ips[2], 32)));
     }
 
     public function testMacroChurnAtThirtyTwoIsolatedAcrossActiveForties(): void
@@ -638,8 +635,8 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
             3,
             $this->correlationStore->distinctCount($this->adaptiveChurnKey('api_heavy_protection', 32, $scope32, 'chrome/123')),
         );
-        self::assertNull($this->rateLimitStore->get($scope32));
-        self::assertNull($this->rateLimitStore->get($this->adaptiveChurnKey('api_heavy_protection', 32, $scope32, 'chrome/123')));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $scope32)->get($scope32));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->adaptiveChurnKey('api_heavy_protection', 32, $scope32, 'chrome/123'))->get($this->adaptiveChurnKey('api_heavy_protection', 32, $scope32, 'chrome/123')));
         foreach ($ips as $ip) {
             $scope40 = $this->hierarchyKey('api_heavy_protection', 40, $this->prefix($ip, 40));
             self::assertLessThan(
@@ -651,7 +648,7 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         }
         self::assertSame(
             2,
-            $this->rateLimitStore->checkBlock($this->enforcementKey('api_heavy_protection', 'k2', $ips[2]))?->level,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->enforcementKey('api_heavy_protection', 'k2', $ips[2]))->checkBlock($this->enforcementKey('api_heavy_protection', 'k2', $ips[2]))?->level,
         );
     }
 
@@ -713,7 +710,7 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         );
         self::assertSame(
             2,
-            $this->rateLimitStore->checkBlock($this->enforcementKey('api_heavy_protection', 'k2', $targetIp))?->level,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->enforcementKey('api_heavy_protection', 'k2', $targetIp))->checkBlock($this->enforcementKey('api_heavy_protection', 'k2', $targetIp))?->level,
         );
     }
 
@@ -752,7 +749,7 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         $bridge = $this->adaptiveBridgeKey('api_heavy_protection', 'churn', 48, $currentChurn);
         self::assertSame(1, $this->correlationStore->distinctCount($currentChurn), 'set');
         self::assertSame(1, $this->correlationStore->distinctCount($bridge), 'bridge');
-        self::assertSame(2, $this->correlationStore->watchValue($currentChurn . ':watch'), 'watch');
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $currentChurn . ':watch')->watchValue($currentChurn . ':watch'), 'watch');
         self::assertNotNull($this->correlationStore->distinctExpiresAt($bridge));
         self::assertLessThanOrEqual(
             $this->correlationStore->distinctExpiresAt($currentChurn),
@@ -760,7 +757,7 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         );
         self::assertSame(
             2,
-            $this->rateLimitStore->checkBlock($this->enforcementKey('api_heavy_protection', 'k2', $fourthIp))?->level,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->enforcementKey('api_heavy_protection', 'k2', $fourthIp))->checkBlock($this->enforcementKey('api_heavy_protection', 'k2', $fourthIp))?->level,
         );
     }
 
@@ -796,7 +793,7 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
             600,
             3,
         );
-        $this->correlationStore->incrementWatchFlag($oldChurn . ':watch', 1800);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $oldChurn . ':watch')->incrementWatchFlag($oldChurn . ':watch', 1800);
         $oldExpiry = $this->correlationStore->distinctExpiresAt($oldChurn);
 
         $result = $this->observeFingerprintWithPreviousFingerprint(
@@ -811,8 +808,8 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         $currentScope48 = $this->hierarchyKey('api_heavy_protection', 48, $this->prefix($targetIp, 48));
         $currentChurn = $this->adaptiveChurnKey('api_heavy_protection', 48, $currentScope48, 'chrome/123');
         $bridge = $this->adaptiveBridgeKey('api_heavy_protection', 'churn', 48, $currentChurn);
-        self::assertSame(1, $this->correlationStore->watchValue($oldChurn . ':watch'));
-        self::assertSame(1, $this->correlationStore->watchValue($currentChurn . ':watch'));
+        self::assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $oldChurn . ':watch')->watchValue($oldChurn . ':watch'));
+        self::assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $currentChurn . ':watch')->watchValue($currentChurn . ':watch'));
         self::assertSame($oldExpiry, $this->correlationStore->distinctExpiresAt($oldChurn));
         self::assertSame(1, $this->correlationStore->distinctCount($currentChurn));
         self::assertSame(1, $this->correlationStore->distinctCount($bridge));
@@ -828,7 +825,7 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         ));
         self::assertSame(
             2,
-            $this->rateLimitStore->checkBlock($this->enforcementKey('api_heavy_protection', 'k2', $targetIp))?->level,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->enforcementKey('api_heavy_protection', 'k2', $targetIp))->checkBlock($this->enforcementKey('api_heavy_protection', 'k2', $targetIp))?->level,
         );
     }
 
@@ -880,10 +877,10 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
             self::assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $member);
             self::assertStringNotContainsString('20010db0', $member);
         }
-        self::assertNull($this->rateLimitStore->checkBlock($this->fingerprintKey('api_heavy_protection', $ips[5], $fingerprint)));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->fingerprintKey('api_heavy_protection', $ips[5], $fingerprint))->checkBlock($this->fingerprintKey('api_heavy_protection', $ips[5], $fingerprint)));
         self::assertSame(
             2,
-            $this->rateLimitStore->checkBlock($this->enforcementKey('api_heavy_protection', 'k2', $ips[5]))?->level,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->enforcementKey('api_heavy_protection', 'k2', $ips[5]))->checkBlock($this->enforcementKey('api_heavy_protection', 'k2', $ips[5]))?->level,
         );
     }
 
@@ -913,8 +910,8 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
             $dilutionScope,
             $firstWindowId,
         );
-        $firstConfirmationExpiry = $this->correlationStore->watchExpiresAt($firstConfirmation);
-        self::assertSame(1, $this->correlationStore->watchValue($firstConfirmation));
+        $firstConfirmationExpiry = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $firstConfirmation)->watchExpiresAt($firstConfirmation);
+        self::assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $firstConfirmation)->watchValue($firstConfirmation));
 
         $this->clock->setNow($this->clock->now()->modify('+600 seconds'));
         $secondWindowId = $this->windowId();
@@ -932,17 +929,17 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
             }
         }
 
-        self::assertSame($firstConfirmationExpiry, $this->correlationStore->watchExpiresAt($firstConfirmation));
-        self::assertSame(1, $this->correlationStore->watchValue($firstConfirmation));
+        self::assertSame($firstConfirmationExpiry, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $firstConfirmation)->watchExpiresAt($firstConfirmation));
+        self::assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $firstConfirmation)->watchValue($firstConfirmation));
         self::assertGreaterThanOrEqual(
             1,
-            $this->correlationStore->watchValue(
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $this->dilutionConfirmationKey('api_heavy_protection', $dilutionScope, $secondWindowId))->watchValue(
                 $this->dilutionConfirmationKey('api_heavy_protection', $dilutionScope, $secondWindowId),
             ),
         );
         self::assertSame(
             2,
-            $this->rateLimitStore->checkBlock($this->fingerprintKey('api_heavy_protection', $lastIp, $fingerprint))?->level,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->fingerprintKey('api_heavy_protection', $lastIp, $fingerprint))->checkBlock($this->fingerprintKey('api_heavy_protection', $lastIp, $fingerprint))?->level,
         );
     }
 
@@ -998,7 +995,7 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         );
         self::assertSame(
             2,
-            $this->rateLimitStore->checkBlock($this->enforcementKey('api_heavy_protection', 'k2', $targetIp))?->level,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->enforcementKey('api_heavy_protection', 'k2', $targetIp))->checkBlock($this->enforcementKey('api_heavy_protection', 'k2', $targetIp))?->level,
         );
     }
 
@@ -1029,9 +1026,9 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
 
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         self::assertSame(0, $this->correlationStore->distinctCount($this->dilutionKey('login_protection', $overflowFingerprint)));
-        self::assertNull($this->rateLimitStore->checkBlock($this->fingerprintKey('login_protection', $ip, $overflowFingerprint)));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->fingerprintKey('login_protection', $ip, $overflowFingerprint))->checkBlock($this->fingerprintKey('login_protection', $ip, $overflowFingerprint)));
         self::assertNull(
-            $this->rateLimitStore->get($this->accountDeviceKey('login_protection', $accountId, $overflowFingerprint)),
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->accountDeviceKey('login_protection', $accountId, $overflowFingerprint))->get($this->accountDeviceKey('login_protection', $accountId, $overflowFingerprint)),
         );
     }
 
@@ -1146,13 +1143,13 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         $pipeline = new EvaluationPipeline(
             $this->rateLimitStore,
             $boundedOnlyStore,
-            new BudgetTracker($this->rateLimitStore, $this->clock),
-            new AntiEquilibriumGate($boundedOnlyStore),
             new DecayCalculator($this->clock),
-            new EphemeralBucket($boundedOnlyStore),
             'test_secret',
             'prod',
             $this->clock,
+            $this->clock,
+            null,
+            null,
             'old_secret',
         );
 
@@ -1170,7 +1167,7 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
             self::fail('The IPv6 hierarchy rotation capability must be required before mutation.');
         } catch (RateLimiterException $exception) {
             self::assertStringContainsString(
-                'Bounded correlation rotation requires the BoundedCorrelationRotationStoreInterface capability.',
+                'BoundedCorrelationRotationStoreInterface',
                 $exception->getMessage(),
             );
         }
@@ -1242,13 +1239,13 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         return new EvaluationPipeline(
             $this->rateLimitStore,
             $this->correlationStore,
-            new BudgetTracker($this->rateLimitStore, $this->clock),
-            new AntiEquilibriumGate($this->correlationStore),
             new DecayCalculator($this->clock),
-            new EphemeralBucket($this->correlationStore),
             $secret,
             $environment,
             $this->clock,
+            $this->clock,
+            null,
+            null,
             $previousSecret,
         );
     }
@@ -1336,7 +1333,7 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
     private function assertNoHierarchyWatch(string ...$scopeKeys): void
     {
         foreach ($scopeKeys as $scopeKey) {
-            self::assertSame(0, $this->correlationStore->watchValue($scopeKey . ':watch'));
+            self::assertSame(0, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $scopeKey . ':watch')->watchValue($scopeKey . ':watch'));
         }
     }
 
@@ -1508,11 +1505,7 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         string $ip,
         string $secret = 'test_secret',
     ): string {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:{$keyType}:v2:prod:{$this->prefix($ip, 64)}" . ($keyType === 'k2' ? ':chrome/123' : ''),
-            $secret,
-        );
+        return \Maatify\RateLimiter\Tests\Support\FixtureKeys::scope(($keyType), ($policy), 'prod', ($this->prefix($ip, 64)) . ($keyType === 'k2' ? ':chrome/123' : ''), $secret);
     }
 
     private function fingerprintKey(
@@ -1530,11 +1523,7 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
 
     private function accountDeviceKey(string $policy, string $accountId, string $fingerprint, string $secret = 'test_secret'): string
     {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:k5:v2:prod:{$accountId}:{$fingerprint}",
-            $secret,
-        );
+        return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k5', ($policy), ($accountId), $secret, ($fingerprint));
     }
 
     private function dilutionKey(string $policy, string $fingerprint, string $secret = 'test_secret'): string
@@ -1593,8 +1582,10 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
     }
 }
 
-final class BoundedOnlyCorrelationStore implements BoundedCorrelationStoreInterface
+final class BoundedOnlyCorrelationStore implements BoundedCorrelationStoreInterface, \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface
 {
+    use \Maatify\RateLimiter\Tests\Support\E1View;
+
     /** @var array<string, int> */
     public array $boundedCalls = [];
 

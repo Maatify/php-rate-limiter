@@ -4,16 +4,15 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Service;
 
-use Maatify\RateLimiter\Enum\KeyScopeEncodingEnum;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 
 /**
- * The E1 derivation (DEC-044, `docs/KEY_SCOPE_ENCODING_E1.md` §3): a length-prefixed preimage over opaque byte strings, an HMAC key domain of
+ * The sole account derivation (DEC-046; bytes established by DEC-044, `docs/KEY_SCOPE_ENCODING_E1.md` §3): a length-prefixed preimage over opaque byte strings, an HMAC key domain of
  * its own, and the textual key form `e1.` followed by 64 lowercase hexadecimal characters.
  *
  * @internal
  */
-final class E1AccountScopeKeyDeriver implements AccountScopeKeyDeriverInterface
+final class E1AccountScopeKeyDeriver
 {
     public const MAGIC = "maatify.rate-limiter.scope.e1\x00";
     public const KEY_DOMAIN = 'maatify.rate-limiter.key-domain.e1';
@@ -25,11 +24,7 @@ final class E1AccountScopeKeyDeriver implements AccountScopeKeyDeriverInterface
     /** @param \Closure(string): int $length The byte length of a field; a seam so the bound can be tested without a 2^32-byte string. */
     public function __construct(private readonly string $envScope, private readonly ?\Closure $length = null) {}
 
-    public function encoding(): KeyScopeEncodingEnum
-    {
-        return KeyScopeEncodingEnum::E1;
-    }
-
+    /** Derive a registered purpose from opaque policy/environment/account bytes and its required material shape. */
     public function derive(string $purpose, string $policy, string $account, string $secret, ?string $material = null): string
     {
         AccountScopePurpose::assertShape($purpose, $material);

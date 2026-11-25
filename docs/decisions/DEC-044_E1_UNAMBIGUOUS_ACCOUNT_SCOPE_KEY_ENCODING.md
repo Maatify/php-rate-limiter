@@ -6,7 +6,7 @@
 
 ## Status
 
-`ACTIVE` — the Lead approved D-1 through D-6 under the Owner's delegation on [#284](https://github.com/Maatify/php-rate-limiter/issues/284) and accepted
+`SUPERSEDED` by [DEC-046](DEC-046_E1_ONLY_ACCOUNT_SCOPE_KEY_ENCODING.md). Historical acceptance: the Lead approved D-1 through D-6 under the Owner's delegation on [#284](https://github.com/Maatify/php-rate-limiter/issues/284) and accepted
 the implementation and security review required by `KEY_STRATEGY.md` §10 in [PR #295](https://github.com/Maatify/php-rate-limiter/pull/295) at
 [`ccfb86964159d126d57ca34615ee28f81333ef70`](https://github.com/Maatify/php-rate-limiter/commit/ccfb86964159d126d57ca34615ee28f81333ef70).
 The proposed contract was recorded in PR #292. V2 remains the default. D-7 is a separate migration decision.
@@ -145,4 +145,4 @@ None.
 
 ## Superseded By
 
-None.
+DEC-046.

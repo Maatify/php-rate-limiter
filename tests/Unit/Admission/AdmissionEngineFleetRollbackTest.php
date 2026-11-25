@@ -6,13 +6,9 @@ namespace Maatify\RateLimiter\Tests\Unit\Admission;
 
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
-use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Service\AdmissionRuntime;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionInMemoryReferenceStore;
 use Maatify\RateLimiter\Service\CircuitBreaker;
@@ -71,13 +67,13 @@ final class AdmissionEngineFleetRollbackTest extends TestCase
         $pipeline = new EvaluationPipeline(
             $store,
             $store->correlationStore(),
-            new BudgetTracker($store, $lab->clock),
-            new AntiEquilibriumGate($store->correlationStore()),
             new DecayCalculator($lab->clock),
-            new EphemeralBucket($store->correlationStore()),
             EngineLab::KEY_SECRET,
             EngineLab::ENV,
             $lab->clock,
+            $lab->clock,
+            null,
+            null,
         );
 
         return self::oldWorker($lab, $pipeline);
@@ -161,7 +157,7 @@ final class AdmissionEngineFleetRollbackTest extends TestCase
 
     private static function k4Key(string $type, string $account): string
     {
-        return hash_hmac('sha256', "login_protection:rate_limiter:{$type}:v2:prod:{$account}", EngineLab::KEY_SECRET);
+        return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive($type, 'login_protection', $account, EngineLab::KEY_SECRET);
     }
 
     public function testM6RollbackIgnoresTheAdmissionStateKeepsK4UAndRollForwardFindsTheOldCounters(): void
@@ -179,9 +175,9 @@ final class AdmissionEngineFleetRollbackTest extends TestCase
         $lab->check($lab->context('acct-n18', self::IP));
 
         // K4U is the account's K4 key (the slot the old build reads); K4P is its own family.
-        self::assertNotNull($lab->store->get(self::k4Key('k4', 'acct-u')), 'K4U written on the K4 key');
-        self::assertNotNull($lab->store->get(self::k4Key('k4p', 'acct-p')), 'K4P written on its own key');
-        self::assertNull($lab->store->get(self::k4Key('k4', 'acct-p')), 'the P failure wrote nothing on K4');
+        self::assertNotNull($lab->store->e1Keyspace()->get(self::k4Key('k4', 'acct-u')), 'K4U written on the K4 key');
+        self::assertNotNull($lab->store->e1Keyspace()->get(self::k4Key('k4p', 'acct-p')), 'K4P written on its own key');
+        self::assertNull($lab->store->e1Keyspace()->get(self::k4Key('k4', 'acct-p')), 'the P failure wrote nothing on K4');
 
         // Rollback: the old build on the stores of the new build, and on a deep copy of them with every admission structure
         // (counters, device sets, failure sets, pending members, buckets, permits, epochs) emptied. Same decisions = the old build
@@ -207,12 +203,12 @@ final class AdmissionEngineFleetRollbackTest extends TestCase
             $onCopy .= $oldOnCopy->limit($lab->context('acct-n' . $i, $ip), RateLimitCommand::checkOnly(EngineLab::POLICY))->decision[0];
         }
         self::assertSame($onCopy, $onStore, 'the old build ignores the admission counters, sets and permits');
-        self::assertNotNull($lab->store->get(self::k4Key('k4', 'acct-u')), 'K4U survives the rollback and is the key the old build reads');
+        self::assertNotNull($lab->store->e1Keyspace()->get(self::k4Key('k4', 'acct-u')), 'K4U survives the rollback and is the key the old build reads');
         self::assertSame(
             $oldOnCopy->limit($u, RateLimitCommand::checkOnly(EngineLab::POLICY))->decision,
             $old->limit($u, RateLimitCommand::checkOnly(EngineLab::POLICY))->decision,
         );
-        self::assertNotNull($lab->store->get(self::k4Key('k4p', 'acct-p')), 'K4P is still in the store after the rollback; the old build has no reader of it');
+        self::assertNotNull($lab->store->e1Keyspace()->get(self::k4Key('k4p', 'acct-p')), 'K4P is still in the store after the rollback; the old build has no reader of it');
         GateReport::emit('nm7-m6', ['oldBuildDecisions' => $onStore, 'lost' => ['K4P', 'K5p', 'k5p', 'anti_equilibrium_device_p', 'known_device_allowance_p', 'anti_equilibrium_p', 'budget_cooldown_p']]);
 
         // Roll-forward within the same window: the new build finds its counter (20 of 24 used before the rollback; the three

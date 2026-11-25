@@ -11,12 +11,9 @@ use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\CircuitBreaker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\FingerprintHasher;
@@ -117,7 +114,7 @@ final class CredentialSprayRotationTest extends TestCase
     }
 
     #[DataProvider('authoritativeBlockKeyProvider')]
-    public function testAuthoritativeActiveBlockWinsBeforeRotationCapabilityCheck(string $keyType, string $secret): void
+    public function testMissingActualCapabilityIsRejectedBeforeReadingAnAuthoritativeBlock(string $keyType, string $secret): void
     {
         $store = new RecordingBaseOnlyCorrelationStore();
         $context = new RateLimitContextDTO(
@@ -126,20 +123,17 @@ final class CredentialSprayRotationTest extends TestCase
             'authoritative-account',
         );
         $device = $this->device();
-        $this->rateLimitStore->block($this->authoritativeKey($keyType, $context, $device, $secret), 3, 300);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->rateLimitStore, $this->authoritativeKey($keyType, $context, $device, $secret))->block($this->authoritativeKey($keyType, $context, $device, $secret), 3, 300);
         $pipeline = $this->createPipeline($store, 'current-secret', 'previous-secret');
 
-        $result = $pipeline->process(
-            new LoginProtectionPolicy(),
-            $context,
-            RateLimitCommand::checkOnly('login_protection'),
-            $device,
-        );
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('BoundedCorrelationStoreInterface');
+        try {
+            $pipeline->process(new LoginProtectionPolicy(), $context, RateLimitCommand::checkOnly('login_protection'), $device);
+        } finally {
+            self::assertSame(0, $store->mutationCalls);
+        }
 
-        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
-        self::assertSame(3, $result->blockLevel);
-        self::assertSame(300, $result->retryAfter);
-        self::assertSame(0, $store->mutationCalls);
     }
 
     /**
@@ -172,7 +166,7 @@ final class CredentialSprayRotationTest extends TestCase
         $previousItems = $this->correlationStore->distinctItems($previousScope);
         $previousExpiry = $this->correlationStore->distinctExpiresAt($previousScope);
         $previousWatch = $previousScope . ':watch';
-        self::assertSame(1, $this->correlationStore->watchValue($previousWatch));
+        self::assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousWatch)->watchValue($previousWatch));
 
         $currentPipeline = $this->createPipeline($this->correlationStore, 'current-secret', 'previous-secret');
         $result = $currentPipeline->process(
@@ -195,7 +189,7 @@ final class CredentialSprayRotationTest extends TestCase
             [$this->sprayMember('current-secret', 'new-5')],
             $this->correlationStore->distinctItems($this->sprayScope('current-secret', $ip)),
         );
-        self::assertSame(1, $this->correlationStore->watchValue($previousWatch));
+        self::assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousWatch)->watchValue($previousWatch));
     }
 
     public function testTrustedRotationPersistsCurrentK1WithoutRejectingTrustedSession(): void
@@ -217,8 +211,8 @@ final class CredentialSprayRotationTest extends TestCase
         $previousItems = $this->correlationStore->distinctItems($previousScope);
         $previousExpiry = $this->correlationStore->distinctExpiresAt($previousScope);
         $previousWatch = $previousScope . ':watch';
-        $previousWatchValue = $this->correlationStore->watchValue($previousWatch);
-        $previousWatchExpiry = $this->correlationStore->watchExpiresAt($previousWatch);
+        $previousWatchValue = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousWatch)->watchValue($previousWatch);
+        $previousWatchExpiry = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousWatch)->watchExpiresAt($previousWatch);
 
         $currentPipeline = $this->createPipeline($this->correlationStore, 'current-secret', 'previous-secret');
         $trustedResult = $currentPipeline->process(
@@ -235,8 +229,8 @@ final class CredentialSprayRotationTest extends TestCase
         );
         self::assertSame($previousItems, $this->correlationStore->distinctItems($previousScope));
         self::assertSame($previousExpiry, $this->correlationStore->distinctExpiresAt($previousScope));
-        self::assertSame($previousWatchValue, $this->correlationStore->watchValue($previousWatch));
-        self::assertSame($previousWatchExpiry, $this->correlationStore->watchExpiresAt($previousWatch));
+        self::assertSame($previousWatchValue, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousWatch)->watchValue($previousWatch));
+        self::assertSame($previousWatchExpiry, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousWatch)->watchExpiresAt($previousWatch));
 
         $untrustedResult = $currentPipeline->process(
             $policy,
@@ -259,8 +253,8 @@ final class CredentialSprayRotationTest extends TestCase
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $trustedFollowUp->decision);
         self::assertSame($previousItems, $this->correlationStore->distinctItems($previousScope));
         self::assertSame($previousExpiry, $this->correlationStore->distinctExpiresAt($previousScope));
-        self::assertSame($previousWatchValue, $this->correlationStore->watchValue($previousWatch));
-        self::assertSame($previousWatchExpiry, $this->correlationStore->watchExpiresAt($previousWatch));
+        self::assertSame($previousWatchValue, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousWatch)->watchValue($previousWatch));
+        self::assertSame($previousWatchExpiry, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousWatch)->watchExpiresAt($previousWatch));
     }
 
     public function testSameLogicalSubjectUsesNoBridgeAndPreviousWatchContinuesAcrossRotation(): void
@@ -291,7 +285,7 @@ final class CredentialSprayRotationTest extends TestCase
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         self::assertSame($previousItems, $this->correlationStore->distinctItems($previousScope));
         self::assertSame([], $this->correlationStore->distinctItems($this->bridgeScope('current-secret', $ip)));
-        self::assertSame(1, $this->correlationStore->watchValue($previousScope . ':watch'));
+        self::assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousScope . ':watch')->watchValue($previousScope . ':watch'));
         self::assertSame(1, $this->correlationStore->watchValue($this->sprayScope('current-secret', $ip) . ':watch'));
     }
 
@@ -333,13 +327,13 @@ final class CredentialSprayRotationTest extends TestCase
         return new EvaluationPipeline(
             $this->rateLimitStore,
             $correlationStore,
-            new BudgetTracker($this->rateLimitStore, $this->clock),
-            new AntiEquilibriumGate($correlationStore),
             new DecayCalculator($this->clock),
-            new EphemeralBucket($correlationStore),
             $secret,
             'prod',
             $this->clock,
+            $this->clock,
+            null,
+            null,
             $previousSecret,
         );
     }
@@ -384,16 +378,14 @@ final class CredentialSprayRotationTest extends TestCase
             ? (string) $context->accountId
             : "{$context->accountId}:{$device->fingerprintHash}";
 
-        return hash_hmac(
-            'sha256',
-            "login_protection:rate_limiter:{$keyType}:v2:prod:{$scope}",
-            $secret,
-        );
+        return \Maatify\RateLimiter\Tests\Support\FixtureKeys::scope(($keyType), 'login_protection', 'prod', ($scope), $secret);
     }
 }
 
-final class RecordingBaseOnlyCorrelationStore implements CorrelationStoreInterface
+final class RecordingBaseOnlyCorrelationStore implements CorrelationStoreInterface, \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface
 {
+    use \Maatify\RateLimiter\Tests\Support\E1View;
+
     public int $mutationCalls = 0;
 
     public function addDistinct(string $key, string $item, int $ttlSeconds): int

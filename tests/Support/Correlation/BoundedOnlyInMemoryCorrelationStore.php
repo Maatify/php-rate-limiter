@@ -15,8 +15,10 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  * Used to prove build-time preflight requirements for the base bounded
  * capability independently of the additive rotation/snapshot capabilities.
  */
-final class BoundedOnlyInMemoryCorrelationStore implements BoundedCorrelationStoreInterface
+final class BoundedOnlyInMemoryCorrelationStore implements \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface, BoundedCorrelationStoreInterface
 {
+    use \Maatify\RateLimiter\Tests\Support\E1View;
+
     private readonly StatefulInMemoryCorrelationStore $delegate;
 
     public function __construct(ClockInterface $clock)

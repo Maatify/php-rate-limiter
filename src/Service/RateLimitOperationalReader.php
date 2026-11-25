@@ -18,8 +18,6 @@ use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 use Maatify\RateLimiter\Enum\AdmissionLaneEnum;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
-use Maatify\RateLimiter\Enum\KeyScopeEncodingEnum;
-use Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface;
 use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
@@ -39,9 +37,9 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
     /** @var list<object> DEC-041: the resources every independent call of this entry owns. */
     private readonly array $resources;
 
-    private readonly AccountScopeKeyDeriverInterface $accountKeys;
+    private readonly E1AccountScopeKeyDeriver $accountKeys;
 
-    /** The store of the account-bearing keys: the E1 view under E1, otherwise the store itself. */
+    /** The captured account view for all account-bearing keys. */
     private readonly RateLimitStoreInterface $accountStore;
 
     /** DEC-041: the context domain they are bound to; holds its provider for the lifetime of this object. */
@@ -62,6 +60,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
      * @param ?string $previousKeySecret Optional previous-generation secret;
      *     null means no previous generation. When provided, it must not be
      *     empty or whitespace-only, and is likewise never trimmed or normalized.
+     * @param ?E1StoreBinding $binding Internal Builder handoff of a closed, already validated root/view pair; never a Host option.
      * @throws RateLimiterException When $keySecret or $envScope is empty or
      *     whitespace-only, or when a non-null $previousKeySecret is empty or
      *     whitespace-only.
@@ -75,7 +74,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         private readonly string $keySecret,
         private readonly string $envScope,
         private readonly ?string $previousKeySecret = null,
-        ?AccountScopeKeyDeriverInterface $accountKeys = null,
+        ?E1StoreBinding $binding = null,
     ) {
         if (trim($keySecret) === '') {
             throw new RateLimiterException('Active key secret must not be empty or whitespace-only.');
@@ -86,17 +85,16 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         if ($previousKeySecret !== null && trim($previousKeySecret) === '') {
             throw new RateLimiterException('Previous key secret must not be empty or whitespace-only.');
         }
-        // DEC-044: the same derivation source as the writer; under E1 the account-bearing keys are read in the E1 layout of this very store.
-        $this->accountKeys = $accountKeys ?? new V2AccountScopeKeyDeriver($this->envScope);
-        if ($this->accountKeys->encoding() === KeyScopeEncodingEnum::E1) {
-            if (! $this->store instanceof E1KeyspaceStoreInterface) {
-                throw new RateLimiterException('The E1 key encoding requires a store implementing E1KeyspaceStoreInterface (DEC-044).');
-            }
-            $this->accountStore = $this->store->e1Keyspace();
-        } else {
-            $this->accountStore = $this->store;
+        if (func_num_args() > 9) {
+            throw new \ArgumentCountError('The reader does not accept a key deriver.');
         }
-        $this->resources = OwnershipRegistry::collect([$this->store, $this->circuitBreakerStore], [], [$this->clock]);
+        $this->accountKeys = new E1AccountScopeKeyDeriver($this->envScope);
+        $accountStore = ($binding ?? E1StoreBinding::capture($this->store))->forRoot($this->store);
+        if (! $accountStore instanceof RateLimitStoreInterface) {
+            throw new RateLimiterException('The account view must preserve the rate-limit storage role.');
+        }
+        $this->accountStore = $accountStore;
+        $this->resources = OwnershipRegistry::collect([$this->store, $this->accountStore, $this->circuitBreakerStore], [], [$this->clock]);
         $this->domain = OwnershipRegistry::adopt($this->resources, $this);
     }
 

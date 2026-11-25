@@ -60,13 +60,13 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $pipeline = new EvaluationPipeline(
             $this->store,
             $this->correlationStore,
-            $budgetTracker,
-            $antiEquilibriumGate,
             $decayCalculator,
-            $ephemeralBucket,
             'test_secret',
             'prod',
             $this->clock,
+            $this->clock,
+            null,
+            null,
         );
 
         $circuitBreaker = new CircuitBreaker(
@@ -128,15 +128,15 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $k2Key = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k2:v2:prod:127.0.0.1:{$normalizedUa}", 'test_secret');
         $k3Key = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k3:v2:prod:127.0.0.1:{$fpHash}", 'test_secret');
 
-        $k1State = $this->store->get($k1Key);
+        $k1State = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1Key)->get($k1Key);
         $this->assertNotNull($k1State);
         $this->assertEquals(1, $k1State->value);
 
-        $k2State = $this->store->get($k2Key);
+        $k2State = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k2Key)->get($k2Key);
         $this->assertNotNull($k2State);
         $this->assertEquals(1, $k2State->value);
 
-        $k3State = $this->store->get($k3Key);
+        $k3State = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k3Key)->get($k3Key);
         $this->assertNotNull($k3State);
         $this->assertEquals(1, $k3State->value);
     }
@@ -152,8 +152,8 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $this->assertEquals(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
         $this->assertEquals(0, $result->blockLevel);
 
-        $k4Key = hash_hmac('sha256', "{$policyName}:rate_limiter:k4:v2:prod:acct_123", 'test_secret');
-        $this->assertNull($this->store->get($k4Key));
+        $k4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', ($policyName), 'acct_123', 'test_secret');
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->get($k4Key));
     }
 
     /**
@@ -178,11 +178,11 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $k1Key = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k1:v2:prod:127.0.0.1", 'test_secret');
         $k2Key = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k2:v2:prod:127.0.0.1:{$normalizedUa}", 'test_secret');
 
-        $k1State = $this->store->get($k1Key);
+        $k1State = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1Key)->get($k1Key);
         $this->assertNotNull($k1State);
         $this->assertEquals(1, $k1State->value);
 
-        $k2State = $this->store->get($k2Key);
+        $k2State = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k2Key)->get($k2Key);
         $this->assertNotNull($k2State);
         $this->assertEquals(1, $k2State->value);
     }
@@ -214,8 +214,8 @@ class RateLimiterEngineWorkflowTest extends TestCase
 
         $this->assertEquals(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
 
-        $k4Key = hash_hmac('sha256', "otp_protection:rate_limiter:k4:v2:prod:acct_123", 'test_secret');
-        $this->assertNull($this->store->get($k4Key));
+        $k4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'otp_protection', 'acct_123', 'test_secret');
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->get($k4Key));
     }
 
     public function testExistingBlockingOutcome(): void
@@ -223,9 +223,9 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla/5.0', 'acct_123');
         $command = RateLimitCommand::checkOnly('otp_protection');
 
-        $k4Key = hash_hmac('sha256', "otp_protection:rate_limiter:k4:v2:prod:acct_123", 'test_secret');
-        $this->store->block($k4Key, 3, 3600);
-        $this->store->set($k4Key, 50, 3600); // L3 threshold is 10 for K4 on OTP
+        $k4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'otp_protection', 'acct_123', 'test_secret');
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->block($k4Key, 3, 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->set($k4Key, 50, 3600); // L3 threshold is 10 for K4 on OTP
 
         $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:02:00'));
 
@@ -256,9 +256,9 @@ class RateLimiterEngineWorkflowTest extends TestCase
             $k2Key = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k2:v2:prod:127.0.0.1:{$normalizedUa}", 'test_secret');
             $k3Key = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k3:v2:prod:127.0.0.1:{$fpHash}", 'test_secret');
 
-            $this->assertNull($this->store->get($k1Key));
-            $this->assertNull($this->store->get($k2Key));
-            $this->assertNull($this->store->get($k3Key));
+            $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1Key)->get($k1Key));
+            $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k2Key)->get($k2Key));
+            $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k3Key)->get($k3Key));
         }
     }
 
@@ -377,13 +377,13 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $pipelineWithThrowingStore = new EvaluationPipeline(
             $throwingStore,
             $this->correlationStore,
-            new BudgetTracker($throwingStore, $this->clock),
-            new AntiEquilibriumGate($this->correlationStore),
             new DecayCalculator($this->clock),
-            new EphemeralBucket($this->correlationStore),
             'test_secret',
             'prod',
             $this->clock,
+            $this->clock,
+            null,
+            null,
         );
 
         $deviceIdentityResolver = new DeviceIdentityResolver(new FingerprintHasher('test_secret'));
@@ -428,13 +428,13 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $pipelineWithPrevSecret = new EvaluationPipeline(
             $this->store,
             $this->correlationStore,
-            new BudgetTracker($this->store, $this->clock),
-            new AntiEquilibriumGate($this->correlationStore),
             new DecayCalculator($this->clock),
-            new EphemeralBucket($this->correlationStore),
             'new_secret',
             'prod',
             $this->clock,
+            $this->clock,
+            null,
+            null,
             'old_secret',
         );
 
@@ -453,7 +453,7 @@ class RateLimiterEngineWorkflowTest extends TestCase
 
         // Seed a readable score under the previous secret. The active key is absent.
         $oldK1 = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k1:v2:prod:127.0.0.1", 'old_secret');
-        $this->store->set($oldK1, 7, 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $oldK1)->set($oldK1, 7, 3600);
 
         // The real pipeline must read the old score and write the update under the active secret.
         $result = $engine->limit($context, $command);
@@ -461,8 +461,8 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
 
         $newK1 = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k1:v2:prod:127.0.0.1", 'new_secret');
-        $oldState = $this->store->get($oldK1);
-        $newState = $this->store->get($newK1);
+        $oldState = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $oldK1)->get($oldK1);
+        $newState = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $newK1)->get($newK1);
 
         $this->assertNotNull($oldState);
         $this->assertNotNull($newState);
@@ -498,13 +498,13 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $prefix32 = substr($hex, 0, 8);
         $k1_32 = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k1:v2:prod:{$prefix32}", 'test_secret');
 
-        $k1_64State = $this->store->get($k1_64);
+        $k1_64State = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1_64)->get($k1_64);
         $this->assertNotNull($k1_64State);
         $this->assertEquals(1, $k1_64State->value);
 
-        $this->assertNull($this->store->get($k1_48));
-        $this->assertNull($this->store->get($k1_40));
-        $this->assertNull($this->store->get($k1_32));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1_48)->get($k1_48));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1_40)->get($k1_40));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1_32)->get($k1_32));
     }
 
     public function testLegacyIpv6MacroBlocksAreIgnored(): void
@@ -518,7 +518,7 @@ class RateLimiterEngineWorkflowTest extends TestCase
         );
 
         foreach ([substr($hex, 0, 12), substr($hex, 0, 10), substr($hex, 0, 8)] as $prefix) {
-            $this->store->block($keyForPrefix($prefix), 3, 600);
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $keyForPrefix($prefix))->block($keyForPrefix($prefix), 3, 600);
         }
 
         $result = $this->engine->limit($context, RateLimitCommand::checkOnly('api_heavy_protection'));
@@ -543,24 +543,20 @@ class RateLimiterEngineWorkflowTest extends TestCase
             $keyForPrefix(substr($hex, 0, 10)),
             $keyForPrefix(substr($hex, 0, 8)),
         ];
-        $this->store->set($k1Key, 1, 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1Key)->set($k1Key, 1, 3600);
         foreach ($macroKeys as $macroKey) {
-            $this->store->set($macroKey, 1, 3600);
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $macroKey)->set($macroKey, 1, 3600);
         }
 
         $result = $engine->limit($context, RateLimitCommand::checkOnly('api_heavy_protection'));
 
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         $this->assertSame(3, $result->blockLevel);
-        $this->assertSame(3, $this->store->checkBlock($k1Key)?->level);
+        $this->assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1Key)->checkBlock($k1Key)?->level);
         foreach ($macroKeys as $macroKey) {
-            $this->assertNull($this->store->checkBlock($macroKey));
+            $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $macroKey)->checkBlock($macroKey));
         }
-        $this->assertNull($this->store->checkBlock(hash_hmac(
-            'sha256',
-            'api_heavy_protection:rate_limiter:k4:v2:prod:acct_123',
-            'test_secret',
-        )));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'api_heavy_protection', 'acct_123', 'test_secret'))->checkBlock((new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'api_heavy_protection', 'acct_123', 'test_secret')));
     }
 
     public function testApiHeavyDoesNotPersistLegacyIpv6MacroBlocksAfterScoreUpdate(): void
@@ -585,15 +581,11 @@ class RateLimiterEngineWorkflowTest extends TestCase
 
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         $this->assertSame(3, $result->blockLevel);
-        $this->assertSame(3, $this->store->checkBlock($k1Key)?->level);
+        $this->assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1Key)->checkBlock($k1Key)?->level);
         foreach ($macroKeys as $macroKey) {
-            $this->assertNull($this->store->checkBlock($macroKey));
+            $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $macroKey)->checkBlock($macroKey));
         }
-        $this->assertNull($this->store->checkBlock(hash_hmac(
-            'sha256',
-            'api_heavy_protection:rate_limiter:k4:v2:prod:acct_123',
-            'test_secret',
-        )));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'api_heavy_protection', 'acct_123', 'test_secret'))->checkBlock((new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'api_heavy_protection', 'acct_123', 'test_secret')));
     }
 
     private function createEngineWithStore(
@@ -616,13 +608,13 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $pipeline = new EvaluationPipeline(
             $store,
             $correlationStore,
-            new BudgetTracker($store, $clock),
-            new AntiEquilibriumGate($correlationStore),
             new DecayCalculator($clock),
-            new EphemeralBucket($correlationStore),
             'test_secret',
             'prod',
             $clock,
+            $clock,
+            null,
+            null,
         );
 
         return new RateLimiterEngine(

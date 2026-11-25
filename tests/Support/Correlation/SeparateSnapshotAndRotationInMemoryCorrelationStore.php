@@ -26,6 +26,8 @@ final class SeparateSnapshotAndRotationInMemoryCorrelationStore implements
     BoundedCorrelationRotationStoreInterface,
     BoundedCorrelationSnapshotStoreInterface
 {
+    use \Maatify\RateLimiter\Tests\Support\E1View;
+
     private readonly StatefulInMemoryCorrelationStore $delegate;
 
     public function __construct(ClockInterface $clock)

@@ -171,8 +171,8 @@ final class FamilyGuardsTest extends TestCase
         self::assertSame(str_repeat('A', 25), $decisions(AdmissionLaneEnum::U, $u), 'U refuses nothing at account scope, budget included.');
 
         $k4 = FamilyLab::deriver()->derive('k4', 'login_protection', 'acct-d', self::SECRET);
-        self::assertNull($u->store->checkBlock($k4));
-        $score = $u->store->get($k4);
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($u->store, $k4)->checkBlock($k4));
+        $score = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($u->store, $k4)->get($k4);
         self::assertNotNull($score, 'The account score is still written and readable.');
         self::assertGreaterThan(0, $score->value);
     }
@@ -186,8 +186,8 @@ final class FamilyGuardsTest extends TestCase
         $k4p = FamilyLab::deriver()->derive('k4p', 'login_protection', 'acct-e', self::SECRET);
         $k4 = FamilyLab::deriver()->derive('k4', 'login_protection', 'acct-e', self::SECRET);
 
-        self::assertNotNull($lab->store->get($k4p));
-        self::assertNull($lab->store->get($k4));
+        self::assertNotNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($lab->store, $k4p)->get($k4p));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($lab->store, $k4)->get($k4));
     }
 
     public function testAnUnoptedPolicyCannotBeGivenALane(): void

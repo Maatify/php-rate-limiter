@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Maatify\RateLimiter\Service;
+namespace Maatify\RateLimiter\Tests\Fixtures\PreG1;
 
-use Maatify\RateLimiter\Enum\KeyScopeEncodingEnum;
+use Maatify\RateLimiter\Tests\Fixtures\PreG1\KeyScopeEncodingEnum;
 
 /**
  * The single derivation source of the account-bearing logical keys (DEC-044, E1 contract §4). The writer, the operational reader and every

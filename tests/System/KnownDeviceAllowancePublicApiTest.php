@@ -69,7 +69,7 @@ final class KnownDeviceAllowancePublicApiTest extends TestCase
         $store = new FullCapabilityInMemoryStore($this->clock);
         $limiter = $this->limiter($store, new CustomAllowancePolicy());
         $context = $this->trustedContext('custom-owner');
-        $k4 = hash_hmac('sha256', 'custom_allowance_flow:rate_limiter:k4:v2:prod:custom-owner', 'key-secret');
+        $k4 = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'custom_allowance_flow', 'custom-owner', 'key-secret');
 
         $decisions = [];
         for ($attempt = 0; $attempt < 4; $attempt++) {
@@ -82,7 +82,7 @@ final class KnownDeviceAllowancePublicApiTest extends TestCase
             RateLimitResultDTO::DECISION_ALLOW,
             RateLimitResultDTO::DECISION_SOFT_BLOCK,
         ], $decisions);
-        $this->assertSame(6, $store->get($k4)?->value);
+        $this->assertSame(6, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $k4)->get($k4)?->value);
     }
 
     /**
@@ -107,7 +107,7 @@ final class KnownDeviceAllowancePublicApiTest extends TestCase
             $result = $limiter->limit($context, RateLimitCommand::recordFailure('login_protection'));
             $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
         }
-        $this->assertNull($store->get(hash_hmac('sha256', 'login_protection:rate_limiter:k4:v2:prod:subclass-owner', 'key-secret')));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'login_protection', 'subclass-owner', 'key-secret'))->get((new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'login_protection', 'subclass-owner', 'key-secret')));
     }
 
     public function testPresetSubclassInheritingThresholdsKeepsTheAllowance(): void
@@ -150,7 +150,7 @@ final class KnownDeviceAllowancePublicApiTest extends TestCase
             [RateLimitResultDTO::DECISION_ALLOW, 'DEGRADED_MODE', null],
             [RateLimitResultDTO::DECISION_HARD_BLOCK, 'DEGRADED_MODE', 'fallback_limit_exceeded'],
         ], $observed);
-        $this->assertNull($store->get(hash_hmac('sha256', 'login_protection:rate_limiter:k4:v2:prod:outage-owner', 'key-secret')));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'login_protection', 'outage-owner', 'key-secret'))->get((new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'login_protection', 'outage-owner', 'key-secret')));
     }
 
     /**

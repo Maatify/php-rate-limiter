@@ -2,6 +2,8 @@
 
 # Maatify Rate Limiter
 
+> Pre-Stable breaking change (DEC-046): account keys use E1 only. The encoding selector is removed. Existing V2 state is not migrated; mixed workers/live rollback are unsupported. See [the Usage Guide](docs/guides/USAGE_GUIDE.md#account-scope-e1-and-the-breaking-pre-stable-boundary-dec-046). Adjacent framing blockers remain tracked on #284; no rc.4 publication is claimed.
+
 ![Maatify.dev](https://www.maatify.dev/assets/img/img/maatify_logo_white.svg)
 
 [![Status](https://img.shields.io/badge/Status-Release%20Candidate-orange)](CHANGELOG.md)

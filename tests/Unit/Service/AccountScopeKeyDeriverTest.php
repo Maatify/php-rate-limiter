@@ -6,7 +6,7 @@ namespace Maatify\RateLimiter\Tests\Unit\Service;
 
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver;
-use Maatify\RateLimiter\Service\V2AccountScopeKeyDeriver;
+use Maatify\RateLimiter\Tests\Fixtures\KeyScopeV2Reference as V2AccountScopeKeyDeriver;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;

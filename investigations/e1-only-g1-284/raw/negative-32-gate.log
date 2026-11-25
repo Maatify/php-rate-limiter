@@ -1,0 +1,38 @@
+PHPUnit 11.5.58 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+Time: 00:01.867, Memory: 14.00 MB
+
+There were 2 failures:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\KeyScopeE1RedisTest::testTheClosedGateReadsAccountHistoryThroughThePublicRuntime
+A root-bound Gate would lose the account history.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'HARD_BLOCK'
++'ALLOW'
+
+/app/tests/Integration/Redis/KeyScopeE1RedisTest.php:264
+
+2) Maatify\RateLimiter\Tests\Integration\Redis\KeyScopeE1RedisTest::testLifecycleAndRotationThroughTheRealCompositionReachE1
+E1 one secret: every account-scope family the lifecycle touched is under the E1 prefix.
+Failed asserting that two arrays are identical.
+--- Expected
++++ Actual
+@@ @@
+     1 => 'cycle',
+     2 => 'reentry-claim',
+     3 => 'score',
+-    4 => 'watch',
+-    5 => 'watch-meta',
+ ]
+
+/app/tests/Integration/Redis/KeyScopeE1RedisTest.php:980
+
+FAILURES!
+Tests: 25, Assertions: 1910, Failures: 2.
+Expected detection: gate width=32 exit=1

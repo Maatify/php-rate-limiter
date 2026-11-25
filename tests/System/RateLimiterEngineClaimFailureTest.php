@@ -7,14 +7,10 @@ namespace Maatify\RateLimiter\Tests\System;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
-use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Exception\BackendFailureException;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\CircuitBreaker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\FingerprintHasher;
@@ -75,7 +71,7 @@ final class RateLimiterEngineClaimFailureTest extends TestCase
             'login_protection:rate_limiter:k2:v2:prod:198.51.100.42:other/0',
             'test_secret',
         );
-        $store->block($k2, 2, 600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $k2)->block($k2, 2, 600);
 
         $result = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
         self::assertSame('HARD_BLOCK', $result->decision);
@@ -110,13 +106,13 @@ final class RateLimiterEngineClaimFailureTest extends TestCase
         $pipeline = new EvaluationPipeline(
             $store,
             new NullCorrelationStore(),
-            new BudgetTracker($store, $clock),
-            new AntiEquilibriumGate(new NullCorrelationStore()),
             new DecayCalculator($clock),
-            new EphemeralBucket(new NullCorrelationStore()),
             'test_secret',
             'prod',
             $clock,
+            $clock,
+            null,
+            null,
         );
 
         return new RateLimiterEngine(

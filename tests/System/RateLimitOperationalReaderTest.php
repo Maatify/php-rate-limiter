@@ -14,12 +14,9 @@ use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitOperationalKeyStateDTO;
 use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
 use Maatify\RateLimiter\Repository\BoundedCorrelationStoreInterface;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\CircuitBreaker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\FingerprintHasher;
@@ -57,8 +54,10 @@ final class TrackingCircuitBreakerStore implements CircuitBreakerStoreInterface
     }
 }
 
-final class TrackingCorrelationStore implements BoundedCorrelationStoreInterface
+final class TrackingCorrelationStore implements BoundedCorrelationStoreInterface, \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface
 {
+    use \Maatify\RateLimiter\Tests\Support\E1View;
+
     public int $operations = 0;
 
     public function addDistinct(string $key, string $item, int $ttlSeconds): int
@@ -218,8 +217,8 @@ final class RateLimitOperationalReaderTest extends TestCase
 
         $previousK4 = $this->key('login_protection', 'k4', 'prod', 'account-123', 'previous-outer');
         $currentK4 = $this->key('login_protection', 'k4', 'prod', 'account-123', 'current-outer');
-        $store->set($previousK4, 9, 86400);
-        $store->set($currentK4, 4, 86400);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousK4)->set($previousK4, 9, 86400);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $currentK4)->set($currentK4, 4, 86400);
         $reader = $this->reader($clock, $store, $resolver, $circuitBreakerStore, 'current-outer', 'previous-outer');
         $currentWins = $reader->read($context, new LoginProtectionPolicy());
 
@@ -229,14 +228,14 @@ final class RateLimitOperationalReaderTest extends TestCase
         self::assertFalse($currentK4State->scoreFromPreviousGeneration);
 
         $fallbackStore = new InMemoryRateLimitStore($clock);
-        $fallbackStore->set($previousK4, 9, 86400);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($fallbackStore, $previousK4)->set($previousK4, 9, 86400);
         $previousK4Block = $previousK4;
-        $fallbackStore->block($previousK4Block, 2, 600);
-        $fallbackStore->incrementBudget($previousK4, 86400, 20);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($fallbackStore, $previousK4Block)->block($previousK4Block, 2, 600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($fallbackStore, $previousK4)->incrementBudget($previousK4, 86400, 20);
         $previousMicro = $this->microCapKey('login_protection', 'account-123', $device->previousFingerprintHash, 'previous-outer');
-        $fallbackStore->incrementBudget($previousMicro, 86400, 9);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($fallbackStore, $previousMicro)->incrementBudget($previousMicro, 86400, 9);
         $previousCooldown = $this->cooldownKey('login_protection', 'account-123', 'prod', 'previous-outer');
-        $fallbackStore->increment($previousCooldown, 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($fallbackStore, $previousCooldown)->increment($previousCooldown, 3600);
         $fallbackWritesBefore = $fallbackStore->writeCount();
 
         $fallbackReader = $this->reader(
@@ -276,8 +275,8 @@ final class RateLimitOperationalReaderTest extends TestCase
         $context = new RateLimitContextDTO('203.0.113.10', 'Mozilla/5.0', 'account-123', ['platform' => 'web']);
         $currentK4 = $this->key('login_protection', 'k4', 'prod', 'account-123', 'current-outer');
         $previousK4 = $this->key('login_protection', 'k4', 'prod', 'account-123', 'previous-outer');
-        $store->incrementBudget($currentK4, 86400, 2);
-        $store->incrementBudget($previousK4, 86400, 20);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $currentK4)->incrementBudget($currentK4, 86400, 2);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousK4)->incrementBudget($previousK4, 86400, 20);
         $circuitBreakerStore = new TrackingCircuitBreakerStore();
         $state = new CircuitBreakerStateDTO(FailureStateDTO::STATE_OPEN, [100], 100, 100, 0, [100], 700);
         $circuitBreakerStore->seed('login_protection', $state);
@@ -349,13 +348,13 @@ final class RateLimitOperationalReaderTest extends TestCase
         $pipeline = new EvaluationPipeline(
             $store,
             $correlationStore,
-            new BudgetTracker($store, $clock),
-            new AntiEquilibriumGate($correlationStore),
             new DecayCalculator($clock),
-            new EphemeralBucket($correlationStore),
             'test-secret',
             'prod',
             $clock,
+            $clock,
+            null,
+            null,
         );
 
         return new RateLimiterEngine(
@@ -391,26 +390,18 @@ final class RateLimitOperationalReaderTest extends TestCase
 
     private function key(string $policy, string $scope, string $environment, string $value, string $secret): string
     {
-        return hash_hmac('sha256', "{$policy}:rate_limiter:{$scope}:v2:{$environment}:{$value}", $secret);
+        return \Maatify\RateLimiter\Tests\Support\FixtureKeys::scope(($scope), ($policy), ($environment), ($value), $secret);
     }
 
     private function microCapKey(string $policy, string $accountId, ?string $fingerprint, string $secret): string
     {
         self::assertNotNull($fingerprint);
 
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:microcap:k5:v1:prod:{$accountId}:{$fingerprint}",
-            $secret,
-        );
+        return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('microcap.k5', ($policy), ($accountId), $secret, ($fingerprint));
     }
 
     private function cooldownKey(string $policy, string $accountId, string $environment, string $secret): string
     {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:budget_cooldown:v1:{$environment}:{$accountId}",
-            $secret,
-        );
+        return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver(($environment)))->derive('budget_cooldown', ($policy), ($accountId), $secret);
     }
 }

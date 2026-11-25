@@ -193,9 +193,11 @@ final class AdmissionBuilderS0GoldensTest extends TestCase
 
     /** @param 'A'|'B' $scenario */
     #[DataProvider('cases')]
-    public function testTheBuilderCompositionReproducesTheGoldenRecordedOnTheBase(string $policy, string $scenario, bool $withBindingKey): void
+    public function testTheBuilderRetainsHistoricalDecisionsAndTheE1StorageSnapshot(string $policy, string $scenario, bool $withBindingKey): void
     {
         self::assertArrayHasKey($policy, self::GOLDEN);
-        self::assertSame(self::GOLDEN[$policy][$scenario], self::play($policy, $scenario, $withBindingKey));
+        $expected = self::GOLDEN[$policy][$scenario];
+        $expected['state'] = \Maatify\RateLimiter\Tests\Fixtures\E1GoldenState::BUILDER[$policy][$scenario];
+        self::assertSame($expected, self::play($policy, $scenario, $withBindingKey));
     }
 }

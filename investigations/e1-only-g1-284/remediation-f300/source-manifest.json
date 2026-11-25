@@ -1,0 +1,31 @@
+{
+  "source_arms": {
+    "rejected": {
+      "commit": "304a5835d7d8f1d18834fa94c040515a22a401f5",
+      "tree": "b5f56935837f0325825b5cf2ae1f8015fe3400ed",
+      "src_tree": "da473f901faebf893dfeef57a665f3a786858332",
+      "sha256": {
+        "src/Service/EvaluationPipeline.php": "b04017f151177ea9b1999302a476d8021d85c5d87636e511682946f2d1525e04",
+        "src/Builder/RateLimiterBuilder.php": "2419bc601807aaa7d38b0008be10bb4cf18fa9f8fe5a579e81bc38590804aa3d"
+      }
+    },
+    "corrected": {
+      "commit": "3be054df23201091b7b437b6556f2be3bfb6a331",
+      "tree": "5e5ac714b33cb5859e1d54660f8674dcb89e91a9",
+      "src_tree": "cc408a3cd8616556be37dfd98d0b29ffefd965ed",
+      "sha256": {
+        "src/Service/EvaluationPipeline.php": "5c853cd75c419a409bde111b0edf6a65ad2d7382facf01e8b5d997ce512711a7",
+        "src/Builder/RateLimiterBuilder.php": "2419bc601807aaa7d38b0008be10bb4cf18fa9f8fe5a579e81bc38590804aa3d"
+      }
+    }
+  },
+  "shared_sha256": {
+    "investigations/e1-only-g1-284/bench.php": "7056c83b3965acd8cddcbec650da04b382d96d218b3f22dba0fb6df28e7a621d",
+    "tests/Support/Clock/FixedClock.php": "76c61304ff1dbed1ac3ac294774f24e45748264e6b9c6b0f96319dfd68793bdb",
+    "tests/Support/Redis/RespRedisCommandExecutor.php": "d5272012ec927d9b2e9290768a45527630dfa2e04ee30a37683d96a894810798",
+    "tests/Support/Redis/OverlayWire.php": "338db2fc44e0478ce285c0daf4980e92e0ae3057750b8edf2817a1799341b2fa",
+    "tests/Integration/Redis/G1ReviewRegressionRedisTest.php": "11d4adb7ffb7d4a06e47068fbac1d12027844c57b0f3eea24b14ea2e945de49e",
+    "tests/Support/Redis/AllowanceOnlyPolicy.php": "e338e45a0fab92a6eb2fab68f894f38c32affa7c2aea57ee0eda1f33d40ff50c",
+    "tests/Support/Redis/BudgetSeedlessRedisStore.php": "69ffab5edad9625e5fe79f12dee991a59323e737ccaab0f5ce0a1f3917ad35ad"
+  }
+}

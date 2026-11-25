@@ -80,11 +80,11 @@ final class FamilyLifecycleTest extends TestCase
         ['p' => $p] = $this->labs();
         $this->hardBlockOnP($p);
 
-        $block = $p->store->checkBlock(self::k4pKey());
+        $block = $p->store->e1Keyspace()->checkBlock(self::k4pKey());
         self::assertNotNull($block);
         self::assertSame(2, $block->level);
 
-        $state = $p->store->readGenerationBoundScoreState(self::k4pKey(), null);
+        $state = $p->store->e1Keyspace()->readGenerationBoundScoreState(self::k4pKey(), null);
         self::assertNotNull($state);
         self::assertNotNull($state->generation);
 
@@ -95,9 +95,9 @@ final class FamilyLifecycleTest extends TestCase
 
         // The reference store exposes the evidence once the block has expired (DEC-007).
         $p->at(603);
-        $afterBlock = $p->store->readGenerationBoundScoreState(self::k4pKey(), null);
+        $afterBlock = $p->store->e1Keyspace()->readGenerationBoundScoreState(self::k4pKey(), null);
         self::assertNotNull($afterBlock?->postPunishmentReentry);
-        self::assertNull($p->store->readGenerationBoundScoreState(self::k4Key(), null), 'Nothing is written on the K4 key.');
+        self::assertNull($p->store->e1Keyspace()->readGenerationBoundScoreState(self::k4Key(), null), 'Nothing is written on the K4 key.');
     }
 
     public function testReentryEvidenceIsServedAndClaimedOnTheProvenLaneOnly(): void
@@ -127,10 +127,10 @@ final class FamilyLifecycleTest extends TestCase
         ['p' => $p] = $this->labs();
         $this->hardBlockOnP($p);
         $p->at(603);
-        $before = $p->store->readGenerationBoundScoreState(self::k4pKey(), null);
+        $before = $p->store->e1Keyspace()->readGenerationBoundScoreState(self::k4pKey(), null);
 
         self::assertSame('A', $p->run(self::context(), 'ok')['d']);
-        $after = $p->store->readGenerationBoundScoreState(self::k4pKey(), null);
+        $after = $p->store->e1Keyspace()->readGenerationBoundScoreState(self::k4pKey(), null);
 
         self::assertNotNull($before?->postPunishmentReentry);
         self::assertNotNull($after?->postPunishmentReentry);

@@ -9,7 +9,6 @@ use Maatify\RateLimiter\Repository\CallerTimeMilliseconds;
 use Maatify\RateLimiter\DTO\DecayPauseStateDTO;
 use Maatify\RateLimiter\DTO\HardBlockCycleResultDTO;
 use Maatify\RateLimiter\Repository\BudgetSeedStoreInterface;
-use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
 use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\DTO\GenerationBoundScoreMutationDTO;
 use Maatify\RateLimiter\DTO\GenerationBoundScoreStateDTO;
@@ -28,6 +27,7 @@ use Maatify\RateLimiter\Repository\CallerTimeOperationalReadOnlyStoreInterface;
 
 class InMemoryRateLimitStore implements \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface, BudgetSeedStoreInterface, PunishmentLifecycleStoreInterface, CallerTimeBudgetSeedStoreInterface, CallerTimePunishmentLifecycleStoreInterface, CallerTimeDecimalMillisecondsPunishmentLifecycleStoreInterface, CallerTimeSnapshotFencedScoreStoreInterface, CallerTimeScoreReplaceStoreInterface, CallerTimeOperationalReadOnlyStoreInterface
 {
+    use \Maatify\RateLimiter\Tests\Support\E1View;
     public bool $available = true;
     private const PAUSE_HISTORY_RETENTION_SECONDS = 86400;
 
@@ -61,10 +61,11 @@ class InMemoryRateLimitStore implements \Maatify\RateLimiter\Repository\E1Keyspa
 
     public function __construct(private readonly ClockInterface $clock) {}
 
-    /** DEC-044: the in-memory store keys by the plain logical string, which already differs between V2 and E1; its view is itself. */
-    public function e1Keyspace(): static
+    protected function initializeAccountView(object $view): void
     {
-        return $this;
+        if ($view instanceof self) {
+            $view->writes = & $this->writes;
+        }
     }
 
     public function increment(string $key, int $ttlSeconds, int $amount = 1): int
