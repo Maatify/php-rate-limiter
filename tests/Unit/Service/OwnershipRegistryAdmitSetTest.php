@@ -213,4 +213,36 @@ final class OwnershipRegistryAdmitSetTest extends TestCase
         self::assertNull($ref->get(), 'A resource is not kept alive by the token of a call it joined.');
         $owner->release();
     }
+
+    public function testADestroyedSuspendedFiberDuringTheLookupLeavesNoReservationOrBinding(): void
+    {
+        // F300-08: a suspended Fiber that is destroyed runs finally blocks only, never catch.
+        $owned = $this->resource();
+        $free = $this->resource();
+        /** @var \ArrayObject<string, bool> $state */
+        $state = new \ArrayObject(['armed' => false]);
+        $provider = new StubContextProvider(static function () use ($state): int {
+            if ($state['armed']) {
+                \Fiber::suspend();
+            }
+
+            return 1;
+        });
+        OwnershipRegistry::bindAll([$owned], $provider);
+        $fiber = new \Fiber(static function () use ($owned, $free, $provider, $state): void {
+            $owner = OwnershipRegistry::acquire([$owned], 'owner', ContextDomain::forProvider($provider));
+            $state['armed'] = true;
+            $join = OwnershipRegistry::admitSet([$owned, $free], 'nested');
+            $join->release();
+            $owner->release();
+        });
+        $fiber->start();
+        self::assertTrue(OwnershipRegistry::isOccupied($free), 'The free member is reserved while the lookup is suspended.');
+
+        unset($fiber);
+        gc_collect_cycles();
+
+        self::assertFalse(OwnershipRegistry::isOccupied($free), 'Destroying the Fiber releases the reservation.');
+        self::assertSame('unbound', OwnershipRegistry::domainKind($free), 'And the binding the call made.');
+    }
 }

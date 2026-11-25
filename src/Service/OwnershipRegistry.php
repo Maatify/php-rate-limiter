@@ -455,6 +455,7 @@ final class OwnershipRegistry
         //    so no member of the set is unprotected when Host code runs.
         $lease = $domain->provider();
         $scope = new CallScope($token, $lease, true);
+        $ok = false;
         try {
             if ($unbound !== []) {
                 $scope->bindings(self::bindAll($unbound, $domain->rawProvider()));
@@ -487,9 +488,12 @@ final class OwnershipRegistry
             if (! $token->sameContext($key)) {
                 throw new OverlappingRequestException($entry);
             }
-        } catch (\Throwable $failure) {
-            $scope->release();
-            throw $failure;
+            $ok = true;
+        } finally {
+            // finally, not catch: a suspended Fiber destroyed during the lookup runs finally blocks only (F300-08), as in acquire().
+            if (! $ok) {
+                $scope->release();
+            }
         }
 
         return $scope;
