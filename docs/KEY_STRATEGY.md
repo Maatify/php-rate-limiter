@@ -704,23 +704,25 @@ K4 budget epoch/count key.
 
 #### 4.5.1 Budget Cooldown Marker
 
-Logical namespace (before HMAC):
+Canonical E1 derivation (`DEC-046`, [`docs/KEY_SCOPE_ENCODING_E1.md`](KEY_SCOPE_ENCODING_E1.md) §3.4):
 
-```
-{policy}:rate_limiter:budget_cooldown:v1:{env}:{accountId}
+```text
+E1AccountScopeKeyDeriver tuple (N = 4):
+  (purpose, policy, env, account)
+  where purpose ∈ { "budget_cooldown", "budget_cooldown_p" }
 ```
 
-* The stored key is HMAC-ed with the same keyed-hash strategy as all other keys (§4.2).
+* Derived via `E1AccountScopeKeyDeriver` (checked `u32be` framing, `maatify.rate-limiter.key-domain.e1` subkey, textual form `e1.<64hex>`, physical `maatify:rate-limiter:e1:…:score:…`). The removed historical colon-joined preimage (`{policy}:rate_limiter:budget_cooldown:v1:{env}:{accountId}`) is no longer emitted or read.
 * The marker uses the **existing atomic fixed-TTL primitive** `RateLimitStoreInterface::increment(key, cooldownTTL)`:
   first creation sets the TTL, subsequent increments do **not** extend it — a no-extension
   cooldown by construction (no new Store primitive required).
 
-Atomic acquisition (locked):
+Atomic acquisition (locked; `Current` / `Previous` denote active/previous outer key-secret generations inside E1, §4.3.1):
 
 ```
-if active V2 marker exists      → cooldown active
-else if active V1 marker exists → cooldown active
-else atomic increment(V2, cooldownTTL)
+if active Current marker exists      → cooldown active
+else if active Previous marker exists → cooldown active
+else atomic increment(Current, cooldownTTL)
      issuance allowed only when returned value == 1
 ```
 
@@ -737,15 +739,19 @@ else atomic increment(V2, cooldownTTL)
   acquisition is the issuance gate: returned `1` permits the budget `SOFT_BLOCK`; a
   returned value `> 1` loses the race, so no budget soft is issued and the normal
   candidate remains unchanged.
-* Rotation survival (§4.3.1) applies: writes → V2; reads → V2 then V1.
+* Rotation survival (§4.3.1) applies: writes → Current; reads → Current then Previous.
 
 #### 4.5.2 K5 Micro-Cap Counter (Known-Device Budget Eligibility)
 
-Logical namespace (before HMAC):
+Canonical E1 derivation (`DEC-046`, [`docs/KEY_SCOPE_ENCODING_E1.md`](KEY_SCOPE_ENCODING_E1.md) §3.4):
 
+```text
+E1AccountScopeKeyDeriver tuple (N = 5):
+  (purpose, policy, env, account, material)
+  where purpose ∈ { "microcap.k5", "microcap.k5p" }
 ```
-{policy}:rate_limiter:microcap:k5:{ver}:{env}:{accountId}:{deviceFp}
-```
+
+* Derived via `E1AccountScopeKeyDeriver` (physical `maatify:rate-limiter:e1:…:budget:…`). The removed historical colon-joined preimage (`{policy}:rate_limiter:microcap:k5:{ver}:{env}:{accountId}:{deviceFp}`) is no longer emitted or read.
 
 * A fixed-epoch (24h) counter per known device used to decide when same-device failures
   become budget-eligible (`DECISION_MATRIX.md` §2.4.1).
@@ -782,56 +788,56 @@ Logical namespace (before HMAC):
 
 ### 4.6 Account/Policy Auxiliary State Keys (Locked)
 
-Account-derived auxiliary state uses one package-owned, versioned keyed-HMAC contract. The
-logical preimage is:
+Non-Admission account-derived auxiliary state uses `E1AccountScopeKeyDeriver` (`DEC-046`, [`docs/KEY_SCOPE_ENCODING_E1.md`](KEY_SCOPE_ENCODING_E1.md) §3.2–§3.6, physical `maatify:rate-limiter:e1:…` layout):
 
-```
-{policy}:rate_limiter:aux:{purpose}:v1:{env}:{accountId}
+```text
+E1AccountScopeKeyDeriver tuple (N = 4):
+  (purpose, policy, env, account)
+  where purpose ∈ {
+    "aux.last_missing_fp",
+    "aux.flood_stage",
+    "aux.anti_equilibrium",
+    "aux.anti_equilibrium_p",
+    "aux.known_device_allowance",
+    "aux.known_device_allowance_p"
+  }
 ```
 
-The stored key is:
-
-```
-HMAC-SHA256(preimage, active-or-generation-key-secret)
-```
-
-The locked purposes are `last_missing_fp`, `anti_equilibrium`, `flood_stage`, and
-`known_device_allowance` (DEC-021, now DEC-026).
+The removed historical colon-joined preimages (`{policy}:rate_limiter:aux:{purpose}:v1:{env}:{accountId}`) are no longer emitted or read (DEC-021, now DEC-026, E1 encoding under DEC-046).
 
 The admission layer adds the following purposes (LOCKED amendment under DEC-026, active since
 2026-10-20). They are derived only for a policy that opts into the admission reservation.
 
 * `binding_epoch` — one integer per account, the per-account epoch of the admission binding
-  credential. The preimage is the same, `{policy}:rate_limiter:aux:binding_epoch:v1:{env}:{accountId}`,
-  with the **budget group** of the verifier class in place of `{policy}` so that login,
-  re-authentication and password change share one epoch (DEC-034 6.1). It is **not** a §10.1
+  credential. Historically specified with `{budget group}` in the preimage (`DEC-034` 6.1), whereas current source (`AdmissionRuntime::epochKey()`) hashes `env ‖ 0x00 ‖ "binding_epoch" ‖ 0x00 ‖ accountId` without budget group (`KEY_SCOPE_ENCODING_E1.md` §5.4). Both the NUL-delimited Admission join (`A1`) and this `binding_epoch` contract-vs-source discrepancy (`A2`) remain **open release blockers queued for G3** under `#281`/`#284`. It is **not** a §10.1
   generation-bound namespace. Current key is written; the previous-generation key is read-only
   and read only when the current key is absent. The derivation is in `AdmissionRuntime` (stage 5-b3b), keyed by `accountId` and the active key
   secret (with the previous-generation key read-only); the store operations (`readBindingEpoch`,
   `bumpBindingEpoch`) receive opaque, already-derived keys; see §4.8.
 * `admission_fence` — the fleet fence of the admission runtime (contract §6, M2): one integer per
-  budget group in the epoch namespace, `HMAC-SHA256({env}\0admission_fence\0{budget group}, key
-  secret)`. It is read under the active key secret and, when a previous key secret is configured,
+  budget group in the epoch namespace, currently `HMAC-SHA256({env}\0admission_fence\0{budget group}, key secret)` (**NUL-delimited Admission framing `A1` remains queued for G3** under `#281`/`#284`). It is read under the active key secret and, when a previous key secret is configured,
   under the previous one (current, else previous), so a key-secret rotation does not close it. The new
   path is enabled for a budget group only when the value read is at least 1; below 1 the request is
   processed as if no admission runtime existed. It is opened through
   `AdmissionFenceControlInterface::openAdmissionFence()`, which writes the current key as the larger of
   the current and previous values plus one. No package operation closes it; the operator procedure is
   in `docs/guides/USAGE_GUIDE.md` ("Operating the admission fence").
-* The `_p` purposes of the proven (P) lane: `known_device_allowance_p`, `anti_equilibrium_device_p`,
-  `anti_equilibrium_p` and `budget_cooldown_p`, each the unsuffixed purpose with `_p` appended
-  (same preimage shape, same rotation rules), and the key types `K4P` and `K5p` of §3.4 / §3.5.
+* The `_p` purposes of the proven (P) lane: `aux.known_device_allowance_p`, `aux.anti_equilibrium_device_p`,
+  `aux.anti_equilibrium_p` and `budget_cooldown_p`, each registered in `E1AccountScopeKeyDeriver` (`KEY_SCOPE_ENCODING_E1.md` §3.4) with the same E1 framing and rotation rules, alongside `k4p` and `k5p` of §3.4 / §3.5.
   They are distinct names so the P family cannot collide with the unsuffixed family. The evaluation
   pipeline derives them only for a call that carries the proven lane, which the engine passes for a
   policy that opts in while its fence is open; a policy that did not opt in never reads or writes
   them.
 
-The device Anti-Equilibrium watcher (DEC-021, now DEC-026) extends this preimage with the
-fingerprint hash:
+The device Anti-Equilibrium watcher (DEC-021, now DEC-026, E1 encoding under DEC-046) uses the 5-field E1 tuple extending `(purpose, policy, env, account)` with the device `material`:
 
+```text
+E1AccountScopeKeyDeriver tuple (N = 5):
+  (purpose, policy, env, account, material)
+  where purpose ∈ { "aux.anti_equilibrium_device", "aux.anti_equilibrium_device_p" }
 ```
-{policy}:rate_limiter:aux:anti_equilibrium_device:v1:{env}:{accountId}:{fingerprintHash}
-```
+
+The removed historical colon-joined preimage (`{policy}:rate_limiter:aux:anti_equilibrium_device:v1:{env}:{accountId}:{fingerprintHash}`) is no longer emitted or read.
 
 It exists only for a non-ephemeral, fingerprinted, account-bound request under a
 budgeted, non-`API_OVERUSE` policy with K5 thresholds. Its previous
@@ -893,9 +899,9 @@ intervalSeconds
 subject
 ```
 
-Unlike the delimited-string preimages used elsewhere in this document, this namespace uses
+Like E1 account keys (`DEC-046`) and canonical non-account `f1` keys (`DEC-047`), this namespace uses
 canonical, collision-safe, length-prefixed component encoding to remove any ambiguity from raw
-delimiter concatenation. Each component is encoded as:
+delimiter concatenation; unlike E1 and `f1`, it retains its pre-G2 8-component wire layout (no magic/count header and direct HMAC-SHA256 without a derived subkey). Each component is encoded as:
 
 ```
 pack('N', strlen(component)) . component

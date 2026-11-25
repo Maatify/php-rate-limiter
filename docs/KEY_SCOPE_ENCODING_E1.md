@@ -1,8 +1,8 @@
 # Key Scope Encoding E1 — Derivation Contract and Key Map
 
-> **Current contract: ACTIVE under [DEC-046](decisions/DEC-046_E1_ONLY_ACCOUNT_SCOPE_KEY_ENCODING.md).** E1 is the sole account-scope derivation. G1 implementation is subject to independent Lead review; no release acceptance is claimed. The opt-in implementation accepted in #295 is historical evidence retained in §12.
+> **Current contract: ACTIVE under [DEC-046](decisions/DEC-046_E1_ONLY_ACCOUNT_SCOPE_KEY_ENCODING.md).** E1 is the sole account-scope derivation. No release acceptance is claimed. The opt-in implementation accepted in #295 is historical evidence retained in §12.
 >
-> [KEY_STRATEGY](KEY_STRATEGY.md) remains the normative owner. There is no encoding selector or injected deriver.
+> [KEY_STRATEGY](KEY_STRATEGY.md) remains the normative owner. There is no encoding selector or injected deriver. Non-account key derivations (K1–K3, correlation, and adaptive IPv6 families under physical `v1`) were subsequently amended by [DEC-047](decisions/DEC-047_NON_ACCOUNT_CANONICAL_KEY_FRAMING.md) (`f1` canonical length-prefixed framing) without changing E1 (`Set A`) bytes or physical `e1:` storage.
 
 ## 1. Purpose, scope and non-goals
 
@@ -129,7 +129,7 @@ space; the storage identity (§6) separates the physical space. They are three l
 
 ```
 E1Key = "e1." ‖ digest              (67 ASCII characters: "e1." then [0-9a-f]{64})
-V2Key = digest                     (64 characters, today)
+V2Key = digest                     (64 characters, historical V2; current non-account f1 keys under DEC-047 also emit 64 lowercase hex)
 ```
 
 The pipeline and the stores pass keys around as plain strings, and some of them must survive as strings: the
@@ -221,30 +221,28 @@ The reader reads K1–K5 scores and blocks, the pause state, the K4 budget, the 
 the `aux` families or the `reentry-claim`; they have a writer only. (Request path: all writes of one request go through the
 overlay and one commit, DEC-037; the overlay and commit receive physical keys and are indifferent to how they were built.)
 
-### 5.2 Set B — derivative: identity follows the E1 key, derivation unchanged
+### 5.2 Set B — derivative: identity follows the E1 key; outer framing amended by DEC-047
 
-These state keys are hashes **of** a K4/K5 key. E1 does not re-derive them; because their input changes, an E1 runtime
-gets different (fresh) keys for them automatically, and they stay physically under `v1`.
+These state keys take an E1-derived `K4` (or `K5`) key as an input. E1 does not move them to the `e1:` physical prefix — they remain physically under `v1`, and K5 snapshot members remain raw E1 enforcement keys (`e1.<64hex>`) that are later blocked under `e1:block:`.
 
-| Identity | Input that carries the account | Source |
+Under G1 (`DEC-046`, historical D-2 in §10), E1 alone left their outer preimages untouched. Under **G2 ([DEC-047](decisions/DEC-047_NON_ACCOUNT_CANONICAL_KEY_FRAMING.md))**, the removed colon-joined outer preimages (`{policy}:…:{env}:` and the legacy `accountAnchor()` `K4 ‖ ":" ‖ K1` join) were replaced with canonical `f1` length-prefixed framing (`NonAccountScopeKeyDeriver`, normative contract in `DEC-047` §2–§3 and `KEY_STRATEGY.md`):
+
+| Identity | Account-bearing input & current `DEC-047` framing | Source |
 |---|---|---|
-| distributed-account device set and watch | `{prefix}:scope:{K4}`; members are K5 keys that are later blocked directly | `EvaluationPipeline.php:836-880`, `:732-790` |
-| distributed-account occurrence history | `{prefix}:scope:{K4}` | `:882-915` |
-| account correlation anchor (the `device_cap_account` observation and other account-anchored correlation) | `K4 ‖ ":" ‖ K1` | `accountAnchor` `:1573-1580`, used at `:280-289` |
+| distributed-account device set, bridge, and watch | `f1` purposes `correlation.distributed_account_devices.{scope,bridge}` and `correlation.distributed_account_watch` framing `K4` (or `scopeKey`); members remain raw `e1.<64hex>` K5 keys later blocked directly under `e1:block:` | `EvaluationPipeline.php`, `NonAccountScopeKeyDeriver.php` |
+| distributed-account occurrence history | `f1` purposes `correlation.distributed_account_occurrences.{scope,window,bridge}` framing `K4`, `windowExpiresAt`, or `scopeKey` | `EvaluationPipeline.php`, `NonAccountScopeKeyDeriver.php` |
+| account-anchored correlation (`device_cap_account`) | `f1` purpose `correlation.device_cap_account.scope` framing `K4` and `K1` as separate fields (plus `.member` / `.bridge`); legacy `K4 ‖ ":" ‖ K1` `accountAnchor()` removed | `EvaluationPipeline.php`, `NonAccountScopeKeyDeriver.php` |
 
-Decision D-2 (§10) confirms this treatment. Their own preimages keep the `{policy}:…:{env}:` join, which is outside the
-account boundary studied in #290 and is not part of this contract.
+### 5.3 Set C — outside E1 (`e1:` layout); current `DEC-047` status
 
-### 5.3 Set C — inspected, outside E1, physical keys unchanged
-
-| Family | Why outside | Source |
+| Family | Relationship to E1 and current `DEC-047` disposition | Source |
 |---|---|---|
-| K1, K2, K3 | network and device inputs, not accounts (study §3.3); a separate decision | `EvaluationPipeline.php:3105-3107`, reader `:456-460` |
-| IPv6-adaptive hierarchy, churn anchor, credential-spray | network or subject inputs | `:1124`, `:1157`, `:1251`, `:1718-1731` |
-| Simple fixed-window throttling | already length-prefixed (`pack('N')`, KEY_STRATEGY §4.7) | `FixedWindowSimpleRateLimiter.php:307-325`, `SimpleRateLimitOperationalReader.php:175-193` |
-| `circuit`, `probe` | keyed by policy name | store `:2650`, `:2725` |
-| Admission layer (`adm:*`) | its own derivation, §5.4 | `AdmissionRuntime.php:83-86`, `:537-545`; `RedisAdmissionOperations.php:605-635`, `:860` |
-| `LocalFallbackLimiter` | in-process, no Redis | `LocalFallbackLimiter.php:136-159` |
+| K1, K2, K3 | Outside E1 (`e1:` layout); **amended by [DEC-047](decisions/DEC-047_NON_ACCOUNT_CANONICAL_KEY_FRAMING.md)** to canonical `f1` framing under physical `v1` (shared `NonAccountScopeKeyDeriver` for writer and operational reader) | `NonAccountScopeKeyDeriver.php`, `EvaluationPipeline.php`, `RateLimitOperationalReader.php` |
+| IPv6-adaptive hierarchy, churn anchor, churn, spray, and credential-spray | Outside E1 (`e1:` layout); hierarchy, churn anchor, churn, and spray keys **amended by [DEC-047](decisions/DEC-047_NON_ACCOUNT_CANONICAL_KEY_FRAMING.md)** to canonical `f1` framing under physical `v1`; K1-based `credential_spray` wrappers retain safe grammar and inherit K1 isolation | `NonAccountScopeKeyDeriver.php`, `EvaluationPipeline.php` |
+| Simple fixed-window throttling | Outside E1; already length-prefixed (`pack('N')`, `KEY_STRATEGY` §4.7); **consolidated into `SimpleFixedWindowKeyDeriver` with checked `u32be` bounds under [DEC-047](decisions/DEC-047_NON_ACCOUNT_CANONICAL_KEY_FRAMING.md)** with byte-identical physical `v1` keys | `SimpleFixedWindowKeyDeriver.php`, `FixedWindowSimpleRateLimiter.php`, `SimpleRateLimitOperationalReader.php` |
+| `circuit`, `probe` | Keyed by policy name; unchanged by E1 and `DEC-047` | `RedisFullCapabilityStore.php` |
+| Admission layer (`adm:*`) | Its own derivation (§5.4); unchanged by E1 and `DEC-047` (`A1`–`A3` queued for G3) | `AdmissionRuntime.php`, `RedisAdmissionOperations.php` |
+| `LocalFallbackLimiter` | In-process, no Redis; unchanged by E1 and `DEC-047` (safe colon-free UA grammar) | `LocalFallbackLimiter.php` |
 
 ### 5.4 Adjacent findings from this mapping (not E1, not fixed here)
 
@@ -267,8 +265,8 @@ and the admission layer too. E1 therefore separates storage **per key**, not per
 ### 6.2 Rule
 
 ```
-E1 physical key = "maatify:rate-limiter:e1:" ‖ sha256(namespace) ‖ ":" ‖ family ‖ ":" ‖ sha256(E1Key)
-V2 physical key = "maatify:rate-limiter:v1:" ‖ sha256(namespace) ‖ ":" ‖ family ‖ ":" ‖ sha256(logical)    (unchanged)
+E1 physical key       = "maatify:rate-limiter:e1:" ‖ sha256(namespace) ‖ ":" ‖ family ‖ ":" ‖ sha256(E1Key)
+Non-E1 (v1) physical  = "maatify:rate-limiter:v1:" ‖ sha256(namespace) ‖ ":" ‖ family ‖ ":" ‖ sha256(logical)    (unchanged; holds non-account f1, simple fixed-window, circuit/probe, and plain-string calls)
 ```
 
 **The layout is carried explicitly; it is never inferred from the key string.** `RateLimitStoreInterface::increment/get/set/block`
@@ -306,12 +304,13 @@ D-4 approved **(a)**, the **view bound to the E1 layout of the same store instan
 with a new method surface, because the existing methods accept `string` under `strict_types`. AC-9 verifies the shared
 transaction and ownership on the accepted view.
 
-Consequences that the acceptance tests check (§9, AC-5): with the same inputs, every physical key of §5.3 families and every
-K1–K3 key is identical in an E1 runtime and a V2 runtime; every Set A key exists only under `…:e1:…`; no Set A key exists
-under `…:v1:…`; the Set B keys differ by design (§5.2) and stay under `v1`; and a direct-call differential (invariant 1)
-shows that plain strings, including `e1.`-prefixed and 64-hex ones in each of the ten families, keep the physical keys of
+Consequences checked across E1 and G2 (`DEC-047`): every Set A key exists only under `…:e1:…` and never under `…:v1:…`;
+non-account `f1` keys (`K1–K3`, correlation, adaptive IPv6, and Set B outer keys under `DEC-047`) stay under `…:v1:…`;
+simple fixed-window keys keep byte-identical `v1:budget` keys; and a direct-call differential (invariant 1) shows that
+plain strings, including `e1.`-prefixed and 64-hex ones in each of the ten families, keep the physical keys of
 `main@35398c11` and are not refused. A policy name can never route a key to `e1`: a string never selects a layout, and
-`circuit`/`probe` are outside the family set.
+`circuit`/`probe` are outside the family set. (In the historical G1 / opt-in AC-5 check in §9, K1–K3 and Set C were
+compared directly against a V2 runtime prior to `DEC-047`.)
 
 ### 6.3 Consequences for the Host
 
@@ -376,9 +375,9 @@ cycle rule, a lifecycle rule or a rotation rule. Therefore, for E1 runtimes:
 2. `build()` requires E1-capable rate-limit and correlation roots, with all capabilities actually used preserved on their views. A view passed as root, an unstable/non-idempotent pair or a missing required capability fails before package backend commands. `e1Keyspace()` itself must be pure; arbitrary adapter code is not sandboxed.
 3. `buildOperationalReader()` requires E1 and read-only rate-store/view capabilities, without correlation or mutation-only requirements. The advanced reader retains DEC-032's separately documented low-level fallback for an E1-capable store without read-only reads.
 4. Start new traffic in an isolated namespace/environment after capability/ACL setup. The package does not discover old workers or prove the namespace empty.
-5. Moving existing V2 traffic starts fresh Set A and derivative Set B identities, losing visibility of blocks, scores, budgets, cooldowns and affected history. No live upgrade, dual-read, cross-encoding seed, mixed workers or rollback is supported. No Redis data is deleted. Preserved E1 bytes alone do not qualify a deployment update.
-6. Current/Previous always means secret/material generations **inside E1**. Their atomic budget seed and lifecycle continuity remain; it is not a migration between encodings.
-7. Adjacent Admission NUL joins, the binding-epoch contract discrepancy and other multi-field framing defects remain release blockers tracked on #284. G1 does not fix them or authorize a wider state reset.
+5. Moving existing V2 traffic starts fresh Set A and derivative Set B identities (and moving pre-G2 traffic starts fresh affected non-account `f1` identities under [DEC-047](decisions/DEC-047_NON_ACCOUNT_CANONICAL_KEY_FRAMING.md)), losing visibility of prior blocks, scores, budgets, cooldowns and affected history. No live upgrade, dual-read, cross-encoding seed, mixed workers or rollback is supported. No Redis data is deleted. Preserved E1 bytes alone do not qualify a deployment update.
+6. Current/Previous always means secret/material generations **inside E1** (and inside `f1` for non-account keys under `DEC-047`). Their atomic budget seed and lifecycle continuity remain; it is not a migration between encodings.
+7. G1 (`DEC-046`) did not fix non-account or Admission framing defects; G2 ([DEC-047](decisions/DEC-047_NON_ACCOUNT_CANONICAL_KEY_FRAMING.md)) subsequently resolved non-account multi-field framing (`A4` and recurrence across K1–K3, correlation, and adaptive IPv6). Adjacent Admission NUL joins, the `binding_epoch` contract discrepancy, and cohort/trust-domain semantics (`A1`–`A3`) remain open release blockers tracked on `#281` and `#284` for G3.
 
 ## 9. Historical opt-in acceptance criteria
 
@@ -461,4 +460,4 @@ from V2 only because their K4/K5 input differs. The V2 account state that E1 rep
 
 ## 13. G1 acceptance boundary
 
-The accepted G1 design and correction are on #284 comments 7156192985, 7156743430 and 7156769415. Required current evidence includes: sole-E1 public writer/direct construction/reader, unchanged vectors and Set B/C rules, closed helper injection and explicit clock roles, actual-view capability and ownership checks, stable handle handoff, failed/nested/cancelled builds, snapshot adoption, Current/Previous budget/lifecycle rotation, plain-string root compatibility in all ten families, both-layout atomicity/ACL/expiry/lost replies on PHP32/64, unsupported V2 transition, and comparative performance. Existing applicable suites, archive detectors and external Composer consumer verification remain required. Current results belong to the implementation PR's exact HEAD; historical #295 PASS is not G1 PASS.
+The accepted G1 design and correction are on #284 comments 7156192985, 7156743430 and 7156769415. Required G1 evidence included: sole-E1 public writer/direct construction/reader, unchanged E1 vectors and G1 Set B/C boundaries, closed helper injection and explicit clock roles, actual-view capability and ownership checks, stable handle handoff, failed/nested/cancelled builds, snapshot adoption, Current/Previous budget/lifecycle rotation, plain-string root compatibility in all ten families, both-layout atomicity/ACL/expiry/lost replies on PHP32/64, unsupported V2 transition, and comparative performance. Existing applicable suites, archive detectors and external Composer consumer verification remain required. Current results belong to the implementation PR's exact HEAD; historical #295 PASS is not G1 PASS. Subsequent G2 non-account canonical framing amendments to Set B outer preimages and Set C K1–K3/IPv6/simple keys are governed by [DEC-047](decisions/DEC-047_NON_ACCOUNT_CANONICAL_KEY_FRAMING.md).

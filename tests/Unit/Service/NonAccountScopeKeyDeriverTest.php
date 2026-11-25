@@ -38,6 +38,57 @@ final class NonAccountScopeKeyDeriverTest extends TestCase
     private const S = 'synthetic-key-secret-not-for-production';
     private const SP = 'synthetic-previous-secret-not-for-production';
 
+    /**
+     * Independent expected map of all 33 registered DEC-047 purposes => exact total tuple arity `N`
+     * (never derived dynamically from production `NonAccountScopePurpose::all()`).
+     *
+     * @var array<string, int>
+     */
+    private const EXPECTED_PURPOSES = [
+        'k1' => 4,
+        'k2' => 5,
+        'k3' => 5,
+
+        'correlation.device_cap_ip.scope' => 4,
+        'correlation.device_cap_ip.member' => 4,
+        'correlation.device_cap_ip.bridge' => 4,
+
+        'correlation.device_cap_account.scope' => 5,
+        'correlation.device_cap_account.member' => 4,
+        'correlation.device_cap_account.bridge' => 4,
+
+        'correlation.churn.scope' => 4,
+        'correlation.churn.member' => 4,
+        'correlation.churn.bridge' => 4,
+        'correlation.churn_watch' => 4,
+
+        'correlation.dilution.scope' => 4,
+        'correlation.dilution.member' => 4,
+        'correlation.dilution.bridge' => 4,
+        'correlation.dilution_watch' => 4,
+        'correlation.dilution_confirmation' => 5,
+
+        'correlation.distributed_account_devices.scope' => 4,
+        'correlation.distributed_account_devices.bridge' => 4,
+        'correlation.distributed_account_watch' => 4,
+
+        'correlation.distributed_account_occurrences.scope' => 4,
+        'correlation.distributed_account_occurrences.window' => 4,
+        'correlation.distributed_account_occurrences.bridge' => 4,
+
+        'ipv6_adaptive.hierarchy.scope' => 5,
+        'ipv6_adaptive.hierarchy.bridge' => 5,
+        'ipv6_adaptive.churn_anchor' => 6,
+
+        'ipv6_adaptive.churn.scope' => 5,
+        'ipv6_adaptive.churn.member' => 5,
+        'ipv6_adaptive.churn.bridge' => 5,
+
+        'ipv6_adaptive.spray.scope' => 5,
+        'ipv6_adaptive.spray.member' => 5,
+        'ipv6_adaptive.spray.bridge' => 5,
+    ];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -123,16 +174,131 @@ final class NonAccountScopeKeyDeriverTest extends TestCase
         }
     }
 
+    public function testProductionPurposeRegistryMatchesIndependent33PurposeSpecification(): void
+    {
+        self::assertCount(33, self::EXPECTED_PURPOSES);
+        self::assertSame(
+            self::EXPECTED_PURPOSES,
+            NonAccountScopePurpose::all(),
+            'Production NonAccountScopePurpose registry must match the independent 33-purpose DEC-047 specification exactly.',
+        );
+    }
+
+    public function testActualPreG2LegacyPreimageCollisionWitnessesAreEliminatedAcrossAll33Purposes(): void
+    {
+        /**
+         * Exact pre-G2 legacy colon-joined preimage middle literal (between `{policy}:` and `:{env}:`),
+         * tail suffix template, classification (`reachable-a4` vs `structural-outer`), and sample semantic fields
+         * for every one of the 33 registered DEC-047 purposes (DEC-047 §3 & §5).
+         *
+         * @var array<string, array{
+         *     legacyMiddle: string,
+         *     legacyTail: string,
+         *     semantics: list<string>,
+         *     classification: 'reachable-a4'|'structural-outer'
+         * }>
+         */
+        $legacyMatrix = [
+            'k1' => ['legacyMiddle' => 'rate_limiter:k1:v2', 'legacyTail' => '203.0.113.10', 'semantics' => ['203.0.113.10'], 'classification' => 'reachable-a4'],
+            'k2' => ['legacyMiddle' => 'rate_limiter:k2:v2', 'legacyTail' => '203.0.113.10:chrome/126', 'semantics' => ['203.0.113.10', 'chrome/126'], 'classification' => 'reachable-a4'],
+            'k3' => ['legacyMiddle' => 'rate_limiter:k3:v2', 'legacyTail' => '203.0.113.10:f00dcafe', 'semantics' => ['203.0.113.10', 'f00dcafe'], 'classification' => 'reachable-a4'],
+
+            'correlation.device_cap_ip.scope' => ['legacyMiddle' => 'rate_limiter:correlation:device_cap_ip:v1', 'legacyTail' => 'scope:k1hash', 'semantics' => ['k1hash'], 'classification' => 'reachable-a4'],
+            'correlation.device_cap_ip.member' => ['legacyMiddle' => 'rate_limiter:correlation:device_cap_ip:v1', 'legacyTail' => 'member:fphash', 'semantics' => ['fphash'], 'classification' => 'reachable-a4'],
+            'correlation.device_cap_ip.bridge' => ['legacyMiddle' => 'rate_limiter:correlation:device_cap_ip:v1', 'legacyTail' => 'bridge:scopekey', 'semantics' => ['scopekey'], 'classification' => 'reachable-a4'],
+
+            'correlation.device_cap_account.scope' => ['legacyMiddle' => 'rate_limiter:correlation:device_cap_account:v1', 'legacyTail' => 'scope:e1.k4hash:k1hash', 'semantics' => ['e1.k4hash', 'k1hash'], 'classification' => 'structural-outer'],
+            'correlation.device_cap_account.member' => ['legacyMiddle' => 'rate_limiter:correlation:device_cap_account:v1', 'legacyTail' => 'member:fphash', 'semantics' => ['fphash'], 'classification' => 'structural-outer'],
+            'correlation.device_cap_account.bridge' => ['legacyMiddle' => 'rate_limiter:correlation:device_cap_account:v1', 'legacyTail' => 'bridge:scopekey', 'semantics' => ['scopekey'], 'classification' => 'structural-outer'],
+
+            'correlation.churn.scope' => ['legacyMiddle' => 'rate_limiter:correlation:churn:v1', 'legacyTail' => 'scope:k2hash', 'semantics' => ['k2hash'], 'classification' => 'reachable-a4'],
+            'correlation.churn.member' => ['legacyMiddle' => 'rate_limiter:correlation:churn:v1', 'legacyTail' => 'member:fphash', 'semantics' => ['fphash'], 'classification' => 'reachable-a4'],
+            'correlation.churn.bridge' => ['legacyMiddle' => 'rate_limiter:correlation:churn:v1', 'legacyTail' => 'bridge:scopekey', 'semantics' => ['scopekey'], 'classification' => 'reachable-a4'],
+            'correlation.churn_watch' => ['legacyMiddle' => 'rate_limiter:correlation:churn_watch:v1', 'legacyTail' => 'scopekey', 'semantics' => ['scopekey'], 'classification' => 'reachable-a4'],
+
+            'correlation.dilution.scope' => ['legacyMiddle' => 'rate_limiter:correlation:dilution:v1', 'legacyTail' => 'scope:fphash', 'semantics' => ['fphash'], 'classification' => 'reachable-a4'],
+            'correlation.dilution.member' => ['legacyMiddle' => 'rate_limiter:correlation:dilution:v1', 'legacyTail' => 'member:k1hash', 'semantics' => ['k1hash'], 'classification' => 'reachable-a4'],
+            'correlation.dilution.bridge' => ['legacyMiddle' => 'rate_limiter:correlation:dilution:v1', 'legacyTail' => 'bridge:scopekey', 'semantics' => ['scopekey'], 'classification' => 'reachable-a4'],
+            'correlation.dilution_watch' => ['legacyMiddle' => 'rate_limiter:correlation:dilution_watch:v1', 'legacyTail' => 'scopekey', 'semantics' => ['scopekey'], 'classification' => 'reachable-a4'],
+            'correlation.dilution_confirmation' => ['legacyMiddle' => 'rate_limiter:correlation:dilution_confirmation:v1', 'legacyTail' => 'scopekey:2989656', 'semantics' => ['scopekey', '2989656'], 'classification' => 'reachable-a4'],
+
+            'correlation.distributed_account_devices.scope' => ['legacyMiddle' => 'rate_limiter:correlation:distributed_account_devices:v1', 'legacyTail' => 'scope:e1.k4hash', 'semantics' => ['e1.k4hash'], 'classification' => 'structural-outer'],
+            'correlation.distributed_account_devices.bridge' => ['legacyMiddle' => 'rate_limiter:correlation:distributed_account_devices:v1', 'legacyTail' => 'bridge:scopekey', 'semantics' => ['scopekey'], 'classification' => 'structural-outer'],
+            'correlation.distributed_account_watch' => ['legacyMiddle' => 'rate_limiter:correlation:distributed_account_watch:v1', 'legacyTail' => 'scopekey', 'semantics' => ['scopekey'], 'classification' => 'structural-outer'],
+
+            'correlation.distributed_account_occurrences.scope' => ['legacyMiddle' => 'rate_limiter:correlation:distributed_account_occurrences:v1', 'legacyTail' => 'scope:e1.k4hash', 'semantics' => ['e1.k4hash'], 'classification' => 'structural-outer'],
+            'correlation.distributed_account_occurrences.window' => ['legacyMiddle' => 'rate_limiter:correlation:distributed_account_occurrences:v1', 'legacyTail' => 'window:1793794200', 'semantics' => ['1793794200'], 'classification' => 'reachable-a4'],
+            'correlation.distributed_account_occurrences.bridge' => ['legacyMiddle' => 'rate_limiter:correlation:distributed_account_occurrences:v1', 'legacyTail' => 'bridge:scopekey', 'semantics' => ['scopekey'], 'classification' => 'structural-outer'],
+
+            'ipv6_adaptive.hierarchy.scope' => ['legacyMiddle' => 'rate_limiter:ipv6_adaptive:hierarchy:v1:48', 'legacyTail' => '20010db80001', 'semantics' => ['48', '20010db80001'], 'classification' => 'reachable-a4'],
+            'ipv6_adaptive.hierarchy.bridge' => ['legacyMiddle' => 'rate_limiter:ipv6_adaptive:hierarchy:v1:48', 'legacyTail' => 'bridge:scopekey', 'semantics' => ['48', 'scopekey'], 'classification' => 'reachable-a4'],
+            'ipv6_adaptive.churn_anchor' => ['legacyMiddle' => 'rate_limiter:ipv6_adaptive:churn_anchor:v1:48', 'legacyTail' => 'adaptivescope:chrome/126', 'semantics' => ['48', 'adaptivescope', 'chrome/126'], 'classification' => 'reachable-a4'],
+
+            'ipv6_adaptive.churn.scope' => ['legacyMiddle' => 'rate_limiter:ipv6_adaptive:churn:v1:48', 'legacyTail' => 'scope:anchor', 'semantics' => ['48', 'anchor'], 'classification' => 'reachable-a4'],
+            'ipv6_adaptive.churn.member' => ['legacyMiddle' => 'rate_limiter:ipv6_adaptive:churn:v1:48', 'legacyTail' => 'member:fphash', 'semantics' => ['48', 'fphash'], 'classification' => 'reachable-a4'],
+            'ipv6_adaptive.churn.bridge' => ['legacyMiddle' => 'rate_limiter:ipv6_adaptive:churn:v1:48', 'legacyTail' => 'bridge:scopekey', 'semantics' => ['48', 'scopekey'], 'classification' => 'reachable-a4'],
+
+            'ipv6_adaptive.spray.scope' => ['legacyMiddle' => 'rate_limiter:ipv6_adaptive:spray:v1:48', 'legacyTail' => 'scope:anchor', 'semantics' => ['48', 'anchor'], 'classification' => 'reachable-a4'],
+            'ipv6_adaptive.spray.member' => ['legacyMiddle' => 'rate_limiter:ipv6_adaptive:spray:v1:48', 'legacyTail' => 'member:acct-0001', 'semantics' => ['48', 'acct-0001'], 'classification' => 'reachable-a4'],
+            'ipv6_adaptive.spray.bridge' => ['legacyMiddle' => 'rate_limiter:ipv6_adaptive:spray:v1:48', 'legacyTail' => 'bridge:scopekey', 'semantics' => ['48', 'scopekey'], 'classification' => 'reachable-a4'],
+        ];
+
+        self::assertSame(array_keys(self::EXPECTED_PURPOSES), array_keys($legacyMatrix));
+
+        foreach ($legacyMatrix as $purpose => $spec) {
+            self::assertSame(
+                self::EXPECTED_PURPOSES[$purpose],
+                3 + count($spec['semantics']),
+                "Legacy witness fixture arity must match expected arity for {$purpose}.",
+            );
+
+            $middle = $spec['legacyMiddle'];
+            $policyA = "a:{$middle}:b";
+            $envA = 'c';
+            $policyB = 'a';
+            $envB = "b:{$middle}:c";
+
+            // 1. Prove the pair WAS a genuine pre-G2 legacy preimage collision.
+            $legacyPreimageA = "{$policyA}:{$middle}:{$envA}:{$spec['legacyTail']}";
+            $legacyPreimageB = "{$policyB}:{$middle}:{$envB}:{$spec['legacyTail']}";
+            self::assertSame(
+                $legacyPreimageA,
+                $legacyPreimageB,
+                "Legacy preimage must genuinely collide on witness pair for {$purpose} ({$spec['classification']}).",
+            );
+
+            // 2. Prove DEC-047 f1 produces distinct preimages AND distinct HMAC digests on that exact pair.
+            $f1PreA = NonAccountScopeKeyDeriver::preimage([$purpose, $policyA, $envA, ...$spec['semantics']]);
+            $f1PreB = NonAccountScopeKeyDeriver::preimage([$purpose, $policyB, $envB, ...$spec['semantics']]);
+            self::assertNotSame($f1PreA, $f1PreB, "f1 preimage must separate legacy witness for {$purpose}.");
+
+            $f1KeyA = (new NonAccountScopeKeyDeriver($envA))->derive($purpose, $policyA, self::S, ...$spec['semantics']);
+            $f1KeyB = (new NonAccountScopeKeyDeriver($envB))->derive($purpose, $policyB, self::S, ...$spec['semantics']);
+            self::assertNotSame($f1KeyA, $f1KeyB, "f1 digest must separate legacy witness for {$purpose}.");
+        }
+
+        // 3. Compound-anchor split witnesses: shifting `:` across the split semantic fields collided in legacy and is separated in f1.
+        self::assertSame('k4:x:k1', 'k4' . ':' . 'x:k1');
+        $deriver = new NonAccountScopeKeyDeriver('prod');
+        self::assertNotSame(
+            $deriver->derive('correlation.device_cap_account.scope', 'login_protection', self::S, 'k4:x', 'k1'),
+            $deriver->derive('correlation.device_cap_account.scope', 'login_protection', self::S, 'k4', 'x:k1'),
+            'Split (k4, k1) fields must eliminate colon-boundary ambiguity in device_cap_account.scope.',
+        );
+        self::assertNotSame(
+            $deriver->derive('correlation.dilution_confirmation', 'otp_protection', self::S, 'scope:1', '2'),
+            $deriver->derive('correlation.dilution_confirmation', 'otp_protection', self::S, 'scope', '1:2'),
+            'Split (scopeKey, windowId) fields must eliminate colon-boundary ambiguity in dilution_confirmation.',
+        );
+    }
+
     public function testRecurrenceMatrixAcrossAll33RegisteredPurposesAndOpaqueBoundaryCharacters(): void
     {
-        $all = NonAccountScopePurpose::all();
-        self::assertCount(33, $all, 'Closed non-account purpose registry must enumerate all 33 registered roles.');
-
         $corpus = ['', '0', ':', 'a:b', "\0", "a\0b", "\xff\x00\xfe", "\u{00FC}", "\u{00FC}n\u{00EF}:42", 'scope', 'member', 'bridge', "\x00\x00\x00\x01x"];
         $globalPreimages = [];
         $globalKeys = [];
 
-        foreach ($all as $purpose => $totalN) {
+        foreach (self::EXPECTED_PURPOSES as $purpose => $totalN) {
             $semanticCount = $totalN - 3;
             $deriverA = new NonAccountScopeKeyDeriver('env-a');
             $baseSemantics = array_fill(0, $semanticCount, 'val');
@@ -148,25 +314,38 @@ final class NonAccountScopeKeyDeriverTest extends TestCase
             self::assertArrayNotHasKey($digest, $globalKeys, "Purpose {$purpose} must not collide in digest on sample with another purpose.");
             $globalKeys[$digest] = $purpose;
 
-            // 2. Policy/env boundary shift recurrence for every purpose (including exact A4 colon-shift witness).
-            $a = (new NonAccountScopeKeyDeriver('c'))->derive($purpose, "a:rate_limiter:{$purpose}:v1:b", self::S, ...$baseSemantics);
-            $b = (new NonAccountScopeKeyDeriver("b:rate_limiter:{$purpose}:v1:c"))->derive($purpose, 'a', self::S, ...$baseSemantics);
-            self::assertNotSame($a, $b, "Policy/env boundary shift must not collide for {$purpose}.");
-
-            // 3. Opaque delimiter/NUL/binary/empty/0/Unicode corpus across policy, env and semantic slot 0.
+            // 2. Full opaque corpus (no truncation: empty, '0', ':', NUL, binary, UTF-8, length-like bytes)
+            //    varied across policy, env, AND EVERY semantic slot (0 .. semanticCount - 1).
             $purposePreimages = [];
             $purposeKeys = [];
-            foreach (array_slice($corpus, 0, 7) as $policy) {
-                foreach (array_slice($corpus, 0, 7) as $env) {
-                    $sem = $baseSemantics;
-                    $sem[0] = $policy === '' ? $env : "{$policy}:{$env}\0";
-                    $t = [$purpose, $policy, $env, ...$sem];
+
+            // 2a. Full policy x env grid with full 13-element corpus.
+            foreach ($corpus as $policy) {
+                foreach ($corpus as $env) {
+                    $t = [$purpose, $policy, $env, ...$baseSemantics];
                     $p = NonAccountScopeKeyDeriver::preimage($t);
                     self::assertSame($t, self::decodeNonAccount($p));
                     self::assertArrayNotHasKey($p, $purposePreimages);
                     $purposePreimages[$p] = true;
-                    $k = (new NonAccountScopeKeyDeriver($env))->derive($purpose, $policy, self::S, ...$sem);
+
+                    $k = (new NonAccountScopeKeyDeriver($env))->derive($purpose, $policy, self::S, ...$baseSemantics);
                     self::assertArrayNotHasKey($k, $purposeKeys);
+                    $purposeKeys[$k] = true;
+                }
+            }
+
+            // 2b. Vary EVERY semantic slot (0 .. semanticCount - 1) across the full 13-element corpus.
+            for ($slot = 0; $slot < $semanticCount; $slot++) {
+                foreach ($corpus as $value) {
+                    $sem = $baseSemantics;
+                    $sem[$slot] = $value;
+                    $t = [$purpose, 'slot-policy', 'slot-env', ...$sem];
+                    $p = NonAccountScopeKeyDeriver::preimage($t);
+                    self::assertSame($t, self::decodeNonAccount($p), "Decoder must recover semantic slot {$slot} for {$purpose}.");
+                    self::assertArrayNotHasKey($p, $purposePreimages, "Semantic slot {$slot} value must produce a distinct preimage for {$purpose}.");
+                    $purposePreimages[$p] = true;
+                    $k = (new NonAccountScopeKeyDeriver('slot-env'))->derive($purpose, 'slot-policy', self::S, ...$sem);
+                    self::assertArrayNotHasKey($k, $purposeKeys, "Semantic slot {$slot} value must not collide in digest for {$purpose}.");
                     $purposeKeys[$k] = true;
                 }
             }

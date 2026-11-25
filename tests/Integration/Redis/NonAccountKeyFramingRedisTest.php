@@ -12,26 +12,27 @@ use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
+use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
-use Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver;
-use Maatify\RateLimiter\Service\SimpleFixedWindowKeyDeriver;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 use Maatify\RateLimiter\Tests\Support\Redis\StateSnapshot;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
  * DEC-047 (G2) real isolated Redis integration verification:
- * - A4 isolation & negative controls on a shared Redis namespace and secret;
- * - Writer/reader parity across Current/Previous rotations, IPv4/mapped IPv6/IPv6 prefixes, custom/default policies,
- *   and strict reader read-only preservation;
- * - Byte-for-byte physical key preservation for E1 (`e1:`) and simple fixed-window (`v1:`);
- * - Rotation (outer-only, fingerprint-only alias+bridge, both), Previous read-only, K5 snapshot block target under `e1:`,
- *   single-commit request atomicity and ACL preflight (`NOPERM`).
+ * - Independent A4 isolation & negative controls for EACH of K1, K2 (including L1 SOFT_BLOCK runtime isolation),
+ *   K3, dilution correlation, and IPv6 adaptive hierarchy/spray on a shared Redis namespace and secret;
+ * - Writer/reader parity across all three rotation shapes (outer-only, fingerprint-only with aliased Previous set,
+ *   and both rotated), K1/K2/K3 before and after write, Previous read-only (`DUMP` + `PEXPIRETIME`), correlation
+ *   rotation bridges with capped TTL, and strict reader read-only preservation;
+ * - Independent hardcoded-golden physical key preservation for E1 (`e1:`) and simple fixed-window (`v1:budget`);
+ * - K5 snapshot block targets under `e1:block:` and DEC-042 ACL preflight (`NOPERM`) across both layouts.
  */
 #[Group('integration')]
 #[Group('php32')]
@@ -45,6 +46,14 @@ final class NonAccountKeyFramingRedisTest extends TestCase
     private const FP_SECRET = 'synthetic-g2-fp-secret-not-for-production';
     private const PREV_FP_SECRET = 'synthetic-g2-prev-fp-secret-not-for-production';
     private const ACL_PASSWORD = 'synthetic-g2-acl-password';
+
+    /**
+     * Independent fixed goldens computed outside production derivers (KEY_SCOPE_ENCODING_E1.md §3.7 & DEC-047 §4)
+     * for secret `synthetic-key-secret-not-for-production`.
+     */
+    private const GOLDEN_SECRET = 'synthetic-key-secret-not-for-production';
+    private const GOLDEN_E1_K4 = 'e1.9678f6f2458e4fc59a0b91701343b4a1e07c81144d9e40025bb2e9aa2b825fa7';
+    private const GOLDEN_SIMPLE_KEY = '7986d5743dd9092f6afaf0b23e08e8ec2e971d2e6603ac99619062a55702ef81';
 
     private RespRedisCommandExecutor $admin;
     private string $host;
@@ -75,16 +84,76 @@ final class NonAccountKeyFramingRedisTest extends TestCase
         }
     }
 
-    public function testSharedRedisA4IsolationAndNegativeControlForScoresBlocksAndCorrelation(): void
+    /**
+     * @return array<string, array{
+     *     scope: 'k1'|'k2'|'k3',
+     *     policyA: string,
+     *     envA: string,
+     *     policyB: string,
+     *     envB: string,
+     *     limits: array<string, int>,
+     *     expectedDecisionA: string,
+     *     expectHardBlockA: bool
+     * }>
+     */
+    public static function a4ScoreScopePairs(): array
     {
+        return [
+            'K1 exact colon-shift pair' => [
+                'scope' => 'k1',
+                'policyA' => 'a:rate_limiter:k1:v2:b',
+                'envA' => 'c',
+                'policyB' => 'a',
+                'envB' => 'b:rate_limiter:k1:v2:c',
+                'limits' => ['k1' => 2, 'k2' => 999, 'k3' => 999],
+                'expectedDecisionA' => RateLimitResultDTO::DECISION_HARD_BLOCK,
+                'expectHardBlockA' => true,
+            ],
+            'K2 exact colon-shift pair (L1 SOFT_BLOCK isolation)' => [
+                'scope' => 'k2',
+                'policyA' => 'a:rate_limiter:k2:v2:b',
+                'envA' => 'c',
+                'policyB' => 'a',
+                'envB' => 'b:rate_limiter:k2:v2:c',
+                'limits' => ['k1' => 999, 'k2' => 2, 'k3' => 999],
+                'expectedDecisionA' => RateLimitResultDTO::DECISION_SOFT_BLOCK,
+                'expectHardBlockA' => false,
+            ],
+            'K3 exact colon-shift pair' => [
+                'scope' => 'k3',
+                'policyA' => 'a:rate_limiter:k3:v2:b',
+                'envA' => 'c',
+                'policyB' => 'a',
+                'envB' => 'b:rate_limiter:k3:v2:c',
+                'limits' => ['k1' => 999, 'k2' => 999, 'k3' => 2],
+                'expectedDecisionA' => RateLimitResultDTO::DECISION_HARD_BLOCK,
+                'expectHardBlockA' => true,
+            ],
+        ];
+    }
+
+    /**
+     * @param 'k1'|'k2'|'k3' $scope
+     * @param array<string, int> $limits
+     */
+    #[DataProvider('a4ScoreScopePairs')]
+    public function testSharedRedisA4IsolationAndNegativeControlForEachOfK1K2K3(
+        string $scope,
+        string $policyA,
+        string $envA,
+        string $policyB,
+        string $envB,
+        array $limits,
+        string $expectedDecisionA,
+        bool $expectHardBlockA,
+    ): void {
         $clock = new FixedClock('@' . self::NOW);
 
-        // Pair A vs Pair B: classic A4 colon-boundary shift sharing ONE Redis namespace and ONE secret.
-        $policyA = $this->namedApiPolicy('a:rate_limiter:k1:v2:b', ['k1' => 2, 'k2' => 999, 'k3' => 999]);
-        $policyB = $this->namedApiPolicy('a', ['k1' => 2, 'k2' => 999, 'k3' => 999]);
+        $objPolicyA = $this->namedApiPolicy($policyA, $limits);
+        $objPolicyB = $this->namedApiPolicy($policyB, $limits);
 
-        $builderA = $this->builder($this->admin, 'c', $clock)->withPolicy($policyA);
-        $builderB = $this->builder($this->admin, 'b:rate_limiter:k1:v2:c', $clock)->withPolicy($policyB);
+        $builderA = $this->builder($this->admin, $envA, $clock)->withPolicy($objPolicyA);
+        $builderB = $this->builder($this->admin, $envB, $clock)->withPolicy($objPolicyB);
 
         $runtimeA = $builderA->build();
         $readerA = $builderA->buildOperationalReader();
@@ -92,45 +161,91 @@ final class NonAccountKeyFramingRedisTest extends TestCase
         $readerB = $builderB->buildOperationalReader();
 
         $context = new RateLimitContextDTO('192.0.2.77', 'Mozilla/5.0 Chrome/126.0.0.0', null, ['canvas' => 'v1']);
-
-        // Trigger K1 hard block on Policy A.
-        $runtimeA->limit($context, RateLimitCommand::recordFailure($policyA->getName()));
-        $blockedA = $runtimeA->limit($context, RateLimitCommand::recordFailure($policyA->getName()));
-        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $blockedA->decision);
-
-        // Negative control: same (policyA, env='c') DOES observe the score and hard block, including via IPv4-mapped IPv6!
         $mappedContext = new RateLimitContextDTO('::ffff:192.0.2.77', 'Mozilla/5.0 Chrome/126.0.0.0', null, ['canvas' => 'v1']);
-        $beforeRead = $this->snapshot();
-        $snapA = $readerA->readScorePolicy($mappedContext, $policyA->getName());
-        self::assertSame(2, $snapA->scopes->k1->effectiveScore);
-        self::assertNotNull($snapA->scopes->k1->activeHardBlock);
-        self::assertSame(2, $snapA->scopes->k2->effectiveScore);
-        self::assertNotNull($snapA->scopes->k3);
-        self::assertSame(2, $snapA->scopes->k3->effectiveScore);
 
-        // Policy B on the colliding (policy, env) pair observes ZERO score and ZERO block.
-        $snapB = $readerB->readScorePolicy($context, $policyB->getName());
-        self::assertSame(0, $snapB->scopes->k1->effectiveScore);
-        self::assertNull($snapB->scopes->k1->activeHardBlock);
-        self::assertSame(0, $snapB->scopes->k2->effectiveScore);
-        self::assertNotNull($snapB->scopes->k3);
-        self::assertSame(0, $snapB->scopes->k3->effectiveScore);
-
-        // Reader must be strictly read-only on real Redis.
-        self::assertSame($beforeRead, $this->snapshot(), 'Operational reader must leave Redis state byte-identical.');
-
-        // Legitimate user on Policy B is allowed.
+        // Sanity: the pre-G2 legacy preimage for this exact scope WOULD collide on (policyA, envA) vs (policyB, envB).
+        $fpHash = hash_hmac('sha256', 'v2|chrome/126|{"canvas":"v1"}|', self::FP_SECRET);
+        $legacySuffix = match ($scope) {
+            'k1' => '192.0.2.77',
+            'k2' => '192.0.2.77:chrome/126',
+            'k3' => "192.0.2.77:{$fpHash}",
+        };
         self::assertSame(
-            RateLimitResultDTO::DECISION_ALLOW,
-            $runtimeB->limit($context, RateLimitCommand::checkOnly($policyB->getName()))->decision,
+            "{$policyA}:rate_limiter:{$scope}:v2:{$envA}:{$legacySuffix}",
+            "{$policyB}:rate_limiter:{$scope}:v2:{$envB}:{$legacySuffix}",
+            "Fixture pair must be a true pre-G2 legacy collision witness for {$scope}.",
         );
 
-        // Verify physical key lives under v1 (not e1) with exact DEC-047 logical digest.
-        $expectedK1Logical = NonAccountKeyOracle::k1($policyA->getName(), 'c', '192.0.2.77', self::SECRET);
-        $expectedK1Physical = self::v1PhysicalKey('score', $expectedK1Logical);
-        self::assertContains($expectedK1Physical, $this->scanAllKeys());
+        // Trigger the configured block on Policy A.
+        $runtimeA->limit($context, RateLimitCommand::recordFailure($policyA));
+        $blockedA = $runtimeA->limit($context, RateLimitCommand::recordFailure($policyA));
+        self::assertSame($expectedDecisionA, $blockedA->decision);
 
-        // Dilution correlation A4 isolation + negative control on real Redis.
+        // Negative control on Policy A (including IPv4-mapped IPv6 canonicalization): reader and checkOnly runtime observe Policy A's state.
+        $beforeRead = $this->snapshot();
+        $snapA = $readerA->readScorePolicy($mappedContext, $policyA);
+        $stateA = match ($scope) {
+            'k1' => $snapA->scopes->k1,
+            'k2' => $snapA->scopes->k2,
+            'k3' => $snapA->scopes->k3,
+        };
+        self::assertNotNull($stateA);
+        self::assertSame(2, $stateA->effectiveScore);
+        if ($expectHardBlockA) {
+            self::assertNotNull($stateA->activeHardBlock);
+        }
+
+        // Policy B on the exact colliding pair observes ZERO score and ZERO block for the target scope.
+        $snapB = $readerB->readScorePolicy($context, $policyB);
+        $stateB = match ($scope) {
+            'k1' => $snapB->scopes->k1,
+            'k2' => $snapB->scopes->k2,
+            'k3' => $snapB->scopes->k3,
+        };
+        self::assertNotNull($stateB);
+        self::assertNull($stateB->score);
+        self::assertSame(0, $stateB->effectiveScore, "Policy B {$scope} score must not observe Policy A state.");
+        self::assertNull($stateB->activeHardBlock, "Policy B {$scope} block must not observe Policy A block.");
+
+        // Operational reader must leave real Redis state byte-identical.
+        self::assertSame($beforeRead, $this->snapshot(), 'Operational reader must leave Redis state byte-identical.');
+
+        // Negative control on Policy A runtime vs isolation on Policy B runtime (proves K2 L1 SOFT_BLOCK and K1/K3 HARD_BLOCK do not leak).
+        self::assertSame(
+            $expectedDecisionA,
+            $runtimeA->limit($mappedContext, RateLimitCommand::checkOnly($policyA))->decision,
+            "Policy A checkOnly must enforce {$scope} block.",
+        );
+        self::assertSame(
+            RateLimitResultDTO::DECISION_ALLOW,
+            $runtimeB->limit($context, RateLimitCommand::checkOnly($policyB))->decision,
+            "Policy B checkOnly must remain ALLOW and never inherit Policy A {$scope} block.",
+        );
+
+        // Verify raw physical Redis keys under v1:score: and v1:block: exist for Policy A and do NOT exist for Policy B.
+        $logicalA = match ($scope) {
+            'k1' => NonAccountKeyOracle::k1($policyA, $envA, '192.0.2.77', self::SECRET),
+            'k2' => NonAccountKeyOracle::k2($policyA, $envA, '192.0.2.77', 'chrome/126', self::SECRET),
+            'k3' => NonAccountKeyOracle::k3($policyA, $envA, '192.0.2.77', $fpHash, self::SECRET),
+        };
+        $logicalB = match ($scope) {
+            'k1' => NonAccountKeyOracle::k1($policyB, $envB, '192.0.2.77', self::SECRET),
+            'k2' => NonAccountKeyOracle::k2($policyB, $envB, '192.0.2.77', 'chrome/126', self::SECRET),
+            'k3' => NonAccountKeyOracle::k3($policyB, $envB, '192.0.2.77', $fpHash, self::SECRET),
+        };
+        self::assertNotSame($logicalA, $logicalB);
+
+        $keys = $this->scanAllKeys();
+        self::assertContains(self::v1PhysicalKey('score', $logicalA), $keys);
+        self::assertContains(self::v1PhysicalKey('block', $logicalA), $keys);
+        self::assertNotContains(self::v1PhysicalKey('score', $logicalB), $keys);
+        self::assertNotContains(self::v1PhysicalKey('block', $logicalB), $keys);
+    }
+
+    public function testSharedRedisDilutionCorrelationA4IsolationAndNegativeControl(): void
+    {
+        $clock = new FixedClock('@' . self::NOW);
+
         $loginA = $this->namedLoginPolicy('a:rate_limiter:correlation:dilution:v1:b');
         $loginB = $this->namedLoginPolicy('a');
         $loginRuntimeA = $this->builder($this->admin, 'c', $clock)->withPolicy($loginA)->build();
@@ -156,13 +271,16 @@ final class NonAccountKeyFramingRedisTest extends TestCase
         );
     }
 
-    public function testE1AndSimpleFixedWindowPhysicalKeysStayByteIdenticalBeforeAndAfterG2(): void
+    public function testE1AndSimpleFixedWindowPhysicalKeysStayByteIdenticalAgainstIndependentGoldens(): void
     {
         $clock = new FixedClock('@' . self::NOW);
         $simplePolicy = new FixedWindowThrottlePolicy('public_burst', 10, 60);
 
-        $builder = $this->builder($this->admin, 'prod-eu', $clock)
-            ->withSimpleThrottlePolicy($simplePolicy);
+        $builder = RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig(self::GOLDEN_SECRET, self::FP_SECRET, 'prod-eu'),
+            new RedisFullCapabilityStore($this->admin, self::NAMESPACE),
+            new RecordingFailureSignalEmitter(),
+        )->withClock($clock)->withSimpleThrottlePolicy($simplePolicy);
 
         $runtime = $builder->build();
         $reader = $builder->buildOperationalReader();
@@ -180,36 +298,100 @@ final class NonAccountKeyFramingRedisTest extends TestCase
 
         $keys = $this->scanAllKeys();
 
-        // E1 account score key keeps exact e1: physical prefix & unchanged DEC-046 E1 digest.
-        $expectedE1K4 = E1AccountScopeKeyDeriver::key(self::SECRET, ['k4', 'login_protection', 'prod-eu', 'acct-0001']);
-        self::assertContains(self::e1PhysicalKey('score', $expectedE1K4), $keys);
+        // E1 account score key matches the independent KEY_SCOPE_ENCODING_E1.md §3.7 golden under `e1:score:` (never computed from production derivers).
+        self::assertContains(self::e1PhysicalKey('score', self::GOLDEN_E1_K4), $keys);
 
-        // Simple fixed-window key keeps exact v1: physical prefix & pre-G2 wire digest.
-        $expectedSimpleLogical = SimpleFixedWindowKeyDeriver::preimage('prod-eu', 'public_burst', 10, 60, 'subj-0001');
-        $expectedSimpleDigest = hash_hmac('sha256', $expectedSimpleLogical, self::SECRET);
-        self::assertContains(self::v1PhysicalKey('budget', $expectedSimpleDigest), $keys);
+        // Simple fixed-window budget key matches the independent DEC-047 §4 pre-G2 golden under `v1:budget:` (never computed from production derivers).
+        self::assertContains(self::v1PhysicalKey('budget', self::GOLDEN_SIMPLE_KEY), $keys);
     }
 
-    public function testRotationContinuityAcrossOuterOnlyFingerprintOnlyAndBothWithPreviousReadOnly(): void
+    /**
+     * @return array<string, array{
+     *     mode: 'outer-only'|'fingerprint-only'|'both',
+     *     seedSecret: string,
+     *     seedFpSecret: string,
+     *     prevSecret: string|null,
+     *     prevFpSecret: string|null,
+     *     k1FromPrevBeforeWrite: bool,
+     *     k2FromPrevBeforeWrite: bool,
+     *     k3FromPrevBeforeWrite: bool
+     * }>
+     */
+    public static function rotationShapes(): array
     {
+        return [
+            'outer-only rotation' => [
+                'mode' => 'outer-only',
+                'seedSecret' => self::PREV_SECRET,
+                'seedFpSecret' => self::FP_SECRET,
+                'prevSecret' => self::PREV_SECRET,
+                'prevFpSecret' => null,
+                'k1FromPrevBeforeWrite' => true,
+                'k2FromPrevBeforeWrite' => true,
+                'k3FromPrevBeforeWrite' => true,
+            ],
+            'fingerprint-only rotation' => [
+                'mode' => 'fingerprint-only',
+                'seedSecret' => self::SECRET,
+                'seedFpSecret' => self::PREV_FP_SECRET,
+                'prevSecret' => null,
+                'prevFpSecret' => self::PREV_FP_SECRET,
+                'k1FromPrevBeforeWrite' => false,
+                'k2FromPrevBeforeWrite' => false,
+                'k3FromPrevBeforeWrite' => true,
+            ],
+            'both outer and fingerprint rotated' => [
+                'mode' => 'both',
+                'seedSecret' => self::PREV_SECRET,
+                'seedFpSecret' => self::PREV_FP_SECRET,
+                'prevSecret' => self::PREV_SECRET,
+                'prevFpSecret' => self::PREV_FP_SECRET,
+                'k1FromPrevBeforeWrite' => true,
+                'k2FromPrevBeforeWrite' => true,
+                'k3FromPrevBeforeWrite' => true,
+            ],
+        ];
+    }
+
+    /**
+     * @param 'outer-only'|'fingerprint-only'|'both' $mode
+     */
+    #[DataProvider('rotationShapes')]
+    public function testScoreAndCorrelationRotationContinuityWithPreviousReadOnlyAndBridgeTtlCap(
+        string $mode,
+        string $seedSecret,
+        string $seedFpSecret,
+        ?string $prevSecret,
+        ?string $prevFpSecret,
+        bool $k1FromPrevBeforeWrite,
+        bool $k2FromPrevBeforeWrite,
+        bool $k3FromPrevBeforeWrite,
+    ): void {
         $clock = new FixedClock('@' . self::NOW);
         $policy = new ApiHeavyProtectionPolicy(['k1' => 10, 'k2' => 10, 'k3' => 10]);
         $context = new RateLimitContextDTO('2001:db8:0:1::42', 'Mozilla/5.0 Chrome/126.0.0.0', null, ['gpu' => 'alpha']);
 
-        // 1. Seed initial state under PREV_SECRET + PREV_FP_SECRET.
+        // 1. Seed initial K1–K3 scores under the pre-rotation secret pair.
         $oldRuntime = RateLimiterBuilder::fromFullCapabilityStore(
-            new RateLimiterConfig(self::PREV_SECRET, self::PREV_FP_SECRET, 'prod:eu'),
+            new RateLimiterConfig($seedSecret, $seedFpSecret, 'prod:eu'),
             new RedisFullCapabilityStore($this->admin, self::NAMESPACE),
             new RecordingFailureSignalEmitter(),
         )->withClock($clock)->withPolicy($policy)->build();
 
         $oldRuntime->limit($context, RateLimitCommand::recordFailure('api_heavy_protection'));
         $oldRuntime->limit($context, RateLimitCommand::recordFailure('api_heavy_protection'));
-        $previousKeysSnapshot = $this->snapshot();
+        $beforeRotationSnapshot = $this->snapshot();
 
-        // 2. Rotate BOTH outer secret and fingerprint secret; reader & writer must read Previous read-only and write Current.
+        // Capture exact Previous K3 key snapshot (always rotated in all 3 modes).
+        $prevFpHash = hash_hmac('sha256', 'v2|chrome/126|{"gpu":"alpha"}|', $seedFpSecret);
+        $prevK3Logical = NonAccountKeyOracle::k3('api_heavy_protection', 'prod:eu', '20010db800000001', $prevFpHash, $seedSecret);
+        $prevK3Physical = self::v1PhysicalKey('score', $prevK3Logical);
+        $prevK3Before = StateSnapshot::of($this->admin, $prevK3Physical);
+        self::assertNotSame('absent', $prevK3Before);
+
+        // 2. Build rotated runtime & reader for this exact rotation mode.
         $rotatedBuilder = RateLimiterBuilder::fromFullCapabilityStore(
-            new RateLimiterConfig(self::SECRET, self::FP_SECRET, 'prod:eu', self::PREV_SECRET, self::PREV_FP_SECRET),
+            new RateLimiterConfig(self::SECRET, self::FP_SECRET, 'prod:eu', $prevSecret, $prevFpSecret),
             new RedisFullCapabilityStore($this->admin, self::NAMESPACE),
             new RecordingFailureSignalEmitter(),
         )->withClock($clock)->withPolicy($policy);
@@ -217,30 +399,96 @@ final class NonAccountKeyFramingRedisTest extends TestCase
         $rotatedReader = $rotatedBuilder->buildOperationalReader();
         $snapBeforeWrite = $rotatedReader->readScorePolicy($context, 'api_heavy_protection');
         self::assertSame(2, $snapBeforeWrite->scopes->k1->effectiveScore);
-        self::assertTrue($snapBeforeWrite->scopes->k1->scoreFromPreviousGeneration);
+        self::assertSame($k1FromPrevBeforeWrite, $snapBeforeWrite->scopes->k1->scoreFromPreviousGeneration);
         self::assertSame(2, $snapBeforeWrite->scopes->k2->effectiveScore);
+        self::assertSame($k2FromPrevBeforeWrite, $snapBeforeWrite->scopes->k2->scoreFromPreviousGeneration);
         self::assertNotNull($snapBeforeWrite->scopes->k3);
         self::assertSame(2, $snapBeforeWrite->scopes->k3->effectiveScore);
-        self::assertTrue($snapBeforeWrite->scopes->k3->scoreFromPreviousGeneration);
-        self::assertSame($previousKeysSnapshot, $this->snapshot(), 'Read-only inspection during rotation must not mutate Redis.');
+        self::assertSame($k3FromPrevBeforeWrite, $snapBeforeWrite->scopes->k3->scoreFromPreviousGeneration);
+        self::assertSame($beforeRotationSnapshot, $this->snapshot(), "Read-only inspection during {$mode} must not mutate Redis.");
 
+        // 3. Write 1 failure on rotated runtime -> Current holds 3 across K1/K2/K3; Previous stays strictly read-only.
         $rotatedRuntime = $rotatedBuilder->build();
         $rotatedRuntime->limit($context, RateLimitCommand::recordFailure('api_heavy_protection'));
 
-        // Every Previous physical key's value & PEXPIRETIME must remain completely untouched (Previous is read-only).
         $afterWrite = $this->snapshot();
-        foreach ($previousKeysSnapshot as $key => $entry) {
-            self::assertArrayHasKey($key, $afterWrite, "Previous key {$key} must remain present.");
-            self::assertSame($entry, $afterWrite[$key], "Previous key {$key} must remain read-only (value & PEXPIRETIME unchanged).");
+        if ($prevSecret !== null) {
+            // Outer secret rotated: EVERY pre-rotation physical key is Previous and must stay byte-identical (DUMP + PEXPIRETIME).
+            foreach ($beforeRotationSnapshot as $key => $entry) {
+                self::assertArrayHasKey($key, $afterWrite, "Previous key {$key} must remain present under {$mode}.");
+                self::assertSame($entry, $afterWrite[$key], "Previous key {$key} must remain strictly read-only under {$mode}.");
+            }
+        } else {
+            // Fingerprint-only rotation: K3 Previous key must stay strictly read-only (K1/K2 stay in the same Current key).
+            self::assertSame($prevK3Before, StateSnapshot::of($this->admin, $prevK3Physical), 'Previous K3 key must remain strictly read-only under fingerprint-only rotation.');
         }
 
-        // Current generation now holds score 3 (2 carried + 1 new) and reader sees Current generation.
         $snapAfterWrite = $rotatedReader->readScorePolicy($context, 'api_heavy_protection');
         self::assertSame(3, $snapAfterWrite->scopes->k1->effectiveScore);
         self::assertFalse($snapAfterWrite->scopes->k1->scoreFromPreviousGeneration);
+        self::assertSame(3, $snapAfterWrite->scopes->k2->effectiveScore);
+        self::assertFalse($snapAfterWrite->scopes->k2->scoreFromPreviousGeneration);
         self::assertNotNull($snapAfterWrite->scopes->k3);
         self::assertSame(3, $snapAfterWrite->scopes->k3->effectiveScore);
         self::assertFalse($snapAfterWrite->scopes->k3->scoreFromPreviousGeneration);
+
+        // 4. Churn correlation rotation continuity for the exact same mode:
+        //    2 devices before rotation -> 3rd device after rotation triggers churn HARD_BLOCK via bridge;
+        //    Previous distinct set (including aliased Previous set in fingerprint-only mode!) stays read-only,
+        //    and bridge PEXPIRETIME is capped at Previous PEXPIRETIME.
+        $this->admin->execute(['FLUSHDB']);
+        $preRotChurn = RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig($seedSecret, $seedFpSecret, 'prod:eu'),
+            new RedisFullCapabilityStore($this->admin, self::NAMESPACE),
+            new RecordingFailureSignalEmitter(),
+        )->withClock($clock)->build();
+
+        $preRotChurn->limit(new RateLimitContextDTO('198.51.100.55', 'Mozilla/5.0 Chrome/126.0.0.0', null, ['d' => '1']), RateLimitCommand::checkOnly('login_protection'));
+        $preRotChurn->limit(new RateLimitContextDTO('198.51.100.55', 'Mozilla/5.0 Chrome/126.0.0.0', null, ['d' => '2']), RateLimitCommand::checkOnly('login_protection'));
+
+        $prevK2 = NonAccountKeyOracle::k2('login_protection', 'prod:eu', '198.51.100.55', 'chrome/126', $seedSecret);
+        $prevChurnScope = NonAccountKeyOracle::derive('correlation.churn.scope', 'login_protection', 'prod:eu', $seedSecret, $prevK2);
+        $prevChurnPhysical = self::v1PhysicalKey('distinct', $prevChurnScope);
+        $prevChurnBefore = StateSnapshot::of($this->admin, $prevChurnPhysical);
+        self::assertNotSame('absent', $prevChurnBefore);
+        $prevChurnPexpire = $this->pexpiretime($prevChurnPhysical);
+        self::assertMatchesRegularExpression('/\A[1-9][0-9]*\z/', $prevChurnPexpire);
+
+        $curK2 = NonAccountKeyOracle::k2('login_protection', 'prod:eu', '198.51.100.55', 'chrome/126', self::SECRET);
+        $curChurnScope = NonAccountKeyOracle::derive('correlation.churn.scope', 'login_protection', 'prod:eu', self::SECRET, $curK2);
+        if ($mode === 'fingerprint-only') {
+            self::assertSame($prevChurnScope, $curChurnScope, 'Fingerprint-only rotation must exercise the aliased Previous scope path.');
+        } else {
+            self::assertNotSame($prevChurnScope, $curChurnScope, 'Outer secret rotation must separate Current and Previous correlation scopes.');
+        }
+
+        $rotatedChurn = RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig(self::SECRET, self::FP_SECRET, 'prod:eu', $prevSecret, $prevFpSecret),
+            new RedisFullCapabilityStore($this->admin, self::NAMESPACE),
+            new RecordingFailureSignalEmitter(),
+        )->withClock($clock)->build();
+
+        $blocked = $rotatedChurn->limit(
+            new RateLimitContextDTO('198.51.100.55', 'Mozilla/5.0 Chrome/126.0.0.0', null, ['d' => '3']),
+            RateLimitCommand::checkOnly('login_protection'),
+        );
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $blocked->decision);
+        self::assertSame(
+            $prevChurnBefore,
+            StateSnapshot::of($this->admin, $prevChurnPhysical),
+            "Previous churn distinct set must remain strictly read-only under {$mode}.",
+        );
+
+        $bridgeLogical = NonAccountKeyOracle::derive('correlation.churn.bridge', 'login_protection', 'prod:eu', self::SECRET, $curChurnScope);
+        $bridgePhysical = self::v1PhysicalKey('distinct', $bridgeLogical);
+        self::assertNotSame('absent', StateSnapshot::of($this->admin, $bridgePhysical), "Churn rotation bridge key must be persisted under {$mode}.");
+        $bridgePexpire = $this->pexpiretime($bridgePhysical);
+        self::assertMatchesRegularExpression('/\A[1-9][0-9]*\z/', $bridgePexpire);
+        self::assertLessThanOrEqual(
+            0,
+            self::compareUnsignedDecimal($bridgePexpire, $prevChurnPexpire),
+            "Bridge TTL ({$bridgePexpire}) must never exceed Previous remaining TTL ({$prevChurnPexpire}) under {$mode}.",
+        );
     }
 
     public function testDistributedAccountAttackK5SnapshotMembersBlockUnderE1LayoutAndAclPreflightLeavesBothLayoutsUnchanged(): void
@@ -285,52 +533,16 @@ final class NonAccountKeyFramingRedisTest extends TestCase
                 RateLimitCommand::recordFailure('login_protection'),
             );
             self::fail('ACL preflight must refuse the commit with NOPERM.');
-        } catch (\Maatify\RateLimiter\Exception\RateLimiterException $exception) {
+        } catch (RateLimiterException $exception) {
             self::assertStringContainsString('NOPERM request commit:', $exception->getMessage());
         }
         self::assertSame($beforeAclAttempt, $this->snapshot(), 'ACL preflight NOPERM must leave both v1 and e1 keyspaces completely unchanged.');
     }
 
-    public function testFingerprintOnlyAliasRotationAndIpv6AdaptiveA4IsolationOnRealRedis(): void
+    public function testIpv6AdaptiveHierarchyAndSprayA4IsolationWithNegativeControlOnRealRedis(): void
     {
         $clock = new FixedClock('@' . self::NOW);
 
-        // 1. Fingerprint-only rotation on churn correlation: outer secret unchanged -> currentScope === previousScope (alias!).
-        // Previous aliased distinct set must remain read-only while the 3rd fingerprint enters the bridge and triggers churn HARD_BLOCK.
-        $preRotRuntime = RateLimiterBuilder::fromFullCapabilityStore(
-            new RateLimiterConfig(self::SECRET, self::PREV_FP_SECRET, 'prod:eu'),
-            new RedisFullCapabilityStore($this->admin, self::NAMESPACE),
-            new RecordingFailureSignalEmitter(),
-        )->withClock($clock)->build();
-
-        $preRotRuntime->limit(new RateLimitContextDTO('198.51.100.55', 'Mozilla/5.0 Chrome/126.0.0.0', null, ['d' => '1']), RateLimitCommand::checkOnly('login_protection'));
-        $preRotRuntime->limit(new RateLimitContextDTO('198.51.100.55', 'Mozilla/5.0 Chrome/126.0.0.0', null, ['d' => '2']), RateLimitCommand::checkOnly('login_protection'));
-
-        $k2 = NonAccountKeyOracle::k2('login_protection', 'prod:eu', '198.51.100.55', 'chrome/126', self::SECRET);
-        $churnScope = NonAccountKeyOracle::derive('correlation.churn.scope', 'login_protection', 'prod:eu', self::SECRET, $k2);
-        $churnDistinctPhysical = self::v1PhysicalKey('distinct', $churnScope);
-        $aliasedBefore = StateSnapshot::of($this->admin, $churnDistinctPhysical);
-        self::assertNotSame('absent', $aliasedBefore);
-
-        $fpRotatedRuntime = RateLimiterBuilder::fromFullCapabilityStore(
-            new RateLimiterConfig(self::SECRET, self::FP_SECRET, 'prod:eu', null, self::PREV_FP_SECRET),
-            new RedisFullCapabilityStore($this->admin, self::NAMESPACE),
-            new RecordingFailureSignalEmitter(),
-        )->withClock($clock)->build();
-
-        $blocked = $fpRotatedRuntime->limit(
-            new RateLimitContextDTO('198.51.100.55', 'Mozilla/5.0 Chrome/126.0.0.0', null, ['d' => '3']),
-            RateLimitCommand::checkOnly('login_protection'),
-        );
-        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $blocked->decision);
-        self::assertSame(
-            $aliasedBefore,
-            StateSnapshot::of($this->admin, $churnDistinctPhysical),
-            'Aliased Previous distinct set under fingerprint-only rotation must remain strictly read-only.',
-        );
-
-        // 2. IPv6 adaptive hierarchy/spray A4 isolation on shared Redis namespace & secret.
-        $this->admin->execute(['FLUSHDB']);
         $policyA = $this->namedLoginPolicy('a:rate_limiter:ipv6_adaptive:hierarchy:v1:48:b');
         $policyB = $this->namedLoginPolicy('a');
         $runtimeA = $this->builder($this->admin, 'c', $clock)->withPolicy($policyA)->build();
@@ -370,6 +582,25 @@ final class NonAccountKeyFramingRedisTest extends TestCase
             new RedisFullCapabilityStore($executor, self::NAMESPACE),
             new RecordingFailureSignalEmitter(),
         )->withClock($clock);
+    }
+
+    private function pexpiretime(string $physicalKey): string
+    {
+        $reply = $this->admin->execute(['PEXPIRETIME', $physicalKey]);
+        if (is_int($reply)) {
+            return (string) $reply;
+        }
+        self::assertIsString($reply);
+        self::assertMatchesRegularExpression('/\A-?[0-9]+\z/', $reply);
+
+        return $reply;
+    }
+
+    private static function compareUnsignedDecimal(string $a, string $b): int
+    {
+        $lenCmp = strlen($a) <=> strlen($b);
+
+        return $lenCmp !== 0 ? $lenCmp : strcmp($a, $b);
     }
 
     /** @return list<string> */

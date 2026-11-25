@@ -16,6 +16,7 @@ use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\FullCapability\FullCapabilityInMemoryStore;
+use Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -47,6 +48,7 @@ final class NonAccountKeyFramingA4IsolationTest extends TestCase
         $builderB = $this->builder($store, $clock, 'b:rate_limiter:k1:v2:c')->withPolicy($policyB);
 
         $runtimeA = $builderA->build();
+        $readerA = $builderA->buildOperationalReader();
         $readerB = $builderB->buildOperationalReader();
         $runtimeB = $builderB->build();
 
@@ -55,7 +57,17 @@ final class NonAccountKeyFramingA4IsolationTest extends TestCase
         $blockedA = $runtimeA->limit($context, RateLimitCommand::recordFailure($policyA->getName()));
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $blockedA->decision);
 
+        // Negative control on Policy A: reader and checkOnly runtime both observe Policy A's K1 state & hard block.
+        $snapshotA = $readerA->readScorePolicy($context, $policyA->getName());
+        self::assertSame(2, $snapshotA->scopes->k1->effectiveScore);
+        self::assertNotNull($snapshotA->scopes->k1->activeHardBlock);
+        self::assertSame(
+            RateLimitResultDTO::DECISION_HARD_BLOCK,
+            $runtimeA->limit($context, RateLimitCommand::checkOnly($policyA->getName()))->decision,
+        );
+
         $snapshotB = $readerB->readScorePolicy($context, $policyB->getName());
+        self::assertNull($snapshotB->scopes->k1->score);
         self::assertSame(0, $snapshotB->scopes->k1->effectiveScore, 'Policy B K1 score must not observe Policy A state.');
         self::assertNull($snapshotB->scopes->k1->activeHardBlock, 'Policy B K1 block must not observe Policy A block.');
 
@@ -75,6 +87,8 @@ final class NonAccountKeyFramingA4IsolationTest extends TestCase
         $builderB = $this->builder($store, $clock, 'b:rate_limiter:k2:v2:c')->withPolicy($policyB);
 
         $runtimeA = $builderA->build();
+        $readerA = $builderA->buildOperationalReader();
+        $runtimeB = $builderB->build();
         $readerB = $builderB->buildOperationalReader();
 
         $context = new RateLimitContextDTO('203.0.113.11', 'Mozilla/5.0 Chrome/126.0.0.0');
@@ -82,9 +96,31 @@ final class NonAccountKeyFramingA4IsolationTest extends TestCase
         $blockedA = $runtimeA->limit($context, RateLimitCommand::recordFailure($policyA->getName()));
         self::assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $blockedA->decision);
 
+        // Negative control on Policy A: K2 score and L1 soft block are persisted and enforced on Policy A.
+        $snapshotA = $readerA->readScorePolicy($context, $policyA->getName());
+        self::assertSame(2, $snapshotA->scopes->k2->effectiveScore);
+        self::assertSame(
+            RateLimitResultDTO::DECISION_SOFT_BLOCK,
+            $runtimeA->limit($context, RateLimitCommand::checkOnly($policyA->getName()))->decision,
+        );
+
+        // Policy B on the colliding K2 (policy, env) pair observes zero score, no block, and runtime ALLOW.
         $snapshotB = $readerB->readScorePolicy($context, $policyB->getName());
+        self::assertNull($snapshotB->scopes->k2->score);
         self::assertSame(0, $snapshotB->scopes->k2->effectiveScore, 'Policy B K2 score must not observe Policy A state.');
         self::assertNull($snapshotB->scopes->k2->activeHardBlock, 'Policy B K2 block must not observe Policy A block.');
+        self::assertSame(
+            RateLimitResultDTO::DECISION_ALLOW,
+            $runtimeB->limit($context, RateLimitCommand::checkOnly($policyB->getName()))->decision,
+            'Policy B runtime must return ALLOW and not inherit Policy A K2 SOFT_BLOCK.',
+        );
+
+        // Raw store-key verification: Policy A K2 L1 soft block is stored under f1 key A, and absent under f1 key B.
+        $k2KeyA = NonAccountKeyOracle::k2($policyA->getName(), 'c', '203.0.113.11', 'chrome/126', self::SECRET);
+        $k2KeyB = NonAccountKeyOracle::k2($policyB->getName(), 'b:rate_limiter:k2:v2:c', '203.0.113.11', 'chrome/126', self::SECRET);
+        self::assertNotSame($k2KeyA, $k2KeyB);
+        self::assertSame(1, $store->peekBlock($k2KeyA)?->level, 'Policy A K2 L1 soft block must be persisted.');
+        self::assertNull($store->peekBlock($k2KeyB), 'Policy B K2 must not inherit Policy A L1 soft block.');
     }
 
     public function testK3ScoreAndBlockStayIsolatedAcrossAmbiguousPolicyEnvironmentPairs(): void
@@ -99,6 +135,8 @@ final class NonAccountKeyFramingA4IsolationTest extends TestCase
         $builderB = $this->builder($store, $clock, 'b:rate_limiter:k3:v2:c')->withPolicy($policyB);
 
         $runtimeA = $builderA->build();
+        $readerA = $builderA->buildOperationalReader();
+        $runtimeB = $builderB->build();
         $readerB = $builderB->buildOperationalReader();
 
         $context = new RateLimitContextDTO('203.0.113.12', 'Mozilla/5.0 Chrome/126.0.0.0', null, ['canvas' => 'v1']);
@@ -106,10 +144,27 @@ final class NonAccountKeyFramingA4IsolationTest extends TestCase
         $blockedA = $runtimeA->limit($context, RateLimitCommand::recordFailure($policyA->getName()));
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $blockedA->decision);
 
+        // Negative control on Policy A: K3 score and hard block are observed and enforced on Policy A.
+        $snapshotA = $readerA->readScorePolicy($context, $policyA->getName());
+        self::assertNotNull($snapshotA->scopes->k3);
+        self::assertSame(2, $snapshotA->scopes->k3->effectiveScore);
+        self::assertNotNull($snapshotA->scopes->k3->activeHardBlock);
+        self::assertSame(
+            RateLimitResultDTO::DECISION_HARD_BLOCK,
+            $runtimeA->limit($context, RateLimitCommand::checkOnly($policyA->getName()))->decision,
+        );
+
+        // Policy B on the colliding K3 (policy, env) pair observes zero score, no block, and runtime ALLOW.
         $snapshotB = $readerB->readScorePolicy($context, $policyB->getName());
         self::assertNotNull($snapshotB->scopes->k3);
+        self::assertNull($snapshotB->scopes->k3->score);
         self::assertSame(0, $snapshotB->scopes->k3->effectiveScore, 'Policy B K3 score must not observe Policy A state.');
         self::assertNull($snapshotB->scopes->k3->activeHardBlock, 'Policy B K3 block must not observe Policy A block.');
+        self::assertSame(
+            RateLimitResultDTO::DECISION_ALLOW,
+            $runtimeB->limit($context, RateLimitCommand::checkOnly($policyB->getName()))->decision,
+            'Policy B runtime must return ALLOW and not inherit Policy A K3 HARD_BLOCK.',
+        );
     }
 
     public function testDilutionCorrelationStaysIsolatedAcrossAmbiguousPolicyEnvironmentPairs(): void
@@ -134,6 +189,10 @@ final class NonAccountKeyFramingA4IsolationTest extends TestCase
         $ctxB = new RateLimitContextDTO('198.51.100.6', 'Mozilla/5.0 Chrome/126.0.0.0');
         $resB = $runtimeB->limit($ctxB, RateLimitCommand::checkOnly($policyB->getName()));
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $resB->decision, 'Policy B dilution state must not collide with Policy A.');
+
+        // Negative control on Policy A: the 6th distinct IP DOES trigger dilution HARD_BLOCK on Policy A.
+        $resA6 = $runtimeA->limit($ctxB, RateLimitCommand::checkOnly($policyA->getName()));
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $resA6->decision, 'Policy A negative control must trigger 6-IP dilution HARD_BLOCK.');
     }
 
     public function testIpv6AdaptiveHierarchyStaysIsolatedAcrossAmbiguousPolicyEnvironmentPairs(): void
