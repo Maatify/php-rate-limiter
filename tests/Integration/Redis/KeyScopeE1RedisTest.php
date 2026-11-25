@@ -8,7 +8,6 @@ use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
-use Maatify\RateLimiter\Enum\KeyScopeEncodingEnum;
 use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor;
@@ -77,18 +76,18 @@ final class KeyScopeE1RedisTest extends TestCase
         return new RateLimiterConfig(self::SECRET, 'test_fp', self::ENV);
     }
 
-    private function builder(RedisCommandExecutorInterface $executor, KeyScopeEncodingEnum $encoding, ?RedisFullCapabilityStore $store = null): RateLimiterBuilder
+    private function builder(RedisCommandExecutorInterface $executor, ?RedisFullCapabilityStore $store = null): RateLimiterBuilder
     {
         return RateLimiterBuilder::fromFullCapabilityStore(
             $this->config(),
             $store ?? new RedisFullCapabilityStore($executor, self::NAMESPACE),
             new RecordingFailureSignalEmitter(),
-        )->withClock(new FixedClock('@' . self::NOW))->withKeyScopeEncoding($encoding);
+        )->withClock(new FixedClock('@' . self::NOW));
     }
 
-    private function runtime(RedisCommandExecutorInterface $executor, KeyScopeEncodingEnum $encoding): CompositeRateLimiterRuntimeInterface
+    private function runtime(RedisCommandExecutorInterface $executor): CompositeRateLimiterRuntimeInterface
     {
-        return $this->builder($executor, $encoding)->build();
+        return $this->builder($executor)->build();
     }
 
     private function context(string $account = self::ACCOUNT): RateLimitContextDTO
@@ -174,55 +173,97 @@ final class KeyScopeE1RedisTest extends TestCase
 
     // ---------------------------------------------------------------------------------------------------------------- separation
 
-    public function testAnE1RuntimeKeepsTheAccountKeysOnlyUnderTheE1PrefixAndEveryOtherKeyWhereV2KeepsIt(): void
+    public function testTheDefaultRuntimeUsesE1AndKeepsNonAccountScoreKeys(): void
     {
-        $this->failures($this->runtime($this->admin, KeyScopeEncodingEnum::V2), 3);
-        $v2Keys = $this->keys();
-        self::assertSame([], self::under($v2Keys, self::e1Prefix()), 'A V2 runtime writes nothing under the E1 prefix.');
-        $this->admin->execute(['FLUSHDB']);
-
-        $this->failures($this->runtime($this->admin, KeyScopeEncodingEnum::E1), 3);
-        $e1Keys = $this->keys();
-
-        $underE1 = self::under($e1Keys, self::e1Prefix());
-        self::assertNotSame([], $underE1, 'The account-bearing state exists under the E1 prefix.');
-        self::assertContains($this->e1ScoreKey('k4'), $underE1, 'The K4 score is at the key the contract derives.');
-        foreach ($underE1 as $key) {
+        $this->failures($this->runtime($this->admin), 3);
+        $keys = $this->keys();
+        self::assertContains($this->e1ScoreKey(), $keys);
+        $device = (new \Maatify\RateLimiter\Service\DeviceIdentityResolver(new \Maatify\RateLimiter\Service\FingerprintHasher('test_fp')))->resolve($this->context());
+        $base = self::POLICY . ':rate_limiter:';
+        $expected = [
+            hash_hmac('sha256', $base . 'k1:v2:' . self::ENV . ':192.0.2.77', self::SECRET),
+            hash_hmac('sha256', $base . 'k2:v2:' . self::ENV . ':192.0.2.77:' . $device->normalizedUa, self::SECRET),
+            hash_hmac('sha256', $base . 'k3:v2:' . self::ENV . ':192.0.2.77:' . $device->fingerprintHash, self::SECRET),
+        ];
+        $expected = array_map(static fn(string $logical): string => self::v1Prefix() . 'score:' . hash('sha256', $logical), $expected);
+        foreach (self::under($keys, self::v1Prefix() . 'score:') as $key) {
+            self::assertContains($key, $expected, 'Only unchanged K1-K3 score identities belong to the root.');
+        }
+        foreach (self::under($keys, self::e1Prefix()) as $key) {
             $family = explode(':', substr($key, strlen(self::e1Prefix())))[0];
             self::assertContains($family, ['score', 'block', 'budget', 'cycle', 'pause', 'reentry-claim', 'watch', 'watch-meta']);
         }
-        // K1, K2 and K3 stay where V2 keeps them: every v1 score key of the E1 run is a v1 score key of the V2 run.
-        $v2Scores = self::under($v2Keys, self::v1Prefix() . 'score:');
-        $e1V1Scores = self::under($e1Keys, self::v1Prefix() . 'score:');
-        self::assertSame([], array_values(array_diff($e1V1Scores, $v2Scores)), 'No v1 score key of the E1 run is new.');
-        self::assertSame(count($v2Scores), count($e1V1Scores) + count(self::under($underE1, self::e1Prefix() . 'score:')), 'The account scores moved to E1, nothing else.');
-        // Set B (derivative) keys differ by design and stay under v1: the only new v1 keys of the E1 run are watch and distinct hashes of the E1 keys.
-        foreach (array_diff($e1Keys, $v2Keys) as $key) {
-            if (! str_starts_with($key, self::v1Prefix())) {
-                continue;
-            }
-            $family = explode(':', substr($key, strlen(self::v1Prefix())))[0];
-            self::assertContains($family, ['watch', 'watch-meta', 'distinct', 'distinct-meta'], 'Only the documented derivative families differ.');
-        }
     }
 
-    public function testTheOperationalReaderFollowsTheWriterAndNeverReadsTheOtherEncoding(): void
+    public function testTheDefaultReaderIgnoresHistoricalV2AccountStateAndFollowsE1(): void
     {
-        $e1Runtime = $this->runtime($this->admin, KeyScopeEncodingEnum::E1);
-        $this->failures($e1Runtime, 2);
-        $v2Reader = $this->builder($this->admin, KeyScopeEncodingEnum::V2)->buildOperationalReader();
-        $e1Reader = $this->builder($this->admin, KeyScopeEncodingEnum::E1)->buildOperationalReader();
+        $root = new RedisFullCapabilityStore($this->admin, self::NAMESPACE);
+        $legacy = (new \Maatify\RateLimiter\Tests\Fixtures\KeyScopeV2Reference(self::ENV))->derive('k4', self::POLICY, self::ACCOUNT, self::SECRET);
+        $root->set($legacy, 77, 86400);
+        $reader = $this->builder($this->admin)->buildOperationalReader();
+        self::assertNull($reader->readScorePolicy($this->context(), self::POLICY)->scopes->k4?->score);
+        $before = $root->get($legacy);
+        $this->failures($this->runtime($this->admin), 2);
+        self::assertNotNull($reader->readScorePolicy($this->context(), self::POLICY)->scopes->k4?->score);
+        self::assertEquals($before, $root->get($legacy), 'Historical V2 is neither read as Previous nor written.');
+    }
 
-        $e1Snapshot = $e1Reader->readScorePolicy($this->context(), self::POLICY);
-        $v2Snapshot = $v2Reader->readScorePolicy($this->context(), self::POLICY);
+    /** T13/C8: an isolated demonstration of an unsupported transition, never a migration recipe. */
+    public function testHistoricalV2AndCurrentE1WorkersCannotSeeEachOthersAccountBlocks(): void
+    {
+        $clock = new FixedClock('@' . self::NOW);
+        $root = new RedisFullCapabilityStore($this->admin, self::NAMESPACE, $clock);
+        $old = new \Maatify\RateLimiter\Tests\Fixtures\PreG1\EvaluationPipeline(
+            $root,
+            $root,
+            new \Maatify\RateLimiter\Service\BudgetTracker($root, $clock),
+            new \Maatify\RateLimiter\Service\AntiEquilibriumGate($root),
+            new \Maatify\RateLimiter\Service\DecayCalculator($clock),
+            new \Maatify\RateLimiter\Service\EphemeralBucket($root),
+            self::SECRET,
+            self::ENV,
+            $clock,
+        );
+        $policy = new \Maatify\RateLimiter\Config\LoginProtectionPolicy();
+        $device = new \Maatify\RateLimiter\DTO\DeviceIdentityDTO(null, 'LOW', false, false, 'browser');
+        $legacy = (new \Maatify\RateLimiter\Tests\Fixtures\KeyScopeV2Reference(self::ENV))->derive('k4', self::POLICY, self::ACCOUNT, self::SECRET);
+        $e1 = (new E1AccountScopeKeyDeriver(self::ENV))->derive('k4', self::POLICY, self::ACCOUNT, self::SECRET);
+        $root->blockAt($legacy, 2, 600, self::NOW);
+        $check = RateLimitCommand::checkOnly(self::POLICY);
+        self::assertSame('HARD_BLOCK', $old->process($policy, $this->context(), $check, $device)->decision);
+        self::assertSame('ALLOW', $this->runtime($this->admin)->limit($this->context(), $check)->decision, 'E1 cannot see a V2 account block.');
+        self::assertSame(2, $root->peekBlockAt($legacy, self::NOW)?->level);
+        $other = 'other-account';
+        $otherE1 = (new E1AccountScopeKeyDeriver(self::ENV))->derive('k4', self::POLICY, $other, self::SECRET);
+        $root->e1Keyspace()->blockAt($otherE1, 2, 600, self::NOW);
+        self::assertSame('HARD_BLOCK', $this->runtime($this->admin)->limit($this->context($other), $check)->decision);
+        self::assertSame('ALLOW', $old->process($policy, $this->context($other), $check, $device)->decision, 'V2 rollback cannot see an E1 account block.');
+        self::assertNull($root->peekBlockAt($e1, self::NOW), 'A logical prefix does not reroute a root call.');
+    }
 
-        self::assertNotNull($e1Snapshot->scopes->k4?->score, 'The E1 reader finds the account state the E1 writer saved.');
-        self::assertNull($v2Snapshot->scopes->k4?->score, 'A V2 reader cannot read E1 state.');
+    public function testTheClosedBudgetTrackerReadsTheAccountViewThroughThePublicRuntime(): void
+    {
+        $root = new RedisFullCapabilityStore($this->admin, self::NAMESPACE);
+        $key = (new E1AccountScopeKeyDeriver(self::ENV))->derive('k4', self::POLICY, self::ACCOUNT, self::SECRET);
+        $root->e1Keyspace()->incrementBudgetAt($key, 86400, 20, self::NOW);
+        $result = $this->runtime($this->admin)->limit($this->context(), RateLimitCommand::checkOnly(self::POLICY));
+        self::assertSame('SOFT_BLOCK', $result->decision, 'A root-bound BudgetTracker would incorrectly report an empty budget.');
+        self::assertSame(3, $result->blockLevel);
+        self::assertNull($root->peekBudgetAt($key, self::NOW));
+        self::assertSame(20, $root->e1Keyspace()->peekBudgetAt($key, self::NOW)?->count);
+    }
 
-        $this->admin->execute(['FLUSHDB']);
-        $this->failures($this->runtime($this->admin, KeyScopeEncodingEnum::V2), 2);
-        self::assertNotNull($v2Reader->readScorePolicy($this->context(), self::POLICY)->scopes->k4?->score);
-        self::assertNull($e1Reader->readScorePolicy($this->context(), self::POLICY)->scopes->k4?->score, 'An E1 reader cannot read V2 state.');
+    public function testTheClosedGateReadsAccountHistoryThroughThePublicRuntime(): void
+    {
+        $root = new RedisFullCapabilityStore($this->admin, self::NAMESPACE);
+        $key = (new E1AccountScopeKeyDeriver(self::ENV))->derive('aux.anti_equilibrium', self::POLICY, self::ACCOUNT, self::SECRET);
+        for ($i = 0; $i < 3; $i++) {
+            $root->e1Keyspace()->incrementWatchFlagAt($key, 21600, self::NOW);
+        }
+        $result = $this->runtime($this->admin)->limit($this->context(), RateLimitCommand::recordFailure(self::POLICY));
+        self::assertSame('HARD_BLOCK', $result->decision, 'A root-bound Gate would lose the account history.');
+        self::assertSame(0, $root->getWatchFlag($key));
+        self::assertSame(3, $root->e1Keyspace()->getWatchFlag($key));
     }
 
     public function testRotationWritesOnlyToCurrentAndNeverReadsAV2KeyAsPrevious(): void
@@ -231,7 +272,7 @@ final class KeyScopeE1RedisTest extends TestCase
         $rotated = new RateLimiterConfig(self::SECRET, 'test_fp', self::ENV, 'previous_secret', 'previous_fp');
         $store = new RedisFullCapabilityStore($this->admin, self::NAMESPACE);
         $make = static fn(RateLimiterConfig $config): CompositeRateLimiterRuntimeInterface => RateLimiterBuilder::fromFullCapabilityStore($config, $store, new RecordingFailureSignalEmitter())
-            ->withClock(new FixedClock('@' . self::NOW))->withKeyScopeEncoding(KeyScopeEncodingEnum::E1)->build();
+            ->withClock(new FixedClock('@' . self::NOW))->build();
 
         $make($previous)->limit($this->context(), RateLimitCommand::recordFailure(self::POLICY));
         $before = array_keys($this->snapshot());
@@ -251,7 +292,7 @@ final class KeyScopeE1RedisTest extends TestCase
     public function testPlainStringsKeepTheirV1KeysWithE1SelectedAndTheE1ViewRefusesWhatIsNotAnE1Key(): void
     {
         $store = new RedisFullCapabilityStore($this->admin, self::NAMESPACE);
-        $this->builder($this->admin, KeyScopeEncodingEnum::E1, $store)->build();
+        $this->builder($this->admin, $store)->build();
 
         $shaped = 'e1.' . str_repeat('a', 64);
         $plain = [$shaped, str_repeat('b', 64), 'e1.not-hex', 'plain-string'];
@@ -290,26 +331,18 @@ final class KeyScopeE1RedisTest extends TestCase
         self::assertContains(self::e1Prefix() . 'score:' . hash('sha256', $shaped), $this->keys(), 'An E1 key given to the view lands under the E1 prefix.');
     }
 
-    public function testComposingE1OverAStoreWithoutTheCapabilityFailsBeforeAnyCommand(): void
+    public function testComposingOverAStoreWithoutTheCapabilityFailsBeforeCommands(): void
     {
-        $builder = new RateLimiterBuilder(
-            $this->config(),
-            new \Maatify\RateLimiter\Tests\Support\RateLimiter\BaseOnlyInMemoryRateLimitStore(new FixedClock('@' . self::NOW)),
-            new \Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore(new FixedClock('@' . self::NOW)),
-            new \Maatify\RateLimiter\Tests\Support\CircuitBreaker\InMemoryCircuitBreakerStore(),
-            new RecordingFailureSignalEmitter(),
-        );
-        $builder->withKeyScopeEncoding(KeyScopeEncodingEnum::E1);
-
+        $store = $this->createStub(\Maatify\RateLimiter\Tests\Support\FullCapability\NonE1FullStoreInterface::class);
+        $builder = RateLimiterBuilder::fromFullCapabilityStore($this->config(), $store, new RecordingFailureSignalEmitter());
         foreach ([static fn() => $builder->build(), static fn() => $builder->buildOperationalReader()] as $compose) {
             try {
                 $compose();
-                self::fail('E1 over a store without the capability must fail at composition.');
+                self::fail('The missing account capability must fail composition.');
             } catch (RateLimiterException $exception) {
                 self::assertStringContainsString('E1KeyspaceStoreInterface', $exception->getMessage());
             }
         }
-        self::assertSame([], $this->keys(), 'No command reached Redis.');
     }
 
     // ---------------------------------------------------------------------------------------------------------------- one transaction, two layouts
@@ -338,7 +371,7 @@ final class KeyScopeE1RedisTest extends TestCase
     public function testARequestThatWritesBothLayoutsIsOneCommitOnOneStoreInstance(): void
     {
         $commits = [];
-        $runtime = $this->runtime($this->recording($commits), KeyScopeEncodingEnum::E1);
+        $runtime = $this->runtime($this->recording($commits));
 
         $this->failures($runtime);
 
@@ -376,7 +409,7 @@ final class KeyScopeE1RedisTest extends TestCase
 
                 return $this->admin->execute($command);
             });
-            $this->failures($this->runtime($executor, KeyScopeEncodingEnum::E1));
+            $this->failures($this->runtime($executor));
 
             self::assertGreaterThanOrEqual(2, count($commits), "{$layout}: a conflicting attempt is followed by a new attempt.");
             self::assertSame($snapshots['before'], $snapshots['after'], "{$layout}: the conflicting commit saved none of the request's writes, in either layout.");
@@ -458,7 +491,7 @@ final class KeyScopeE1RedisTest extends TestCase
 
     public function testARequestIsRefusedWhenAKeyItReadInEitherLayoutHasAnExpiryTheSaveCannotCompare(): void
     {
-        $runtime = $this->runtime($this->admin, KeyScopeEncodingEnum::E1);
+        $runtime = $this->runtime($this->admin);
         $this->failures($runtime);
         self::assertSame(1, $this->admin->execute(['PEXPIREAT', $this->e1ScoreKey('k4'), '9007199254740993']));
         $before = $this->snapshot();
@@ -503,7 +536,7 @@ final class KeyScopeE1RedisTest extends TestCase
                 }
 
                 return $v1Only->execute($command);
-            }), KeyScopeEncodingEnum::E1));
+            })));
             self::fail('An account without the E1 grant is refused.');
         } catch (\Throwable $exception) {
             self::assertStringNotContainsString('request commit', $exception->getMessage(), 'This is the entry guard, not the DEC-042 save guard.');
@@ -515,7 +548,7 @@ final class KeyScopeE1RedisTest extends TestCase
         $noHset = $this->userExecutor('e1-no-hset', ['hset'], ['~maatify:rate-limiter:*', '~']);
         $before = $this->snapshot();
         try {
-            $this->failures($this->runtime($noHset, KeyScopeEncodingEnum::E1));
+            $this->failures($this->runtime($noHset));
             self::fail('A missing write permission refuses the save.');
         } catch (\Throwable $exception) {
             self::assertStringContainsString('NOPERM request commit', $exception->getMessage());
@@ -524,7 +557,7 @@ final class KeyScopeE1RedisTest extends TestCase
 
         // The same request succeeds once the grant is complete.
         $complete = $this->userExecutor('e1-complete', [], ['~maatify:rate-limiter:*', '~']);
-        $this->failures($this->runtime($complete, KeyScopeEncodingEnum::E1));
+        $this->failures($this->runtime($complete));
         self::assertContains($this->e1ScoreKey('k4'), $this->keys());
     }
 
@@ -617,49 +650,18 @@ final class KeyScopeE1RedisTest extends TestCase
         self::assertContains(self::e1Prefix() . 'score:' . hash('sha256', $e1Key), $this->keys());
     }
 
-    public function testTheEncodingIsFixedByTheFirstBuildWhicheverOfTheRuntimeAndTheReaderComesFirst(): void
+    public function testBothBuildOrdersAlwaysAgreeOnE1WithoutASelector(): void
     {
-        foreach ([
-            'runtime then reader' => [static fn(RateLimiterBuilder $b) => $b->build(), static fn(RateLimiterBuilder $b) => $b->buildOperationalReader()],
-            'reader then runtime' => [static fn(RateLimiterBuilder $b) => $b->buildOperationalReader(), static fn(RateLimiterBuilder $b) => $b->build()],
-        ] as $label => [$first, $second]) {
-            foreach ([[KeyScopeEncodingEnum::V2, KeyScopeEncodingEnum::E1], [KeyScopeEncodingEnum::E1, KeyScopeEncodingEnum::V2]] as [$chosen, $other]) {
-                $builder = $this->builder($this->admin, $chosen);
-                $first($builder);
-                try {
-                    $builder->withKeyScopeEncoding($other);
-                    self::fail("{$label}: changing the encoding after a build must be refused.");
-                } catch (RateLimiterException $exception) {
-                    self::assertStringContainsString('fixed once', $exception->getMessage());
-                }
-                $builder->withKeyScopeEncoding($chosen); // the same selection is harmless
-                $second($builder);
-
-                // The runtime and the reader of this builder agree: the reader sees the score the runtime wrote.
-                $runtime = $builder->build();
-                $this->failures($runtime);
-                $reader = $builder->buildOperationalReader();
-                self::assertNotNull($reader->readScorePolicy($this->context(), self::POLICY)->scopes->k4?->score, "{$label} under {$chosen->value}: the reader sees the K4 score the runtime wrote.");
-                $this->admin->execute(['FLUSHDB']);
-            }
+        foreach ([false, true] as $readerFirst) {
+            $this->admin->execute(['FLUSHDB']);
+            $builder = $this->builder($this->admin);
+            $reader = $readerFirst ? $builder->buildOperationalReader() : null;
+            $runtime = $builder->build();
+            $reader ??= $builder->buildOperationalReader();
+            $this->failures($runtime);
+            self::assertNotNull($reader->readScorePolicy($this->context(), self::POLICY)->scopes->k4?->score);
+            self::assertFalse(in_array('withKeyScopeEncoding', get_class_methods($builder), true));
         }
-
-        // A build that failed before deriving anything does not fix the selection.
-        $builder = new RateLimiterBuilder(
-            $this->config(),
-            new \Maatify\RateLimiter\Tests\Support\RateLimiter\BaseOnlyInMemoryRateLimitStore(new FixedClock('@' . self::NOW)),
-            new \Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore(new FixedClock('@' . self::NOW)),
-            new \Maatify\RateLimiter\Tests\Support\CircuitBreaker\InMemoryCircuitBreakerStore(),
-            new RecordingFailureSignalEmitter(),
-        );
-        $builder->withKeyScopeEncoding(KeyScopeEncodingEnum::E1);
-        try {
-            $builder->build();
-            self::fail('E1 over an incapable store fails.');
-        } catch (RateLimiterException) {
-            $this->addToAssertionCount(1);
-        }
-        self::assertSame($builder, $builder->withKeyScopeEncoding(KeyScopeEncodingEnum::V2));
     }
 
     // ---------------------------------------------------------------------------------------------------------------- F295-03: the ten families
@@ -714,7 +716,7 @@ final class KeyScopeE1RedisTest extends TestCase
                 $this->admin->execute(['FLUSHDB']);
                 $store = new RedisFullCapabilityStore($this->admin, self::NAMESPACE);
                 if ($selected) {
-                    $this->builder($this->admin, KeyScopeEncodingEnum::E1, $store)->build();
+                    $this->builder($this->admin, $store)->build();
                 }
                 $returned = $this->everyFamily($store, $string, $string . '|lifecycle');
                 $keys = $this->keys();
@@ -807,7 +809,7 @@ final class KeyScopeE1RedisTest extends TestCase
             });
             $before = $this->snapshot();
             try {
-                $this->failures($this->runtime($executor, KeyScopeEncodingEnum::E1));
+                $this->failures($this->runtime($executor));
                 self::fail("{$label}: the save must be refused.");
             } catch (\Throwable $exception) {
                 self::assertStringContainsString('NOPERM', $exception->getMessage(), $label);
@@ -819,42 +821,27 @@ final class KeyScopeE1RedisTest extends TestCase
 
     // ---------------------------------------------------------------------------------------------------------------- round 3: F295-02 (failed build) and F295-03 (lifecycle through the real composition)
 
-    public function testAFailedBuildDoesNotFixTheSelectionButTheFirstSuccessfulBuildDoes(): void
+    public function testAFailedProviderBuildCanBeCorrectedForRuntimeAndReader(): void
     {
         $bound = new StubContextProvider(static fn(): int => 1);
         $other = new StubContextProvider(static fn(): int => 2);
-        foreach (['runtime' => static fn(RateLimiterBuilder $b) => $b->build(), 'reader' => static fn(RateLimiterBuilder $b) => $b->buildOperationalReader()] as $kind => $compose) {
-            foreach ([[KeyScopeEncodingEnum::E1, KeyScopeEncodingEnum::V2], [KeyScopeEncodingEnum::V2, KeyScopeEncodingEnum::E1]] as [$first, $second]) {
-                $store = new RedisFullCapabilityStore($this->admin, self::NAMESPACE, null, 500, $bound);
-                $builder = RateLimiterBuilder::fromFullCapabilityStore($this->config(), $store, new RecordingFailureSignalEmitter())
-                    ->withClock(new FixedClock('@' . self::NOW))
-                    ->withKeyScopeEncoding($first)
-                    ->withExecutionContextProvider($other);
-                try {
-                    $compose($builder);
-                    self::fail("{$kind}: another provider over a bound store fails the build (DEC-041).");
-                } catch (RateLimiterException $exception) {
-                    self::assertStringContainsString('domain', $exception->getMessage());
-                }
-
-                // Nothing was built, so nothing is fixed: the other encoding is accepted, the cause is corrected and the build succeeds.
-                $builder->withKeyScopeEncoding($second)->withExecutionContextProvider($bound);
-                $compose($builder);
-
-                // Now it is fixed.
-                try {
-                    $builder->withKeyScopeEncoding($first);
-                    self::fail("{$kind}: the first successful build fixes the selection.");
-                } catch (RateLimiterException $exception) {
-                    self::assertStringContainsString('fixed once', $exception->getMessage());
-                }
+        foreach (['build', 'buildOperationalReader'] as $method) {
+            $store = new RedisFullCapabilityStore($this->admin, self::NAMESPACE, null, 500, $bound);
+            $builder = $this->builder($this->admin, $store)->withExecutionContextProvider($other);
+            try {
+                $builder->{$method}();
+                self::fail('Provider mismatch must fail.');
+            } catch (RateLimiterException $exception) {
+                self::assertStringContainsString('domain', $exception->getMessage());
             }
+            $builder->withExecutionContextProvider($bound);
+            $builder->{$method}();
         }
     }
 
-    public function testAFailingOuterBuildNeverUndoesTheSelectionAReaderBuiltInsideItAlreadyFixed(): void
+    public function testAFailingOuterBuildPreservesTheNestedSuccessfulReader(): void
     {
-        $builder = $this->builder($this->admin, KeyScopeEncodingEnum::V2);
+        $builder = $this->builder($this->admin);
         /** @var \ArrayObject<string, mixed> $sink */
         $sink = new \ArrayObject();
         // A Host policy callback that builds a reader from this same builder while the outer build() runs, then makes the outer build fail.
@@ -889,78 +876,16 @@ final class KeyScopeE1RedisTest extends TestCase
         }
         self::assertInstanceOf(\Maatify\RateLimiter\Service\CompositeRateLimitOperationalReaderInterface::class, $sink['reader'], 'The nested reader was built before the outer failure.');
 
-        try {
-            $builder->withKeyScopeEncoding(KeyScopeEncodingEnum::E1);
-            self::fail('The nested successful build fixed the selection; the outer failure must not undo it.');
-        } catch (RateLimiterException $exception) {
-            self::assertStringContainsString('fixed once', $exception->getMessage());
-        }
+        $this->failures($builder->build());
+        self::assertNotNull($sink['reader']->readScorePolicy($this->context(), self::POLICY)->scopes->k4?->score);
     }
 
-    public function testTheSelectionCannotChangeWhileABuildIsRunningAndIsFreeAgainOnlyWhenEveryAttemptFailed(): void
-    {
-        foreach ([false, true] as $outerFails) {
-            $builder = $this->builder($this->admin, KeyScopeEncodingEnum::V2);
-            /** @var \ArrayObject<string, mixed> $sink */
-            $sink = new \ArrayObject();
-            // A Host policy callback that tries to switch the encoding from inside the running build.
-            $policy = new class ($builder, $sink, $outerFails) extends \Maatify\RateLimiter\Config\LoginProtectionPolicy {
-                /** @param \ArrayObject<string, mixed> $sink */
-                public function __construct(private RateLimiterBuilder $builder, private \ArrayObject $sink, private bool $fail) {}
 
-                public function getName(): string
-                {
-                    return 'switching_policy';
-                }
 
-                public function getCapabilities(): array
-                {
-                    if (! isset($this->sink['tried'])) {
-                        $this->sink['tried'] = true;
-                        try {
-                            $this->builder->withKeyScopeEncoding(KeyScopeEncodingEnum::E1);
-                            $this->sink['refused'] = false;
-                        } catch (RateLimiterException) {
-                            $this->sink['refused'] = true;
-                        }
-                        if ($this->fail) {
-                            throw new \RuntimeException('the only attempt fails');
-                        }
-                    }
-
-                    return parent::getCapabilities();
-                }
-            };
-            $builder->withPolicy($policy);
-
-            if ($outerFails) {
-                try {
-                    $builder->build();
-                    self::fail('The only attempt fails.');
-                } catch (\RuntimeException) {
-                    $this->addToAssertionCount(1);
-                }
-                self::assertTrue($sink['refused'], 'The switch from inside the running build was refused.');
-                // Every attempt failed and nothing was fixed: the selection is free again.
-                self::assertSame($builder, $builder->withKeyScopeEncoding(KeyScopeEncodingEnum::E1));
-
-                continue;
-            }
-
-            $runtime = $builder->build();
-            self::assertTrue($sink['refused'], 'The switch from inside the running build was refused.');
-            $this->failures($runtime);
-            self::assertSame([], $this->families(self::e1Prefix()), 'The runtime keeps the encoding it was built with: nothing under the E1 prefix.');
-            self::assertNotSame([], self::under($this->keys(), self::v1Prefix() . 'score:'));
-            $reader = $builder->buildOperationalReader();
-            self::assertNotNull($reader->readScorePolicy($this->context(), self::POLICY)->scopes->k4?->score, 'The reader agrees with the runtime.');
-        }
-    }
-
-    public function testABuildSuspendedInAFiberThatIsDestroyedReleasesTheSelectionLikeAFailedBuild(): void
+    public function testACancelledFiberBuildLeavesTheBuilderAndReaderUsable(): void
     {
         foreach (['build' => static fn(RateLimiterBuilder $b) => $b->build(), 'reader' => static fn(RateLimiterBuilder $b) => $b->buildOperationalReader()] as $kind => $compose) {
-            $builder = $this->builder($this->admin, KeyScopeEncodingEnum::V2);
+            $builder = $this->builder($this->admin);
             /** @var \ArrayObject<string, mixed> $sink */
             $sink = new \ArrayObject();
             // A Host getter that suspends the first build it is called from, inside the build.
@@ -1005,34 +930,24 @@ final class KeyScopeE1RedisTest extends TestCase
             self::assertNull($weak->get(), "{$kind}: the suspended Fiber is destroyed.");
 
             // The attempt ended without succeeding: the selection is free and the build works under the new choice.
-            $builder->withKeyScopeEncoding(KeyScopeEncodingEnum::E1);
             $compose($builder);
-            self::assertTrue($this->refusesToSelect($builder, KeyScopeEncodingEnum::V2), "{$kind}: the successful build fixes it.");
+            $builder->buildOperationalReader();
         }
     }
 
     /** Whether the builder refuses the selection (the exception is released here, so it does not keep a suspended Fiber's frames alive). */
-    private function refusesToSelect(RateLimiterBuilder $builder, KeyScopeEncodingEnum $encoding): bool
-    {
-        try {
-            $builder->withKeyScopeEncoding($encoding);
-        } catch (RateLimiterException) {
-            return true;
-        }
 
-        return false;
-    }
 
     /**
      * @return array{claimed: bool, again: bool, e1: list<string>, v1: list<string>}
      */
-    private function lifecycleThroughTheRealComposition(KeyScopeEncodingEnum $encoding, bool $rotated): array
+    private function lifecycleThroughTheRealComposition(bool $rotated): array
     {
         $this->admin->execute(['FLUSHDB']);
         $clock = new FixedClock('@' . self::NOW);
         $store = new RedisFullCapabilityStore($this->admin, self::NAMESPACE);
-        $make = function (RateLimiterConfig $config) use ($store, $clock, $encoding): CompositeRateLimiterRuntimeInterface {
-            return RateLimiterBuilder::fromFullCapabilityStore($config, $store, new RecordingFailureSignalEmitter())->withClock($clock)->withKeyScopeEncoding($encoding)->build();
+        $make = function (RateLimiterConfig $config) use ($store, $clock): CompositeRateLimiterRuntimeInterface {
+            return RateLimiterBuilder::fromFullCapabilityStore($config, $store, new RecordingFailureSignalEmitter())->withClock($clock)->build();
         };
         $writer = $make($rotated ? new RateLimiterConfig('previous_secret', 'previous_fp', self::ENV) : $this->config());
         $runtime = $rotated ? $make(new RateLimiterConfig(self::SECRET, 'test_fp', self::ENV, 'previous_secret', 'previous_fp')) : $writer;
@@ -1054,22 +969,17 @@ final class KeyScopeE1RedisTest extends TestCase
         return ['claimed' => $claimed, 'again' => $again, 'e1' => $this->families(self::e1Prefix()), 'v1' => self::under($keys, self::v1Prefix() . 'reentry-claim:')];
     }
 
-    public function testLifecycleAndRotationThroughTheRealCompositionReachTheLayoutTheEncodingSelects(): void
+    public function testLifecycleAndRotationThroughTheRealCompositionReachE1(): void
     {
         foreach ([false, true] as $rotated) {
             $label = $rotated ? 'after a rotation' : 'one secret';
-            $v2 = $this->lifecycleThroughTheRealComposition(KeyScopeEncodingEnum::V2, $rotated);
-            $e1 = $this->lifecycleThroughTheRealComposition(KeyScopeEncodingEnum::E1, $rotated);
+            $e1 = $this->lifecycleThroughTheRealComposition($rotated);
 
-            self::assertSame([], $v2['e1'], "V2 {$label}: no key under the E1 prefix, in any family.");
-            self::assertNotSame([], $v2['v1'], "V2 {$label}: the claim marker is under v1.");
             self::assertContains('reentry-claim', $e1['e1'], "E1 {$label}: the claim marker is under the E1 prefix.");
             self::assertSame([], $e1['v1'], "E1 {$label}: no claim marker is under v1 (the claim was not routed to the V2 layout).");
             self::assertSame(['budget', 'cycle', 'reentry-claim', 'score', 'watch', 'watch-meta'], $e1['e1'], "E1 {$label}: every account-scope family the lifecycle touched is under the E1 prefix.");
-            self::assertSame($v2['claimed'], $e1['claimed'], "{$label}: the claim has the same outcome in both encodings.");
             self::assertTrue($e1['claimed']);
             self::assertFalse($e1['again'], "{$label}: the marker is one-shot in E1.");
-            self::assertSame($v2['again'], $e1['again']);
         }
     }
 
@@ -1090,12 +1000,12 @@ final class KeyScopeE1RedisTest extends TestCase
      *
      * @return array{before: array<string, list<string>>, after: array<string, list<string>>}
      */
-    private function budgetRotationRun(KeyScopeEncodingEnum $encoding, RateLimiterConfig $previousGeneration, RateLimiterConfig $rotated): array
+    private function budgetRotationRun(RateLimiterConfig $previousGeneration, RateLimiterConfig $rotated): array
     {
         $this->admin->execute(['FLUSHDB']);
         $store = new RedisFullCapabilityStore($this->admin, self::NAMESPACE);
         $make = static fn(RateLimiterConfig $config): CompositeRateLimiterRuntimeInterface => RateLimiterBuilder::fromFullCapabilityStore($config, $store, new RecordingFailureSignalEmitter())
-            ->withClock(new FixedClock('@' . self::NOW))->withKeyScopeEncoding($encoding)->build();
+            ->withClock(new FixedClock('@' . self::NOW))->build();
 
         $make($previousGeneration)->limit($this->knownDeviceContext(), RateLimitCommand::recordFailure(self::POLICY));
         $before = $this->budgetEntries();
@@ -1120,7 +1030,7 @@ final class KeyScopeE1RedisTest extends TestCase
         return $entries;
     }
 
-    public function testBudgetRotationSeedsCurrentFromPreviousThroughTheRuntimeInBothEncodings(): void
+    public function testBudgetRotationSeedsCurrentFromPreviousThroughTheSoleE1Runtime(): void
     {
         $scenarios = [
             'secret rotation' => [new RateLimiterConfig('previous_secret', 'previous_fp', self::ENV), new RateLimiterConfig(self::SECRET, 'test_fp', self::ENV, 'previous_secret', 'previous_fp')],
@@ -1128,12 +1038,12 @@ final class KeyScopeE1RedisTest extends TestCase
         ];
         foreach ($scenarios as $label => [$previousGeneration, $rotated]) {
             $shapes = [];
-            foreach ([KeyScopeEncodingEnum::V2, KeyScopeEncodingEnum::E1] as $encoding) {
-                $run = $this->budgetRotationRun($encoding, $previousGeneration, $rotated);
+            foreach ([true] as $encoding) {
+                $run = $this->budgetRotationRun($previousGeneration, $rotated);
                 $before = $run['before'];
                 $after = $run['after'];
                 $new = array_diff_key($after, $before);
-                $name = "{$label} under {$encoding->value}";
+                $name = "{$label} under E1";
 
                 self::assertNotSame([], $new, "{$name}: the rotated runtime created a Current budget key (the seed).");
                 foreach ($before as $key => $fields) {
@@ -1146,8 +1056,8 @@ final class KeyScopeE1RedisTest extends TestCase
                     $changed = $after[$key] ?? null;
                     self::assertTrue($changed === $fields || ($changed !== null && (int) $changed[1] === (int) $fields[1] + 1), "{$name}: an unchanged account key either stays or counts on by one.");
                 }
-                $wrong = $encoding === KeyScopeEncodingEnum::E1 ? self::v1Prefix() : self::e1Prefix();
-                $right = $encoding === KeyScopeEncodingEnum::E1 ? self::e1Prefix() : self::v1Prefix();
+                $wrong = self::v1Prefix();
+                $right = self::e1Prefix();
                 self::assertSame([], self::under(array_keys($after), $wrong . 'budget:'), "{$name}: no budget key in the other layout (account-scope budget keys only).");
                 self::assertSame(array_keys($after), self::under(array_keys($after), $right . 'budget:'), "{$name}: every budget key is under the selected prefix.");
 
@@ -1159,10 +1069,9 @@ final class KeyScopeE1RedisTest extends TestCase
                     self::assertNotFalse($epochStart);
                     self::assertSame(array_values($before)[0][array_search('epochStart', array_values($before)[0], true) + 1], $fields[$epochStart + 1], "{$name}: the seed keeps the Previous epoch start.");
                 }
-                $shapes[$encoding->value] = array_values($after);
-                sort($shapes[$encoding->value]);
+                $shapes['e1'] = array_values($after);
+                sort($shapes['e1']);
             }
-            self::assertSame($shapes['v2'], $shapes['e1'], "{$label}: the saved budget state is identical in both encodings.");
         }
     }
 

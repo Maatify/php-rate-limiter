@@ -7,8 +7,20 @@ namespace Maatify\RateLimiter\Tests\Support\Correlation;
 use Maatify\RateLimiter\DTO\BoundedDistinctResultDTO;
 use Maatify\RateLimiter\Repository\BoundedCorrelationRotationStoreInterface;
 
-class NullCorrelationStore implements BoundedCorrelationRotationStoreInterface
+class NullCorrelationStore implements \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface, BoundedCorrelationRotationStoreInterface, \Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotRotationStoreInterface
 {
+    use \Maatify\RateLimiter\Tests\Support\E1View;
+
+    public function addDistinctBoundedWithSnapshot(string $key, string $item, int $ttlSeconds, int $maxDistinct): \Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO
+    {
+        return new \Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO(1, true, true, [$item], time() + $ttlSeconds);
+    }
+
+    public function addDistinctBoundedWithSnapshotAcrossRotation(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct): \Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO
+    {
+        return $this->addDistinctBoundedWithSnapshot($currentKey, $currentMember, $ttlSeconds, $maxDistinct);
+    }
+
     public function addDistinct(string $key, string $item, int $ttlSeconds): int
     {
         return 0;

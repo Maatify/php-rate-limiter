@@ -21,12 +21,9 @@ use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 use Maatify\RateLimiter\Enum\FailureFallbackDimensionEnum;
 use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\CircuitBreaker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\FingerprintHasher;
@@ -343,13 +340,13 @@ final class RateLimiterEngineFallbackRetryAfterTest extends TestCase
         $pipeline = new EvaluationPipeline(
             $store,
             $correlationStore,
-            new BudgetTracker($store, $this->clock),
-            new AntiEquilibriumGate($correlationStore),
             new DecayCalculator($this->clock),
-            new EphemeralBucket($correlationStore),
             'test_secret',
             'prod',
             $this->clock,
+            $this->clock,
+            null,
+            null,
         );
         $this->breaker = new CircuitBreaker(new InMemoryCircuitBreakerStore(), $emitter, $this->clock);
 

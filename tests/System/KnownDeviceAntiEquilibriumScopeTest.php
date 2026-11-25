@@ -15,10 +15,7 @@ use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 use Maatify\RateLimiter\Exception\BackendFailureException;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore;
@@ -60,9 +57,9 @@ final class KnownDeviceAntiEquilibriumScopeTest extends TestCase
         $this->advance(300);
         $this->assertTrue($this->preThenFailure($pipeline, $policy, 'scope-owner', $laptop));
 
-        $this->assertNull($this->store->checkBlock($this->key('login_protection', 'k4', 'scope-owner')));
-        $this->assertSame(2, $this->store->checkBlock($this->key('login_protection', 'k5', 'scope-owner:owner-laptop'))?->level);
-        $this->assertSame(0, $this->correlationStore->getWatchFlag($this->accountWatcher('login_protection', 'scope-owner')));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k4', 'scope-owner'))->checkBlock($this->key('login_protection', 'k4', 'scope-owner')));
+        $this->assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k5', 'scope-owner:owner-laptop'))->checkBlock($this->key('login_protection', 'k5', 'scope-owner:owner-laptop'))?->level);
+        $this->assertSame(0, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $this->accountWatcher('login_protection', 'scope-owner'))->getWatchFlag($this->accountWatcher('login_protection', 'scope-owner')));
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $this->check($pipeline, $policy, 'scope-owner', $laptop)->decision);
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $this->check($pipeline, $policy, 'scope-owner', $this->device('owner-phone', 'HIGH', true))->decision);
     }
@@ -103,18 +100,18 @@ final class KnownDeviceAntiEquilibriumScopeTest extends TestCase
     {
         $pipeline = $this->pipeline();
         $policy = new LoginProtectionPolicy();
-        $this->store->set($this->key('login_protection', 'k4', 'account-owner'), 5, 86400);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k4', 'account-owner'))->set($this->key('login_protection', 'k4', 'account-owner'), 5, 86400);
 
         for ($attempt = 0; $attempt < 3; $attempt++) {
             $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $this->check($pipeline, $policy, 'account-owner', $this->device('new-device'))->decision);
         }
-        $this->assertSame(3, $this->correlationStore->getWatchFlag($this->accountWatcher('login_protection', 'account-owner')));
+        $this->assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $this->accountWatcher('login_protection', 'account-owner'))->getWatchFlag($this->accountWatcher('login_protection', 'account-owner')));
 
-        $this->store->set($this->key('login_protection', 'k4', 'account-owner'), 0, 86400);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k4', 'account-owner'))->set($this->key('login_protection', 'k4', 'account-owner'), 0, 86400);
         $failure = $pipeline->process($policy, $this->context('account-owner'), RateLimitCommand::recordFailure('login_protection'), $this->device('new-device'));
 
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $failure->decision);
-        $this->assertSame(2, $this->store->checkBlock($this->key('login_protection', 'k4', 'account-owner'))?->level);
+        $this->assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k4', 'account-owner'))->checkBlock($this->key('login_protection', 'k4', 'account-owner'))?->level);
     }
 
     /**
@@ -162,7 +159,7 @@ final class KnownDeviceAntiEquilibriumScopeTest extends TestCase
 
         $this->assertSame(['SOFT_BLOCK', 'SOFT_BLOCK', 'SOFT_BLOCK', 'SOFT_BLOCK', 'HARD_BLOCK'], $decisions);
         $this->assertSame([3, 1], $this->watchers('mixed_scope_flow', 'mixed-escalation', 'mixed-escalation-fp'));
-        $this->assertSame(2, $this->store->checkBlock($this->key('mixed_scope_flow', 'k4', 'mixed-escalation'))?->level);
+        $this->assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('mixed_scope_flow', 'k4', 'mixed-escalation'))->checkBlock($this->key('mixed_scope_flow', 'k4', 'mixed-escalation'))?->level);
     }
 
     /**
@@ -171,8 +168,8 @@ final class KnownDeviceAntiEquilibriumScopeTest extends TestCase
     private function watchers(string $policy, string $account, string $fingerprint): array
     {
         return [
-            $this->correlationStore->getWatchFlag($this->accountWatcher($policy, $account)),
-            $this->correlationStore->getWatchFlag($this->deviceWatcher($policy, $account, $fingerprint)),
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $this->accountWatcher($policy, $account))->getWatchFlag($this->accountWatcher($policy, $account)),
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $this->deviceWatcher($policy, $account, $fingerprint))->getWatchFlag($this->deviceWatcher($policy, $account, $fingerprint)),
         ];
     }
 
@@ -186,16 +183,16 @@ final class KnownDeviceAntiEquilibriumScopeTest extends TestCase
         $policy = new LoginProtectionPolicy();
         $laptop = $this->device('rotating-laptop', 'HIGH', true);
         $this->typosThenSoftRetries($this->pipeline(), $policy, 'rotating-owner', $laptop);
-        $before = $this->correlationStore->getWatchFlag($this->deviceWatcher('login_protection', 'rotating-owner', 'rotating-laptop'));
+        $before = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $this->deviceWatcher('login_protection', 'rotating-owner', 'rotating-laptop'))->getWatchFlag($this->deviceWatcher('login_protection', 'rotating-owner', 'rotating-laptop'));
 
         $this->advance(300);
         $rotated = $this->pipeline('test_secret', 'new_secret');
         $this->assertTrue($this->preThenFailure($rotated, $policy, 'rotating-owner', $laptop));
 
         $this->assertGreaterThanOrEqual(3, $before);
-        $this->assertSame($before, $this->correlationStore->getWatchFlag($this->deviceWatcher('login_protection', 'rotating-owner', 'rotating-laptop')));
-        $this->assertSame(2, $this->store->checkBlock($this->key('login_protection', 'k5', 'rotating-owner:rotating-laptop', 'new_secret'))?->level);
-        $this->assertNull($this->store->checkBlock($this->key('login_protection', 'k4', 'rotating-owner', 'new_secret')));
+        $this->assertSame($before, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $this->deviceWatcher('login_protection', 'rotating-owner', 'rotating-laptop'))->getWatchFlag($this->deviceWatcher('login_protection', 'rotating-owner', 'rotating-laptop')));
+        $this->assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k5', 'rotating-owner:rotating-laptop', 'new_secret'))->checkBlock($this->key('login_protection', 'k5', 'rotating-owner:rotating-laptop', 'new_secret'))?->level);
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k4', 'rotating-owner', 'new_secret'))->checkBlock($this->key('login_protection', 'k4', 'rotating-owner', 'new_secret')));
     }
 
     /**
@@ -253,13 +250,13 @@ final class KnownDeviceAntiEquilibriumScopeTest extends TestCase
         return new EvaluationPipeline(
             $this->store,
             $this->correlationStore,
-            new BudgetTracker($this->store, $this->clock),
-            new AntiEquilibriumGate($this->correlationStore),
             new DecayCalculator($this->clock),
-            new EphemeralBucket($this->correlationStore),
             $currentSecret,
             'prod',
             $this->clock,
+            $this->clock,
+            null,
+            null,
             $previousSecret,
         );
     }
@@ -276,17 +273,17 @@ final class KnownDeviceAntiEquilibriumScopeTest extends TestCase
 
     private function key(string $policy, string $type, string $scope, string $secret = 'test_secret'): string
     {
-        return hash_hmac('sha256', "{$policy}:rate_limiter:{$type}:v2:prod:{$scope}", $secret);
+        return \Maatify\RateLimiter\Tests\Support\FixtureKeys::scope(($type), ($policy), 'prod', ($scope), $secret);
     }
 
     private function accountWatcher(string $policy, string $account): string
     {
-        return hash_hmac('sha256', "{$policy}:rate_limiter:aux:anti_equilibrium:v1:prod:{$account}", 'test_secret');
+        return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('aux.anti_equilibrium', ($policy), ($account), 'test_secret');
     }
 
     private function deviceWatcher(string $policy, string $account, string $fingerprint, string $secret = 'test_secret'): string
     {
-        return hash_hmac('sha256', "{$policy}:rate_limiter:aux:anti_equilibrium_device:v1:prod:{$account}:{$fingerprint}", $secret);
+        return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('aux.anti_equilibrium_device', ($policy), ($account), $secret, ($fingerprint));
     }
 }
 

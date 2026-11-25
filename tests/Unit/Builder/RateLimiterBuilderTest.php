@@ -194,7 +194,6 @@ final class RateLimiterBuilderTest extends TestCase
             '__construct',
             'fromFullCapabilityStore',
             'withExecutionContextProvider',
-            'withKeyScopeEncoding',
             'withClock',
             'withDeviceIdentityResolver',
             'withProvenPendingPermitLimit',

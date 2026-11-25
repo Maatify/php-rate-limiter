@@ -7,12 +7,9 @@ namespace Maatify\RateLimiter\Tests\System;
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\CircuitBreaker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\FingerprintHasher;
@@ -268,7 +265,7 @@ final class FallbackEnvironmentScopeSharingStudy262Test extends TestCase
         $store = new ThrowingRateLimitStore();
         $correlation = new NullCorrelationStore();
         $emitter = new RecordingFailureSignalEmitter();
-        $pipeline = new EvaluationPipeline($store, $correlation, new BudgetTracker($store, $clock), new AntiEquilibriumGate($correlation), new DecayCalculator($clock), new EphemeralBucket($correlation), 'test_secret', $environmentScope, $clock);
+        $pipeline = new EvaluationPipeline($store, $correlation, new DecayCalculator($clock), 'test_secret', $environmentScope, $clock, $clock, null, null);
 
         return new RateLimiterEngine(
             new DeviceIdentityResolver(new FingerprintHasher('test_secret')),

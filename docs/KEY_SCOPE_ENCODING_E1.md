@@ -1,10 +1,8 @@
 # Key Scope Encoding E1 — Derivation Contract and Key Map
 
-> **Status: `ACTIVE` ([DEC-044](decisions/DEC-044_E1_UNAMBIGUOUS_ACCOUNT_SCOPE_KEY_ENCODING.md)).** The Lead accepted the
-> opt-in implementation and security review in [PR #295](https://github.com/Maatify/php-rate-limiter/pull/295) at
-> [`ccfb86964159d126d57ca34615ee28f81333ef70`](https://github.com/Maatify/php-rate-limiter/commit/ccfb86964159d126d57ca34615ee28f81333ef70).
-> [KEY_STRATEGY](KEY_STRATEGY.md) is the normative owner. V2 is the default, and E1 is selected explicitly once per
-> builder with `withKeyScopeEncoding(KeyScopeEncodingEnum::E1)`. See §12 for the implementation evidence.
+> **Current contract: ACTIVE under [DEC-046](decisions/DEC-046_E1_ONLY_ACCOUNT_SCOPE_KEY_ENCODING.md).** E1 is the sole account-scope derivation. G1 implementation is subject to independent Lead review; no release acceptance is claimed. The opt-in implementation accepted in #295 is historical evidence retained in §12.
+>
+> [KEY_STRATEGY](KEY_STRATEGY.md) remains the normative owner. There is no encoding selector or injected deriver.
 
 ## 1. Purpose, scope and non-goals
 
@@ -14,14 +12,14 @@ non-blank string and `accountId` any non-empty string, so two different `(env, a
 preimage, hence the same HMAC and the same stored key. The study proved this from source and did not run any state under
 ambiguous scopes; this document does not either.
 
-**E1 is an opt-in key derivation** for the account-bearing identities in §5 (Set A). It fixes three things and nothing else:
+**E1 is the sole key derivation** for the account-bearing identities in §5 (Set A). It fixes three things and nothing else:
 
 1. the byte encoding of the HMAC input (§3);
 2. the HMAC key domain (§3.5);
 3. the physical storage identity of the keys it produces (§6).
 
 **Non-goals (each is a separate decision, §8 and §10):** reading V2 state from E1, seeding, the window policy, a migration
-or cut-over procedure, retiring V2, changing any score, budget, cycle, TTL or rotation rule, K1–K3, IPv6-adaptive state,
+or cut-over procedure, changing any score, budget, cycle, TTL or rotation rule, K1–K3, IPv6-adaptive state,
 IP/UA correlation, simple fixed-window throttling, the admission layer, the circuit breaker.
 
 ## 2. Terms (three different "versions")
@@ -184,26 +182,17 @@ Preimage of the K4 row (hex), to check the framing by hand: `MAGIC` = `6d6161746
 preimage and differ only by secret. The vectors are inputs to the acceptance tests (§9, AC-1); they are fixtures, not a
 claim about any deployment.
 
-## 4. One derivation source
+## 4. One derivation source and closed composition
 
-Before the implementation, the writer (`EvaluationPipeline`) and the operational reader
-(`RateLimitOperationalReader`) each derived the K4/K5 and auxiliary preimages. The old parity tests in
-`tests/Unit/Admission/FamilyReaderParityTest.php` checked that the two copies agreed. They could both drift together.
+The final internal `E1AccountScopeKeyDeriver` serves writer and reader, each constructed from its own validated environment. It is not injected or selected. Shared implementation, framing, vectors and Current/Previous rules are the contract; a shared immutable object instance is not required.
 
-**Contract:** for the purposes of §3.4 there is exactly one implementation of the derivation per encoding, and the writer,
-the operational reader and every future reader obtain Current **and** Previous keys from it:
+The Pipeline creates its own BudgetTracker and AntiEquilibriumGate on the exact validated E1 handles and EphemeralBucket on the correlation root. Advanced construction supplies the existing clock dependencies explicitly by role: the budget clock is required, and Gate/Bucket clocks may be null to retain backend-time operations. Builder passes its request clock to all four clock roles. Standalone helper APIs and clock authority do not change.
 
-1. one component builds `Current` from `(keySecret, current material)` and `Previous` from
-   `(previousKeySecret ?? keySecret, previousMaterial ?? material)`, existing only under today's rule
-   (`previousKeySecret !== null || device.previousFingerprintHash !== null`, `hasPreviousGeneration()`), and applies the
-   existing equal-key de-duplication (a Previous equal to Current is dropped by the consumer);
-2. `RateLimiterBuilder` creates it once and hands the same instance to `EvaluationPipeline` and to
-   `RateLimitOperationalReader`, so a runtime and its reader cannot select different encodings;
-3. no other `hash_hmac` over a preimage that contains `accountId` remains outside it (a source guard, §9 AC-3);
-4. the V2 implementation returns **byte-identical** keys, proven against golden values taken from `main` before the
-   refactor.
+`E1StoreBinding` is an internal closed capture, not a Host option: it obtains a distinct stable view, validates idempotence and interface preservation, and retains those handles. Builder transfers this closed capture to the reader internally so binding/adoption and execution use the same objects without another adapter lookup. A binding for another root is rejected. No public layout/derivation extensibility is introduced.
 
-The accepted public capability is recorded in §10 (D-4), with the implementation mapping in §12.
+Both root and view handles enter resource collection before binding/adoption. The official Redis views report the same root; arbitrary Host resource-report methods remain untrusted. Custom adapter storage and transaction semantics require conformance proof, not merely `instanceof`.
+
+Processing preflight uses the actual targets before backend access; Host policy getters run under the ownership/crossing boundary and their immutable results are retained through evaluation and retries. A lifecycle claim uses its existing capability and identity inputs, not a nonexistent policy object.
 
 ## 5. Scope bound to the source
 
@@ -214,8 +203,7 @@ Verified against `main@35398c11` (tree `c06f12ca…`). "Writer" is `EvaluationPi
 
 ### 5.1 Set A — re-derived by E1 (account-bearing preimages)
 
-The physical key of every row is `maatify:rate-limiter:e1:{sha256(namespace)}:{family}:{sha256(E1Key)}` (§6) when the
-runtime selects E1, and the V2 key of §2 otherwise.
+The physical key of every row is `maatify:rate-limiter:e1:{sha256(namespace)}:{family}:{sha256(E1Key)}` (§6) for every account-scope runtime and reader. The V2 column below identifies the historical preimage replaced; it is not an available runtime path.
 
 | Identity | Inputs | Logical key today → E1 | Families written / read | Writer | Reader | Rotation, atomicity, expiry path |
 |---|---|---|---|---|---|---|
@@ -384,26 +372,17 @@ cycle rule, a lifecycle rule or a rotation rule. Therefore, for E1 runtimes:
 
 ## 8. Compatibility boundaries
 
-1. **Selection is explicit.** E1 is chosen when the runtime is composed, once per `RateLimiterBuilder` (one runtime and its
-   reader), with `RateLimiterBuilder::withKeyScopeEncoding(KeyScopeEncodingEnum::E1)` (D-3). The runtime and reader
-   share the selection. §12 records when the builder fixes it.
-2. **V2 stays the default.** A configuration that does not select E1 keeps V2 across package updates: no automatic upgrade
-   and no behaviour or physical-key change for it (acceptance AC-8 compares it against `main@35398c11`).
-3. **A new isolated space can start on E1.** A space that serves **new** traffic (a store namespace and environment scope
-   with no prior V2 state for those accounts) starts on E1 directly. No V2 state exists to carry over.
-4. **Moving the same existing traffic is a migration**, with its own contract. Selecting E1 for accounts that already have V2
-   state starts a fresh Set A key space. Scores, budgets, cooldowns and **active blocks** for those identities remain in
-   V2. A separate approved migration path must preserve active blocks.
-5. **Outside this contract:** temporarily reading V2 blocks, seeding V2 into E1, the window policy and `DENY`/`ALLOW`/typed
-   fallback during a window, retiring V2, score and budget policy. The #291 rehearsal numbers are evidence for one specific
-   operational option and are not part of E1.
-6. **E1-capable store.** A new optional capability marks stores and correlation stores that implement §6.2. The builder
-   refuses E1 over a store without it, before the first write, as it already refuses opt-in lifecycle policies over a store
-   without the lifecycle capability (DEC-007). D-4 records the approved public capability.
+1. E1 is mandatory for Set A; V2 implementation, enum, selector and optional deriver injection are removed. This is a breaking pre-Stable change.
+2. `build()` requires E1-capable rate-limit and correlation roots, with all capabilities actually used preserved on their views. A view passed as root, an unstable/non-idempotent pair or a missing required capability fails before package backend commands. `e1Keyspace()` itself must be pure; arbitrary adapter code is not sandboxed.
+3. `buildOperationalReader()` requires E1 and read-only rate-store/view capabilities, without correlation or mutation-only requirements. The advanced reader retains DEC-032's separately documented low-level fallback for an E1-capable store without read-only reads.
+4. Start new traffic in an isolated namespace/environment after capability/ACL setup. The package does not discover old workers or prove the namespace empty.
+5. Moving existing V2 traffic starts fresh Set A and derivative Set B identities, losing visibility of blocks, scores, budgets, cooldowns and affected history. No live upgrade, dual-read, cross-encoding seed, mixed workers or rollback is supported. No Redis data is deleted. Preserved E1 bytes alone do not qualify a deployment update.
+6. Current/Previous always means secret/material generations **inside E1**. Their atomic budget seed and lifecycle continuity remain; it is not a migration between encodings.
+7. Adjacent Admission NUL joins, the binding-epoch contract discrepancy and other multi-field framing defects remain release blockers tracked on #284. G1 does not fix them or authorize a wider state reset.
 
-## 9. Acceptance criteria
+## 9. Historical opt-in acceptance criteria
 
-The criteria below define the evidence for the implementation. See §12 and [PR #295](https://github.com/Maatify/php-rate-limiter/pull/295) for the observed coverage and its
+The following criteria describe the accepted opt-in implementation of DEC-044, now superseded. G1 replaces selection/V2-default criteria with the closed-composition and E1-only gates in §13; the storage, expiry, rotation and atomicity regressions remain required. See §12 and [PR #295](https://github.com/Maatify/php-rate-limiter/pull/295) for the observed coverage and its
 limits. Redis evidence uses the repository's pinned Redis 7.0.15 service and is taken from outside Lua
 (`PEXPIRETIME`, `DUMP`, `SCAN`) for **PHP 32-bit and 64-bit**. The runs record `PHP_INT_SIZE` and use synthetic data.
 
@@ -419,7 +398,7 @@ limits. Redis evidence uses the repository's pinned Redis 7.0.15 service and is 
 | AC-8 | Compatibility: with E1 unselected the full suite passes and the physical keys equal `main@35398c11`; E1 over a store without the capability fails at composition; a V2 reader cannot read E1 state and an E1 reader cannot read V2 state, each shown explicitly. |
 | AC-9 | One transaction **per attempt** for both layouts. A request that **writes a V2-layout key and an E1-layout key** (for example a K1 hard-block and a K4 score) is served by one store instance. Each **attempt** issues at most one `commit`. DEC-037 still allows a conflicting attempt to be evaluated again and saved by a new attempt, so the evidence has two parts: **(i) a conflicting attempt** (a key of either layout changed between read and commit) returns the conflict and saves **none** of the request's writes in **either** layout (keyspace, values and expiries unchanged, read from outside Lua), and the request is re-evaluated within the DEC-037 limits; **(ii) the successful attempt** saves **both** layouts together, in that one `commit`. A forced `NOPERM` in each layout leaves both layouts unchanged. **Interruption has two distinct outcomes, each read from outside Lua and never conflated (DEC-037, Consequences):** **(iii) interrupted before the save reached Redis** (no `commit` delivered) leaves **none** of the request's writes in **either** layout; **(iv) Redis applied the `commit` and the reply was lost** leaves the request's writes stored in **both** layouts together (the save applies in full or not at all) while the caller sees a `BackendFailureException` with an **unknown outcome**, never a partial one, and the lost-reply contract is preserved (no re-evaluation presumes the save failed). Neither case may leave one layout written and the other not. Evidence shows a single held `requestState`, a single ownership claim (DEC-041: an independent call during the request is refused on either view) and, per attempt, a single `commit` script call, on PHP32 and PHP64. A view or key that owns separate request state fails this item. |
 
-## 10. Decision register
+## 10. Historical opt-in decision register
 
 The Lead accepted D-1 through D-6 in [PR #295](https://github.com/Maatify/php-rate-limiter/pull/295) under the Owner's delegation on [#284](https://github.com/Maatify/php-rate-limiter/issues/284). D-7
 remains a separate migration decision.
@@ -444,7 +423,7 @@ remains a separate migration decision.
 - Redis Cluster, Redis older than 7.0, non-official stores and the admission layer are not covered.
 - It does not decide when, or whether, an existing deployment moves to E1.
 
-## 12. Implementation record
+## 12. Historical opt-in implementation record
 
 Issue [#284](https://github.com/Maatify/php-rate-limiter/issues/284), base `main@4c523096`. The Lead accepted the implementation in [PR #295](https://github.com/Maatify/php-rate-limiter/pull/295)
 at [`ccfb86964159d126d57ca34615ee28f81333ef70`](https://github.com/Maatify/php-rate-limiter/commit/ccfb86964159d126d57ca34615ee28f81333ef70).
@@ -479,3 +458,7 @@ from V2 only because their K4/K5 input differs. The V2 account state that E1 rep
 - AC-8: the existing suites for V2 unchanged.
 
 **Known limits.** The DEC-003 cycle, DEC-007 lifecycle and budget-rotation suites that build their own pipelines or Redis stores are not re-run against E1 one by one; the laboratory suites above cover the evaluation logic under E1 and the per-family differential above covers the Redis routing of every family. Redis Cluster, replicas and non-official stores are not covered.
+
+## 13. G1 acceptance boundary
+
+The accepted G1 design and correction are on #284 comments 7156192985, 7156743430 and 7156769415. Required current evidence includes: sole-E1 public writer/direct construction/reader, unchanged vectors and Set B/C rules, closed helper injection and explicit clock roles, actual-view capability and ownership checks, stable handle handoff, failed/nested/cancelled builds, snapshot adoption, Current/Previous budget/lifecycle rotation, plain-string root compatibility in all ten families, both-layout atomicity/ACL/expiry/lost replies on PHP32/64, unsupported V2 transition, and comparative performance. Existing applicable suites, archive detectors and external Composer consumer verification remain required. Current results belong to the implementation PR's exact HEAD; historical #295 PASS is not G1 PASS.

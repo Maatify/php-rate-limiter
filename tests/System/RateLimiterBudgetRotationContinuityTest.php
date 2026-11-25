@@ -8,7 +8,6 @@ use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
@@ -16,8 +15,6 @@ use Maatify\RateLimiter\Service\CircuitBreaker;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\RateLimiterEngine;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Tests\Support\CircuitBreaker\InMemoryCircuitBreakerStore;
@@ -55,19 +52,19 @@ final class RateLimiterBudgetRotationContinuityTest extends TestCase
         );
         $oldK4Key = $this->key('login_protection', 'k4', $accountId, 'old_secret');
         $newK4Key = $this->key('login_protection', 'k4', $accountId, 'new_secret');
-        $oldBudget = $this->store->incrementBudget($oldK4Key, 86400, 19);
+        $oldBudget = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $oldK4Key)->incrementBudget($oldK4Key, 86400, 19);
 
         $result = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
 
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
         $this->assertSame(3, $result->blockLevel);
 
-        $newBudget = $this->store->getBudget($newK4Key);
+        $newBudget = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $newK4Key)->getBudget($newK4Key);
         $this->assertNotNull($newBudget);
         $this->assertSame(20, $newBudget->count);
         $this->assertSame($oldBudget->epochStart, $newBudget->epochStart);
 
-        $remainingOldBudget = $this->store->getBudget($oldK4Key);
+        $remainingOldBudget = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $oldK4Key)->getBudget($oldK4Key);
         $this->assertNotNull($remainingOldBudget);
         $this->assertSame(19, $remainingOldBudget->count);
         $this->assertSame($oldBudget->epochStart, $remainingOldBudget->epochStart);
@@ -84,20 +81,20 @@ final class RateLimiterBudgetRotationContinuityTest extends TestCase
         );
         $oldK4Key = $this->key('login_protection', 'k4', $accountId, 'old_secret');
         $newK4Key = $this->key('login_protection', 'k4', $accountId, 'new_secret');
-        $newBudget = $this->store->incrementBudget($newK4Key, 86400, 1);
-        $this->store->incrementBudget($oldK4Key, 86400, 20);
+        $newBudget = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $newK4Key)->incrementBudget($newK4Key, 86400, 1);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $oldK4Key)->incrementBudget($oldK4Key, 86400, 20);
 
         $result = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
 
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
         $this->assertSame(0, $result->blockLevel);
 
-        $storedNewBudget = $this->store->getBudget($newK4Key);
+        $storedNewBudget = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $newK4Key)->getBudget($newK4Key);
         $this->assertNotNull($storedNewBudget);
         $this->assertSame(1, $storedNewBudget->count);
         $this->assertSame($newBudget->epochStart, $storedNewBudget->epochStart);
 
-        $storedOldBudget = $this->store->getBudget($oldK4Key);
+        $storedOldBudget = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $oldK4Key)->getBudget($oldK4Key);
         $this->assertNotNull($storedOldBudget);
         $this->assertSame(20, $storedOldBudget->count);
     }
@@ -115,19 +112,19 @@ final class RateLimiterBudgetRotationContinuityTest extends TestCase
         );
         $oldK4Key = $this->key('login_protection', 'k4', $accountId, 'old_secret');
         $newK4Key = $this->key('login_protection', 'k4', $accountId, 'new_secret');
-        $oldBudget = $baseOnlyStore->incrementBudget($oldK4Key, 86400, 19);
+        $oldBudget = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($baseOnlyStore, $oldK4Key)->incrementBudget($oldK4Key, 86400, 19);
 
         $this->expectException(\Maatify\RateLimiter\Exception\RateLimiterException::class);
         $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
 
-        $storedOldBudget = $baseOnlyStore->getBudget($oldK4Key);
+        $storedOldBudget = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($baseOnlyStore, $oldK4Key)->getBudget($oldK4Key);
         $this->assertNotNull($storedOldBudget);
         $this->assertSame(19, $storedOldBudget->count);
         $this->assertSame($oldBudget->epochStart, $storedOldBudget->epochStart);
-        $this->assertNull($baseOnlyStore->getBudget($newK4Key));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($baseOnlyStore, $newK4Key)->getBudget($newK4Key));
     }
 
-    public function testBaseOnlyStoreWithoutV1BudgetContinuesNormalPathWithoutCapability(): void
+    public function testBaseOnlyStoreWithoutPreviousBudgetStillRequiresConfiguredRotationCapabilities(): void
     {
         $baseOnlyStore = new BaseOnlyInMemoryRateLimitStore($this->clock);
         $engine = $this->createEngineWithStoreAndSecrets($baseOnlyStore, 'new_secret', 'old_secret', new LoginProtectionPolicy());
@@ -141,12 +138,10 @@ final class RateLimiterBudgetRotationContinuityTest extends TestCase
         $oldK4Key = $this->key('login_protection', 'k4', $accountId, 'old_secret');
         $newK4Key = $this->key('login_protection', 'k4', $accountId, 'new_secret');
 
-        $result = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+        $this->expectException(\Maatify\RateLimiter\Exception\RateLimiterException::class);
+        $this->expectExceptionMessage('HardBlockCycleStoreInterface');
+        $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
 
-        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
-        $this->assertNull($baseOnlyStore->getBudget($oldK4Key));
-        $this->assertSame(1, $baseOnlyStore->getBudget($newK4Key)?->count);
-        $this->assertSame(3, $baseOnlyStore->get($newK4Key)?->value);
     }
 
     private function createEngineWithStoreAndSecrets(
@@ -159,13 +154,13 @@ final class RateLimiterBudgetRotationContinuityTest extends TestCase
         $pipeline = new EvaluationPipeline(
             $store,
             $this->correlationStore,
-            new BudgetTracker($store, $this->clock),
-            new AntiEquilibriumGate($this->correlationStore),
             new DecayCalculator($this->clock),
-            new EphemeralBucket($this->correlationStore),
             $currentSecret,
             'prod',
             $this->clock,
+            $this->clock,
+            null,
+            null,
             $previousSecret,
         );
 
@@ -182,10 +177,6 @@ final class RateLimiterBudgetRotationContinuityTest extends TestCase
 
     private function key(string $policy, string $type, string $scope, string $secret = 'test_secret'): string
     {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:{$type}:v2:prod:{$scope}",
-            $secret,
-        );
+        return \Maatify\RateLimiter\Tests\Support\FixtureKeys::scope(($type), ($policy), 'prod', ($scope), $secret);
     }
 }

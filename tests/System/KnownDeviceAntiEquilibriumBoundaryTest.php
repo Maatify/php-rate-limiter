@@ -22,10 +22,7 @@ use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 use Maatify\RateLimiter\Enum\FailureFallbackProfileEnum;
 use Maatify\RateLimiter\Exception\BackendFailureException;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
@@ -63,7 +60,7 @@ final class KnownDeviceAntiEquilibriumBoundaryTest extends TestCase
         $result = $this->pipeline()->process(new ApiHeavyProtectionPolicy(), $this->context('api-owner'), RateLimitCommand::recordFailure('api_heavy_protection'), $this->device('api-fp', true));
 
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
-        $this->assertNull($this->store->checkBlock($this->key('api_heavy_protection', 'k5', 'api-owner:api-fp')));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('api_heavy_protection', 'k5', 'api-owner:api-fp'))->checkBlock($this->key('api_heavy_protection', 'k5', 'api-owner:api-fp')));
     }
 
     /**
@@ -85,7 +82,7 @@ final class KnownDeviceAntiEquilibriumBoundaryTest extends TestCase
         $result = $this->pipeline()->process($replacement, $this->context('migrated-owner'), RateLimitCommand::recordFailure('login_protection'), $this->device('migrated-fp', true));
 
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
-        $this->assertNull($this->store->checkBlock($this->key('login_protection', 'k5', 'migrated-owner:migrated-fp')));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k5', 'migrated-owner:migrated-fp'))->checkBlock($this->key('login_protection', 'k5', 'migrated-owner:migrated-fp')));
     }
 
     /**
@@ -100,7 +97,7 @@ final class KnownDeviceAntiEquilibriumBoundaryTest extends TestCase
         $result = $this->pipeline()->process(new NoBudgetK5Policy(), $this->context('nobudget-owner'), RateLimitCommand::recordFailure('no_budget_flow'), $this->device('nobudget-fp', true));
 
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
-        $this->assertNull($this->store->checkBlock($this->key('no_budget_flow', 'k5', 'nobudget-owner:nobudget-fp')));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('no_budget_flow', 'k5', 'nobudget-owner:nobudget-fp'))->checkBlock($this->key('no_budget_flow', 'k5', 'nobudget-owner:nobudget-fp')));
     }
 
     /**
@@ -172,11 +169,11 @@ final class KnownDeviceAntiEquilibriumBoundaryTest extends TestCase
             ->build();
         $context = new RateLimitContextDTO('198.51.100.90', 'Chrome/123', 'engine-owner', ['canvas' => 'engine-laptop'], 'engine-session', true);
         $deviceWatcher = $this->engineDeviceWatcher($limiter, $context);
-        $accountWatcher = hash_hmac('sha256', 'mixed_fault_flow:rate_limiter:aux:anti_equilibrium:v1:prod:engine-owner', 'key-secret');
+        $accountWatcher = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('aux.anti_equilibrium', 'mixed_fault_flow', 'engine-owner', 'key-secret');
 
         $first = $limiter->limit($context, RateLimitCommand::recordFailure('mixed_fault_flow'));
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $first->decision);
-        $this->assertSame(1, $this->store->getWatchFlag($deviceWatcher));
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $deviceWatcher)->getWatchFlag($deviceWatcher));
 
         $this->store->failWritesTo = [$accountWatcher];
         $faulted = [];
@@ -192,12 +189,12 @@ final class KnownDeviceAntiEquilibriumBoundaryTest extends TestCase
             [RateLimitResultDTO::DECISION_HARD_BLOCK, 'FAIL_CLOSED'],
             [RateLimitResultDTO::DECISION_ALLOW, 'DEGRADED_MODE'],
         ], $faulted);
-        $this->assertSame(0, $this->store->getWatchFlag($accountWatcher));
-        $this->assertSame(1, $this->store->getWatchFlag($deviceWatcher));
+        $this->assertSame(0, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $accountWatcher)->getWatchFlag($accountWatcher));
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $deviceWatcher)->getWatchFlag($deviceWatcher));
         // The faulted request's own K4 L1 score persistence is written before
         // the watcher write fails (the pipeline is not transactional across
         // store operations, as on S0). L1 never denies; no account-wide HARD.
-        $this->assertSame(1, $this->store->checkBlock(hash_hmac('sha256', 'mixed_fault_flow:rate_limiter:k4:v2:prod:engine-owner', 'key-secret'))?->level);
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'mixed_fault_flow', 'engine-owner', 'key-secret'))->checkBlock((new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'mixed_fault_flow', 'engine-owner', 'key-secret'))?->level);
         $after = $limiter->limit(
             new RateLimitContextDTO('198.51.100.90', 'Chrome/123', 'engine-owner', ['canvas' => 'engine-phone'], 'engine-session-2', true),
             RateLimitCommand::checkOnly('mixed_fault_flow'),
@@ -211,7 +208,7 @@ final class KnownDeviceAntiEquilibriumBoundaryTest extends TestCase
         $hash = $resolver->resolve($context)->fingerprintHash;
         self::assertIsString($hash);
 
-        return hash_hmac('sha256', "mixed_fault_flow:rate_limiter:aux:anti_equilibrium_device:v1:prod:engine-owner:{$hash}", 'key-secret');
+        return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('aux.anti_equilibrium_device', 'mixed_fault_flow', 'engine-owner', 'key-secret', ($hash));
     }
 
     /**
@@ -223,21 +220,21 @@ final class KnownDeviceAntiEquilibriumBoundaryTest extends TestCase
     private function watchers(string $account, string $fingerprint): array
     {
         return [
-            $this->store->getWatchFlag($this->accountWatcher('mixed_fault_flow', $account)),
-            $this->store->getWatchFlag($this->deviceWatcher('mixed_fault_flow', $account, $fingerprint)),
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->accountWatcher('mixed_fault_flow', $account))->getWatchFlag($this->accountWatcher('mixed_fault_flow', $account)),
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->deviceWatcher('mixed_fault_flow', $account, $fingerprint))->getWatchFlag($this->deviceWatcher('mixed_fault_flow', $account, $fingerprint)),
         ];
     }
 
     private function seedDeviceEvents(string $policy, string $account, string $fingerprint, int $events): void
     {
         for ($event = 0; $event < $events; $event++) {
-            $this->store->incrementWatchFlag($this->deviceWatcher($policy, $account, $fingerprint), 21600);
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->deviceWatcher($policy, $account, $fingerprint))->incrementWatchFlag($this->deviceWatcher($policy, $account, $fingerprint), 21600);
         }
     }
 
     private function pipeline(): EvaluationPipeline
     {
-        return new EvaluationPipeline($this->store, $this->store, new BudgetTracker($this->store, $this->clock), new AntiEquilibriumGate($this->store), new DecayCalculator($this->clock), new EphemeralBucket($this->store), 'test_secret', 'prod', $this->clock, null);
+        return new EvaluationPipeline($this->store, $this->store, new DecayCalculator($this->clock), 'test_secret', 'prod', $this->clock, $this->clock, null, null, null);
     }
 
     private function context(string $account): RateLimitContextDTO
@@ -252,17 +249,17 @@ final class KnownDeviceAntiEquilibriumBoundaryTest extends TestCase
 
     private function key(string $policy, string $type, string $scope): string
     {
-        return hash_hmac('sha256', "{$policy}:rate_limiter:{$type}:v2:prod:{$scope}", 'test_secret');
+        return \Maatify\RateLimiter\Tests\Support\FixtureKeys::scope(($type), ($policy), 'prod', ($scope), 'test_secret');
     }
 
     private function accountWatcher(string $policy, string $account): string
     {
-        return hash_hmac('sha256', "{$policy}:rate_limiter:aux:anti_equilibrium:v1:prod:{$account}", 'test_secret');
+        return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('aux.anti_equilibrium', ($policy), ($account), 'test_secret');
     }
 
     private function deviceWatcher(string $policy, string $account, string $fingerprint): string
     {
-        return hash_hmac('sha256', "{$policy}:rate_limiter:aux:anti_equilibrium_device:v1:prod:{$account}:{$fingerprint}", 'test_secret');
+        return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('aux.anti_equilibrium_device', ($policy), ($account), 'test_secret', ($fingerprint));
     }
 }
 

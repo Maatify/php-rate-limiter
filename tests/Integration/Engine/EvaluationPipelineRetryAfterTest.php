@@ -13,8 +13,6 @@ use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
@@ -55,10 +53,10 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $this->assertEquals(0, $result->retryAfter);
 
         // Assert no updates were made to the store
-        $k4Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
-        $this->assertNull($this->store->getBudget($k4Key));
+        $k4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'otp_protection', 'acct_123', 'test_secret');
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->getBudget($k4Key));
         $k1 = hash_hmac('sha256', 'otp_protection:rate_limiter:k1:v2:prod:127.0.0.1', 'test_secret');
-        $this->assertNull($this->store->get($k1));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1)->get($k1));
     }
 
     public function testExistingActiveBlockReturnsCorrectDecisionAndRetryAfter(): void
@@ -67,9 +65,9 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
         $command = RateLimitCommand::checkOnly('otp_protection');
 
-        $k4Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
-        $this->store->block($k4Key, 3, 3600);
-        $this->store->set($k4Key, 50, 3600); // L3 threshold
+        $k4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'otp_protection', 'acct_123', 'test_secret');
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->block($k4Key, 3, 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->set($k4Key, 50, 3600); // L3 threshold
 
         $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:02:00')); // +120 seconds
 
@@ -86,11 +84,11 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $pipeline = $this->createPipeline('previous_secret');
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
-        $currentKey = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
-        $previousKey = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_123', 'previous_secret');
+        $currentKey = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'otp_protection', 'acct_123', 'test_secret');
+        $previousKey = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'otp_protection', 'acct_123', 'previous_secret');
 
-        $this->store->block($currentKey, 2, 600);
-        $this->store->block($previousKey, 3, 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $currentKey)->block($currentKey, 2, 600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $previousKey)->block($previousKey, 3, 3600);
         $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:02:00'));
 
         $result = $pipeline->process($this->policy, $context, RateLimitCommand::checkOnly('otp_protection'), $device);
@@ -105,9 +103,9 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $pipeline = $this->createPipeline('previous_secret');
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
-        $previousKey = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_123', 'previous_secret');
+        $previousKey = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'otp_protection', 'acct_123', 'previous_secret');
 
-        $this->store->block($previousKey, 3, 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $previousKey)->block($previousKey, 3, 3600);
         $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:02:00'));
 
         $result = $pipeline->process($this->policy, $context, RateLimitCommand::checkOnly('otp_protection'), $device);
@@ -124,12 +122,12 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $command = RateLimitCommand::checkOnly('otp_protection');
 
         $k1Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k1:v2:prod:127.0.0.1', 'test_secret');
-        $k4Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_456', 'test_secret');
+        $k4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'otp_protection', 'acct_456', 'test_secret');
 
         // Lower level, longer remaining TTL.
-        $this->store->block($k1Key, 2, 1200);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1Key)->block($k1Key, 2, 1200);
         // Higher level, shorter remaining TTL.
-        $this->store->block($k4Key, 3, 200);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->block($k4Key, 3, 200);
 
         $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:02:00')); // +120 seconds
 
@@ -148,15 +146,15 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_789');
         $device = new DeviceIdentityDTO('hash_789', 'HIGH', false, false, 'Mozilla');
 
-        $currentK4Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_789', 'test_secret');
+        $currentK4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'otp_protection', 'acct_789', 'test_secret');
         $currentK1Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k1:v2:prod:127.0.0.1', 'test_secret');
         $previousK1Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k1:v2:prod:127.0.0.1', 'previous_secret');
 
         // Active Current restriction on the K4 scope.
-        $this->store->block($currentK4Key, 2, 300);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $currentK4Key)->block($currentK4Key, 2, 300);
         // No Current restriction on K1; an active Previous restriction exists
         // on that different logical scope instead.
-        $this->store->block($previousK1Key, 4, 600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $previousK1Key)->block($previousK1Key, 4, 600);
 
         $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:02:00')); // +120 seconds
 
@@ -171,12 +169,12 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         // No score, budget, or correlation mutation occurred once the
         // effective active HARD state was resolved: the pipeline must
         // terminate before any later stage runs.
-        self::assertNull($this->store->get($currentK4Key));
-        self::assertNull($this->store->getBudget($currentK4Key));
-        self::assertSame(2, $this->store->checkBlock($currentK4Key)?->level);
-        self::assertNull($this->store->get($currentK1Key));
-        self::assertNull($this->store->checkBlock($currentK1Key));
-        self::assertSame(4, $this->store->checkBlock($previousK1Key)?->level);
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $currentK4Key)->get($currentK4Key));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $currentK4Key)->getBudget($currentK4Key));
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $currentK4Key)->checkBlock($currentK4Key)?->level);
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $currentK1Key)->get($currentK1Key));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $currentK1Key)->checkBlock($currentK1Key));
+        self::assertSame(4, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $previousK1Key)->checkBlock($previousK1Key)?->level);
     }
 
     public function testScoreThresholdAndDecayProducesExpectedOutcome(): void
@@ -184,10 +182,10 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
 
-        $k4Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
+        $k4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'otp_protection', 'acct_123', 'test_secret');
 
         // Thresholds for K4 on OTP: 4, 7, 10
-        $this->store->set($k4Key, 3, 3600); // Initial score 3 (below L1 = 4)
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->set($k4Key, 3, 3600); // Initial score 3 (below L1 = 4)
 
         $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:10:00')); // Advance 10 mins (decay = 1)
 
@@ -203,22 +201,22 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $this->assertEquals(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         $this->assertEquals(2, $result->blockLevel);
         $this->assertEquals(60, $result->retryAfter); // Fresh lifecycle publication uses the L2 penalty duration.
-        $this->assertEquals(60, $this->store->checkBlock($k4Key)?->expiresAt - $this->clock->now()->getTimestamp());
+        $this->assertEquals(60, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->checkBlock($k4Key)?->expiresAt - $this->clock->now()->getTimestamp());
     }
 
     public function testScoreUpdateDuringActivePauseIncludesRemainingPauseInRetryAfter(): void
     {
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
-        $k4Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
+        $k4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'otp_protection', 'acct_123', 'test_secret');
         $base = $this->clock->now()->getTimestamp();
 
-        $this->store->set($k4Key, 2, 3600);
-        $this->store->blockWithCycleTracking($k4Key, null, 2, 1, $base, 21600, 2, 600, 86400);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->set($k4Key, 2, 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->blockWithCycleTracking($k4Key, null, 2, 1, $base, 21600, 2, 600, 86400);
 
         $secondCycleAt = $base + 2;
         $this->clock->setNow(new \DateTimeImmutable('@' . $secondCycleAt));
-        $pause = $this->store->blockWithCycleTracking(
+        $pause = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->blockWithCycleTracking(
             $k4Key,
             null,
             2,
@@ -252,8 +250,8 @@ class EvaluationPipelineRetryAfterTest extends TestCase
     {
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
-        $k4Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
-        $this->store->set($k4Key, 4, 3600);
+        $k4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'otp_protection', 'acct_123', 'test_secret');
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->set($k4Key, 4, 3600);
 
         $result = $this->pipeline->process(
             $this->policy,
@@ -271,8 +269,8 @@ class EvaluationPipelineRetryAfterTest extends TestCase
     {
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
-        $k4Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
-        $this->store->set($k4Key, 9, 3600);
+        $k4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'otp_protection', 'acct_123', 'test_secret');
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->set($k4Key, 9, 3600);
 
         $result = $this->pipeline->process(
             $this->policy,
@@ -284,10 +282,10 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         self::assertSame(3, $result->blockLevel);
         self::assertSame(300, $result->retryAfter);
-        self::assertSame(300, $this->store->checkBlock($k4Key)?->expiresAt - $this->clock->now()->getTimestamp());
-        self::assertSame(3, $this->store->checkBlock($k4Key)?->level);
+        self::assertSame(300, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->checkBlock($k4Key)?->expiresAt - $this->clock->now()->getTimestamp());
+        self::assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->checkBlock($k4Key)?->level);
         $this->clock->setNow(new \DateTimeImmutable('@' . ($this->clock->now()->getTimestamp() + 301)));
-        self::assertNotNull($this->store->readGenerationBoundScoreState($k4Key, null)?->postPunishmentReentry);
+        self::assertNotNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->readGenerationBoundScoreState($k4Key, null)?->postPunishmentReentry);
     }
 
     public function testFreshK4RetryAfterDoesNotSuppressIndependentLongerGate(): void
@@ -324,9 +322,9 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
         $k1Key = hash_hmac('sha256', 'independent_gate_fixture:rate_limiter:k1:v2:prod:127.0.0.1', 'test_secret');
-        $k4Key = hash_hmac('sha256', 'independent_gate_fixture:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
-        $this->store->set($k1Key, 3, 3600);
-        $this->store->set($k4Key, 6, 3600);
+        $k4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'independent_gate_fixture', 'acct_123', 'test_secret');
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1Key)->set($k1Key, 3, 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->set($k4Key, 6, 3600);
 
         $result = $this->pipeline->process(
             $policy,
@@ -338,12 +336,12 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         self::assertSame(3, $result->blockLevel);
         self::assertSame(540, $result->retryAfter);
-        $k4Block = $this->store->checkBlock($k4Key);
+        $k4Block = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->checkBlock($k4Key);
         self::assertNotNull($k4Block);
         self::assertSame(2, $k4Block->level);
         self::assertSame(60, $k4Block->expiresAt - $this->clock->now()->getTimestamp());
         $this->clock->setNow(new \DateTimeImmutable('@' . ($this->clock->now()->getTimestamp() + 61)));
-        self::assertNotNull($this->store->readGenerationBoundScoreState($k4Key, null)?->postPunishmentReentry);
+        self::assertNotNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->readGenerationBoundScoreState($k4Key, null)?->postPunishmentReentry);
     }
 
     public function testIndependentHardGateDoesNotPublishK4LifecycleEvidenceBelowL2(): void
@@ -380,9 +378,9 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
         $k1Key = hash_hmac('sha256', 'independent_hard_without_k4_fixture:rate_limiter:k1:v2:prod:127.0.0.1', 'test_secret');
-        $k4Key = hash_hmac('sha256', 'independent_hard_without_k4_fixture:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
-        $this->store->set($k1Key, 3, 3600);
-        $this->store->set($k4Key, 4, 3600);
+        $k4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'independent_hard_without_k4_fixture', 'acct_123', 'test_secret');
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1Key)->set($k1Key, 3, 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->set($k4Key, 4, 3600);
 
         $result = $this->pipeline->process(
             $policy,
@@ -393,7 +391,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
 
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         self::assertSame(3, $result->blockLevel);
-        $k4State = $this->store->readGenerationBoundScoreState($k4Key, null);
+        $k4State = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->readGenerationBoundScoreState($k4Key, null);
         self::assertNotNull($k4State);
         self::assertNull($k4State->postPunishmentReentry);
     }
@@ -404,7 +402,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
         $k3Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k3:v2:prod:127.0.0.1:hash_123', 'test_secret');
-        $this->store->set($k3Key, 299, 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k3Key)->set($k3Key, 299, 3600);
 
         $result = $this->pipeline->process(
             $policy,
@@ -423,7 +421,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
         $k1Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k1:v2:prod:127.0.0.1', 'test_secret');
-        $this->store->set($k1Key, 599, 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1Key)->set($k1Key, 599, 3600);
 
         $result = $this->pipeline->process(
             $policy,
@@ -442,19 +440,23 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'LOW', false, false, 'Mozilla');
         $k3Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k3:v2:prod:127.0.0.1:hash_123', 'test_secret');
-        $this->store->set($k3Key, 300, 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k3Key)->set($k3Key, 300, 3600);
 
         $result = $this->pipeline->process($policy, $context, RateLimitCommand::checkOnly('api_heavy_protection'), $device);
 
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         self::assertSame(2, $result->blockLevel);
         self::assertSame(300, $result->retryAfter);
-        self::assertSame(2, $this->store->checkBlock(hash_hmac(
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, hash_hmac(
+            'sha256',
+            'api_heavy_protection:rate_limiter:k2:v2:prod:127.0.0.1:Mozilla',
+            'test_secret',
+        ))->checkBlock(hash_hmac(
             'sha256',
             'api_heavy_protection:rate_limiter:k2:v2:prod:127.0.0.1:Mozilla',
             'test_secret',
         ))?->level);
-        self::assertNull($this->store->checkBlock($k3Key));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k3Key)->checkBlock($k3Key));
     }
 
     public function testLowConfidenceK3UpdateRemainsHardL2AndTargetsK2Persistence(): void
@@ -464,24 +466,24 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $device = new DeviceIdentityDTO('hash_123', 'LOW', false, false, 'Mozilla');
         $k2Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k2:v2:prod:127.0.0.1:Mozilla', 'test_secret');
         $k3Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k3:v2:prod:127.0.0.1:hash_123', 'test_secret');
-        $this->store->set($k3Key, 299, 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k3Key)->set($k3Key, 299, 3600);
 
         $result = $this->pipeline->process($policy, $context, new RateLimitCommand('api_heavy_protection'), $device);
 
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         self::assertSame(2, $result->blockLevel);
-        self::assertSame(2, $this->store->checkBlock($k2Key)?->level);
-        self::assertNull($this->store->checkBlock($k3Key));
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k2Key)->checkBlock($k2Key)?->level);
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k3Key)->checkBlock($k3Key));
     }
 
     public function testApiHeavyIgnoresCurrentAndPreviousK4AndK5Blocks(): void
     {
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
-        $currentK4 = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
-        $currentK5 = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k5:v2:prod:acct_123:hash_123', 'test_secret');
-        $this->store->block($currentK4, 3, 600);
-        $this->store->block($currentK5, 3, 600);
+        $currentK4 = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'api_heavy_protection', 'acct_123', 'test_secret');
+        $currentK5 = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k5', 'api_heavy_protection', 'acct_123', 'test_secret', 'hash_123');
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $currentK4)->block($currentK4, 3, 600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $currentK5)->block($currentK5, 3, 600);
 
         $currentResult = $this->pipeline->process(
             new ApiHeavyProtectionPolicy(),
@@ -492,10 +494,10 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $currentResult->decision);
 
         $rotatedPipeline = $this->createPipeline('previous_secret');
-        $previousK4 = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k4:v2:prod:acct_123', 'previous_secret');
-        $previousK5 = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k5:v2:prod:acct_123:hash_123', 'previous_secret');
-        $this->store->block($previousK4, 3, 600);
-        $this->store->block($previousK5, 3, 600);
+        $previousK4 = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'api_heavy_protection', 'acct_123', 'previous_secret');
+        $previousK5 = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k5', 'api_heavy_protection', 'acct_123', 'previous_secret', 'hash_123');
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $previousK4)->block($previousK4, 3, 600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $previousK5)->block($previousK5, 3, 600);
 
         $previousResult = $rotatedPipeline->process(
             new ApiHeavyProtectionPolicy(),
@@ -512,19 +514,19 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $pipeline = new EvaluationPipeline(
             $this->store,
             $correlationStore,
-            new BudgetTracker($this->store, $this->clock),
-            new AntiEquilibriumGate($correlationStore),
             new DecayCalculator($this->clock),
-            new \Maatify\RateLimiter\Service\EphemeralBucket($correlationStore),
             'test_secret',
             'prod',
             $this->clock,
+            $this->clock,
+            null,
+            null,
         );
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
-        $k4Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
-        $this->store->set($k4Key, 1, 3600);
-        $correlationStore->incrementWatchFlag("watch:{$k4Key}", 1800);
+        $k4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'otp_protection', 'acct_123', 'test_secret');
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->set($k4Key, 1, 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($correlationStore, "watch:{$k4Key}")->incrementWatchFlag("watch:{$k4Key}", 1800);
 
         $result = $pipeline->process($this->policy, $context, RateLimitCommand::recordFailure('otp_protection'), $device);
 
@@ -557,23 +559,23 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $pipeline = new EvaluationPipeline(
             $this->store,
             $correlationStore,
-            new BudgetTracker($this->store, $this->clock),
-            new AntiEquilibriumGate($correlationStore),
             new DecayCalculator($this->clock),
-            new \Maatify\RateLimiter\Service\EphemeralBucket($correlationStore),
             'test_secret',
             'prod',
             $this->clock,
+            $this->clock,
+            null,
+            null,
         );
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
         $k1Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k1:v2:prod:127.0.0.1', 'test_secret');
-        $this->store->set($k1Key, 1, 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1Key)->set($k1Key, 1, 3600);
 
         $result = $pipeline->process($policy, $context, new RateLimitCommand('api_heavy_protection'), $device);
 
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
-        self::assertSame(1, $correlationStore->watchValue("watch:{$k1Key}"));
+        self::assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($correlationStore, "watch:{$k1Key}")->watchValue("watch:{$k1Key}"));
     }
 
     public function testApiK3WatchEscalationUsesImpliedL2(): void
@@ -583,25 +585,25 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $pipeline = new EvaluationPipeline(
             $this->store,
             $correlationStore,
-            new BudgetTracker($this->store, $this->clock),
-            new AntiEquilibriumGate($correlationStore),
             new DecayCalculator($this->clock),
-            new \Maatify\RateLimiter\Service\EphemeralBucket($correlationStore),
             'test_secret',
             'prod',
             $this->clock,
+            $this->clock,
+            null,
+            null,
         );
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
         $k3Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k3:v2:prod:127.0.0.1:hash_123', 'test_secret');
-        $this->store->set($k3Key, 1, 3600);
-        $correlationStore->incrementWatchFlag("watch:{$k3Key}", 1800);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k3Key)->set($k3Key, 1, 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($correlationStore, "watch:{$k3Key}")->incrementWatchFlag("watch:{$k3Key}", 1800);
 
         $result = $pipeline->process($policy, $context, new RateLimitCommand('api_heavy_protection'), $device);
 
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         self::assertSame(2, $result->blockLevel);
-        self::assertSame(2, $this->store->checkBlock($k3Key)?->level);
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k3Key)->checkBlock($k3Key)?->level);
     }
 
     public function testTrustedK1AdvisoryDoesNotSetFinalRetryAfter(): void
@@ -617,8 +619,8 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         };
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', true, false, 'Mozilla');
-        $k5Key = hash_hmac('sha256', 'login_protection:rate_limiter:k5:v2:prod:acct_123:hash_123', 'test_secret');
-        $this->store->set($k5Key, 105, 3600);
+        $k5Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k5', 'login_protection', 'acct_123', 'test_secret', 'hash_123');
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k5Key)->set($k5Key, 105, 3600);
 
         $result = $this->pipeline->process($policy, $context, RateLimitCommand::recordFailure('login_protection'), $device);
 
@@ -630,8 +632,8 @@ class EvaluationPipelineRetryAfterTest extends TestCase
     {
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
-        $k4Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
-        $this->store->set($k4Key, 2, 3600);
+        $k4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'otp_protection', 'acct_123', 'test_secret');
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->set($k4Key, 2, 3600);
         $result = $this->pipeline->process($this->policy, $context, RateLimitCommand::recordFailure('otp_protection'), $device);
 
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
@@ -649,10 +651,10 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
 
-        $k4Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
+        $k4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'otp_protection', 'acct_123', 'test_secret');
 
         // Increment budget directly to threshold
-        $this->store->incrementBudget($k4Key, 86400, 10);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->incrementBudget($k4Key, 86400, 10);
 
         $command = RateLimitCommand::checkOnly('otp_protection');
         $result = $this->pipeline->process($this->policy, $context, $command, $device);
@@ -660,7 +662,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $this->assertEquals(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
         $this->assertEquals(0, $result->blockLevel);
         $this->assertEquals(0, $result->retryAfter);
-        $this->assertSame(10, $this->store->getBudget($k4Key)?->count);
+        $this->assertSame(10, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->getBudget($k4Key)?->count);
     }
 
     public function testFailureScoring(): void
@@ -676,13 +678,13 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $this->assertEquals(1, $result->blockLevel);
         $this->assertEquals(1200, $result->retryAfter);
 
-        $k4Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
-        $k5Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k5:v2:prod:acct_123:known-fingerprint', 'test_secret');
+        $k4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'otp_protection', 'acct_123', 'test_secret');
+        $k5Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k5', 'otp_protection', 'acct_123', 'test_secret', 'known-fingerprint');
 
-        $this->assertEquals(5, $this->store->get($k4Key)?->value);
-        $this->assertNull($this->store->get($k5Key));
-        $this->assertEquals(1, $this->store->getBudget($k4Key)?->count);
-        $this->assertEquals(15, $this->store->checkBlock($k4Key)?->expiresAt - $this->clock->now()->getTimestamp());
+        $this->assertEquals(5, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->get($k4Key)?->value);
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k5Key)->get($k5Key));
+        $this->assertEquals(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->getBudget($k4Key)?->count);
+        $this->assertEquals(15, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->checkBlock($k4Key)?->expiresAt - $this->clock->now()->getTimestamp());
     }
 
     public function testApiHeavyNormalAccessBehavior(): void
@@ -700,9 +702,9 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $k2Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k2:v2:prod:203.0.113.10:chrome/123', 'test_secret');
         $k3Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k3:v2:prod:203.0.113.10:known-fingerprint', 'test_secret');
 
-        $this->assertEquals(1, $this->store->get($k1Key)?->value);
-        $this->assertEquals(1, $this->store->get($k2Key)?->value);
-        $this->assertEquals(1, $this->store->get($k3Key)?->value);
+        $this->assertEquals(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1Key)->get($k1Key)?->value);
+        $this->assertEquals(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k2Key)->get($k2Key)?->value);
+        $this->assertEquals(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k3Key)->get($k3Key)?->value);
     }
 
     public function testSuccessCommandBehavior(): void
@@ -715,10 +717,10 @@ class EvaluationPipelineRetryAfterTest extends TestCase
 
         $this->assertEquals(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
 
-        $k4Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
+        $k4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'otp_protection', 'acct_123', 'test_secret');
 
-        $this->assertNull($this->store->get($k4Key));
-        $this->assertNull($this->store->getBudget($k4Key));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->get($k4Key));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->getBudget($k4Key));
     }
 
     private function createPipeline(?string $previousSecret = null): EvaluationPipeline
@@ -726,13 +728,13 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         return new EvaluationPipeline(
             $this->store,
             $this->correlationStore,
-            new BudgetTracker($this->store, $this->clock),
-            new AntiEquilibriumGate($this->correlationStore),
             new DecayCalculator($this->clock),
-            new \Maatify\RateLimiter\Service\EphemeralBucket($this->correlationStore),
             'test_secret',
             'prod',
             $this->clock,
+            $this->clock,
+            null,
+            null,
             $previousSecret,
         );
     }

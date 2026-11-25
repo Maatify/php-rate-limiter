@@ -14,12 +14,9 @@ use Maatify\RateLimiter\DTO\GenerationBoundScoreMutationDTO;
 use Maatify\RateLimiter\DTO\GenerationBoundScoreStateDTO;
 use Maatify\RateLimiter\DTO\PunishmentLifecycleTransitionDTO;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\CircuitBreaker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\FingerprintHasher;
@@ -164,8 +161,8 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
     {
         $clock = new FixedClock();
         $store = new InMemoryRateLimitStore($clock);
-        $key = hash_hmac('sha256', 'login_protection:rate_limiter:k4:v2:prod:legacy-current-hard', 'test_secret');
-        $store->set($key, 5, 86400);
+        $key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'login_protection', 'legacy-current-hard', 'test_secret');
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $key)->set($key, 5, 86400);
         $engine = $this->engine($clock, [], $store);
         $hard = $engine->limit($this->context('legacy-current-hard', 'legacy-current-device'), RateLimitCommand::recordFailure('login_protection'));
 
@@ -183,23 +180,23 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
         $clock = new FixedClock();
         $store = new InMemoryRateLimitStore($clock);
         $account = 'legacy-previous-hard';
-        $currentKey = hash_hmac('sha256', 'login_protection:rate_limiter:k4:v2:prod:' . $account, 'test_secret');
-        $previousKey = hash_hmac('sha256', 'login_protection:rate_limiter:k4:v2:prod:' . $account, 'previous_secret');
-        $store->set($previousKey, 5, 86400);
-        $previousBefore = $store->get($previousKey);
+        $currentKey = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'login_protection', ($account), 'test_secret');
+        $previousKey = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'login_protection', ($account), 'previous_secret');
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousKey)->set($previousKey, 5, 86400);
+        $previousBefore = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousKey)->get($previousKey);
         $engine = $this->engine($clock, [], $store, null, 'previous_secret');
         $hard = $engine->limit($this->context($account, 'legacy-previous-device'), RateLimitCommand::recordFailure('login_protection'));
 
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $hard->decision);
         self::assertSame(60, $hard->retryAfter);
         $clock->setNow($clock->now()->modify('+61 seconds'));
-        $state = $store->readGenerationBoundScoreState($currentKey, $previousKey);
+        $state = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $currentKey)->readGenerationBoundScoreState($currentKey, $previousKey);
         self::assertNotNull($state);
         self::assertSame(GenerationBoundScoreStateDTO::SOURCE_CURRENT, $state->source);
         self::assertSame(1, $state->generation);
         self::assertNotNull($state->postPunishmentReentry);
-        self::assertSame($previousBefore?->value, $store->get($previousKey)?->value);
-        self::assertSame($previousBefore?->updatedAt, $store->get($previousKey)?->updatedAt);
+        self::assertSame($previousBefore?->value, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousKey)->get($previousKey)?->value);
+        self::assertSame($previousBefore?->updatedAt, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousKey)->get($previousKey)?->updatedAt);
     }
 
     public function testGeneratedPreviousMutationAdvancesGenerationAndPreservesExpiry(): void
@@ -209,36 +206,36 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
         $currentKey = 'generated-current';
         $previousKey = 'generated-previous';
 
-        $seed = $store->mutateGenerationBoundScore($previousKey, null, null, 600, 5);
+        $seed = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousKey)->mutateGenerationBoundScore($previousKey, null, null, 600, 5);
         self::assertTrue($seed->applied);
         self::assertNotNull($seed->state);
         for ($generation = 2; $generation <= 3; $generation++) {
-            $seed = $store->mutateGenerationBoundScore($previousKey, null, $seed->state, 86400, 5 + $generation);
+            $seed = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousKey)->mutateGenerationBoundScore($previousKey, null, $seed->state, 86400, 5 + $generation);
             self::assertTrue($seed->applied);
             self::assertSame($generation, $seed->state?->generation);
         }
-        $previousBefore = $store->get($previousKey);
-        $expiryBefore = $store->expiresAt($previousKey);
-        $expected = $store->readGenerationBoundScoreState($currentKey, $previousKey);
+        $previousBefore = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousKey)->get($previousKey);
+        $expiryBefore = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousKey)->expiresAt($previousKey);
+        $expected = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $currentKey)->readGenerationBoundScoreState($currentKey, $previousKey);
         self::assertNotNull($expected);
         self::assertSame(3, $expected->generation);
 
-        $mutation = $store->mutateGenerationBoundScore($currentKey, $previousKey, $expected, 86400, 8);
+        $mutation = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $currentKey)->mutateGenerationBoundScore($currentKey, $previousKey, $expected, 86400, 8);
 
         self::assertTrue($mutation->applied);
         self::assertNotNull($mutation->state);
         self::assertSame(4, $mutation->state->generation);
         self::assertSame($expiryBefore, $mutation->state->expiresAt);
-        self::assertSame($previousBefore?->value, $store->get($previousKey)?->value);
-        self::assertSame($previousBefore?->updatedAt, $store->get($previousKey)?->updatedAt);
-        self::assertSame($expiryBefore, $store->expiresAt($previousKey));
+        self::assertSame($previousBefore?->value, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousKey)->get($previousKey)?->value);
+        self::assertSame($previousBefore?->updatedAt, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousKey)->get($previousKey)?->updatedAt);
+        self::assertSame($expiryBefore, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $previousKey)->expiresAt($previousKey));
     }
 
     public function testInMemoryMutationFencesAuthoritativeExpiry(): void
     {
         $clock = new FixedClock();
         $store = new InMemoryRateLimitStore($clock);
-        $first = $store->mutateGenerationBoundScore('expiry-cas', null, null, 600, 4);
+        $first = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, 'expiry-cas')->mutateGenerationBoundScore('expiry-cas', null, null, 600, 4);
         self::assertTrue($first->applied);
         self::assertNotNull($first->state);
 
@@ -249,11 +246,11 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
             $first->state->expiresAt + 1,
             $first->state->generation,
         );
-        $conflict = $store->mutateGenerationBoundScore('expiry-cas', null, $stale, 86400, 9);
+        $conflict = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, 'expiry-cas')->mutateGenerationBoundScore('expiry-cas', null, $stale, 86400, 9);
 
         self::assertFalse($conflict->applied);
-        self::assertSame($first->state->value, $store->get('expiry-cas')?->value);
-        self::assertSame($first->state->expiresAt, $store->expiresAt('expiry-cas'));
+        self::assertSame($first->state->value, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, 'expiry-cas')->get('expiry-cas')?->value);
+        self::assertSame($first->state->expiresAt, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, 'expiry-cas')->expiresAt('expiry-cas'));
     }
 
     public function testKnownDeviceK5OnlyFailureDoesNotAdvanceServedK4Generation(): void
@@ -479,13 +476,13 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
         $pipeline = new EvaluationPipeline(
             $store,
             $correlation,
-            new BudgetTracker($store, $clock),
-            new AntiEquilibriumGate($correlation),
             new DecayCalculator($clock),
-            new EphemeralBucket($correlation),
             'test_secret',
             'prod',
             $clock,
+            $clock,
+            null,
+            null,
             $previousSecret,
         );
 
@@ -513,8 +510,8 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
         $storeReflection = new \ReflectionProperty($pipeline, 'store');
         /** @var InMemoryRateLimitStore $store */
         $store = $storeReflection->getValue($pipeline);
-        $key = hash_hmac('sha256', $policy . ':rate_limiter:k4:v2:prod:' . $account, 'test_secret');
+        $key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', ($policy), ($account), 'test_secret');
 
-        return $store->readGenerationBoundScoreState($key, null);
+        return \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $key)->readGenerationBoundScoreState($key, null);
     }
 }

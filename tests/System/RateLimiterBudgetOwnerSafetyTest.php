@@ -6,7 +6,6 @@ namespace Maatify\RateLimiter\Tests\System;
 
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\DTO\BudgetConfigDTO;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
 use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
@@ -15,8 +14,6 @@ use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
@@ -46,7 +43,7 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
 
         $allowAccount = 'budget-check-allow';
         $allowKey = $this->key('login_protection', 'k4', $allowAccount);
-        $this->store->incrementBudget($allowKey, 86400, 20);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $allowKey)->incrementBudget($allowKey, 86400, 20);
         $allow = $this->pipeline()->process($policy, $this->context($allowAccount), RateLimitCommand::checkOnly('login_protection'), $device);
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $allow->decision);
         $this->assertSame(3, $allow->blockLevel);
@@ -57,8 +54,8 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
             ['budget-check-hard', 8, RateLimitResultDTO::DECISION_HARD_BLOCK, 2],
         ] as [$account, $score, $decision, $level]) {
             $k4Key = $this->key('login_protection', 'k4', $account);
-            $this->store->set($k4Key, $score, 86400);
-            $this->store->incrementBudget($k4Key, 86400, 20);
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->set($k4Key, $score, 86400);
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->incrementBudget($k4Key, 86400, 20);
 
             $result = $this->pipeline()->process(
                 $policy,
@@ -69,10 +66,10 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
 
             $this->assertSame($decision, $result->decision);
             $this->assertSame($level, $result->blockLevel);
-            $this->assertNull($this->store->get($this->cooldownKey('login_protection', $account)));
+            $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->cooldownKey('login_protection', $account))->get($this->cooldownKey('login_protection', $account)));
         }
 
-        $this->assertNull($this->store->checkBlock($allowKey));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $allowKey)->checkBlock($allowKey));
     }
 
     public function testOtpCheckOnlyAndSuccessNeverEnforceBudget(): void
@@ -80,7 +77,7 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
         $policy = new OtpProtectionPolicy();
         $account = 'otp-command-eligibility';
         $k4Key = $this->key('otp_protection', 'k4', $account);
-        $this->store->incrementBudget($k4Key, 86400, 10);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->incrementBudget($k4Key, 86400, 10);
 
         $pipeline = $this->pipeline();
         $checkOnly = $pipeline->process($policy, $this->context($account), RateLimitCommand::checkOnly('otp_protection'), $this->device('otp-fp', 'HIGH', true));
@@ -88,8 +85,8 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
 
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $checkOnly->decision);
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $success->decision);
-        $this->assertSame(10, $this->store->getBudget($k4Key)?->count);
-        $this->assertNull($this->store->get($this->cooldownKey('otp_protection', $account)));
+        $this->assertSame(10, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->getBudget($k4Key)?->count);
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->cooldownKey('otp_protection', $account))->get($this->cooldownKey('otp_protection', $account)));
     }
 
     public function testKnownTrustedAndPreviouslyVerifiedDevicesDoNotUseNewDeviceK4Scoring(): void
@@ -105,9 +102,9 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
             $this->device('trusted-fp', 'HIGH', true),
         );
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $trusted->decision);
-        $this->assertSame(2, $this->store->get($this->key('login_protection', 'k5', "{$trustedAccount}:trusted-fp"))?->value);
-        $this->assertNull($this->store->get($this->key('login_protection', 'k4', $trustedAccount)));
-        $this->assertNull($this->store->getBudget($this->key('login_protection', 'k4', $trustedAccount)));
+        $this->assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k5', "{$trustedAccount}:trusted-fp"))->get($this->key('login_protection', 'k5', "{$trustedAccount}:trusted-fp"))?->value);
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k4', $trustedAccount))->get($this->key('login_protection', 'k4', $trustedAccount)));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k4', $trustedAccount))->getBudget($this->key('login_protection', 'k4', $trustedAccount)));
 
         $verifiedAccount = 'known-verified';
         $verified = $pipeline->process(
@@ -117,8 +114,8 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
             $this->device('verified-fp', 'MEDIUM', false, true),
         );
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $verified->decision);
-        $this->assertSame(2, $this->store->get($this->key('login_protection', 'k5', "{$verifiedAccount}:verified-fp"))?->value);
-        $this->assertNull($this->store->get($this->key('login_protection', 'k4', $verifiedAccount)));
+        $this->assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k5', "{$verifiedAccount}:verified-fp"))->get($this->key('login_protection', 'k5', "{$verifiedAccount}:verified-fp"))?->value);
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k4', $verifiedAccount))->get($this->key('login_protection', 'k4', $verifiedAccount)));
 
         $newAccount = 'new-device';
         $new = $pipeline->process(
@@ -128,8 +125,8 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
             $this->device('new-fp'),
         );
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $new->decision);
-        $this->assertSame(3, $this->store->get($this->key('login_protection', 'k4', $newAccount))?->value);
-        $this->assertSame(1, $this->store->getBudget($this->key('login_protection', 'k4', $newAccount))?->count);
+        $this->assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k4', $newAccount))->get($this->key('login_protection', 'k4', $newAccount))?->value);
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k4', $newAccount))->getBudget($this->key('login_protection', 'k4', $newAccount))?->count);
     }
 
     public function testLoginMissingFingerprintScoresNewDeviceAndMissingFingerprintIndependently(): void
@@ -141,13 +138,13 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
 
         $first = $pipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('login_protection'), $device);
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $first->decision);
-        $this->assertSame(4, $this->store->get($this->correlationK2Key('login_protection'))?->value);
-        $this->assertSame(3, $this->store->get($this->key('login_protection', 'k4', $account))?->value);
+        $this->assertSame(4, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->correlationK2Key('login_protection'))->get($this->correlationK2Key('login_protection'))?->value);
+        $this->assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k4', $account))->get($this->key('login_protection', 'k4', $account))?->value);
 
         $repeated = $pipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('login_protection'), $device);
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $repeated->decision);
-        $this->assertSame(8, $this->store->get($this->correlationK2Key('login_protection'))?->value);
-        $this->assertSame(12, $this->store->get($this->key('login_protection', 'k4', $account))?->value);
+        $this->assertSame(8, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->correlationK2Key('login_protection'))->get($this->correlationK2Key('login_protection'))?->value);
+        $this->assertSame(12, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k4', $account))->get($this->key('login_protection', 'k4', $account))?->value);
     }
 
     public function testOtpMissingFingerprintScoresNewDeviceAndMissingFingerprintIndependently(): void
@@ -159,13 +156,13 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
 
         $first = $pipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('otp_protection'), $device);
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $first->decision);
-        $this->assertSame(6, $this->store->get($this->correlationK2Key('otp_protection'))?->value);
-        $this->assertSame(5, $this->store->get($this->key('otp_protection', 'k4', $account))?->value);
+        $this->assertSame(6, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->correlationK2Key('otp_protection'))->get($this->correlationK2Key('otp_protection'))?->value);
+        $this->assertSame(5, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('otp_protection', 'k4', $account))->get($this->key('otp_protection', 'k4', $account))?->value);
 
         $repeated = $pipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('otp_protection'), $device);
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $repeated->decision);
-        $this->assertSame(12, $this->store->get($this->correlationK2Key('otp_protection'))?->value);
-        $this->assertSame(18, $this->store->get($this->key('otp_protection', 'k4', $account))?->value);
+        $this->assertSame(12, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->correlationK2Key('otp_protection'))->get($this->correlationK2Key('otp_protection'))?->value);
+        $this->assertSame(18, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('otp_protection', 'k4', $account))->get($this->key('otp_protection', 'k4', $account))?->value);
     }
 
     public function testBudgetOwnerSafetyUsesPolicyContractsForAnUnknownPolicyName(): void
@@ -184,8 +181,8 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
             );
 
             $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
-            $this->assertSame($attempt * 2, $this->store->get($this->key($policy->getName(), 'k5', "{$account}:custom-known-fp"))?->value);
-            $this->assertNull($this->store->getBudget($this->key($policy->getName(), 'k4', $account)));
+            $this->assertSame($attempt * 2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k5', "{$account}:custom-known-fp"))->get($this->key($policy->getName(), 'k5', "{$account}:custom-known-fp"))?->value);
+            $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k4', $account))->getBudget($this->key($policy->getName(), 'k4', $account)));
         }
 
         $third = $pipeline->process(
@@ -196,13 +193,13 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
         );
 
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $third->decision);
-        $this->assertSame(6, $this->store->get($this->key($policy->getName(), 'k5', "{$account}:custom-known-fp"))?->value);
-        $this->assertSame(1, $this->store->getBudget($this->key($policy->getName(), 'k4', $account))?->count);
+        $this->assertSame(6, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k5', "{$account}:custom-known-fp"))->get($this->key($policy->getName(), 'k5', "{$account}:custom-known-fp"))?->value);
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k4', $account))->getBudget($this->key($policy->getName(), 'k4', $account))?->count);
 
         $directBudgetPolicy = $this->customBudgetPolicy(null);
         $directAccount = 'custom-budget-no-micro-cap';
         $directK4 = $this->key($directBudgetPolicy->getName(), 'k4', $directAccount);
-        $this->store->incrementBudget($directK4, 86400, 2);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $directK4)->incrementBudget($directK4, 86400, 2);
 
         $direct = $pipeline->process(
             $directBudgetPolicy,
@@ -213,7 +210,7 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
 
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $direct->decision);
         $this->assertSame(4, $direct->blockLevel);
-        $this->assertSame(3, $this->store->getBudget($directK4)?->count);
+        $this->assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $directK4)->getBudget($directK4)?->count);
     }
 
     public function testKnownDeviceFirstEightFailuresBuildMicroCapAndNinthEntersAccountBudget(): void
@@ -229,17 +226,17 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
         for ($attempt = 1; $attempt <= 8; $attempt++) {
             $result = $pipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('custom_authentication_flow'), $device);
             $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
-            $this->assertNull($this->store->getBudget($this->key('custom_authentication_flow', 'k4', $account)));
+            $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('custom_authentication_flow', 'k4', $account))->getBudget($this->key('custom_authentication_flow', 'k4', $account)));
         }
 
         $microKey = $this->microCapKey('custom_authentication_flow', $account, 'known-fp');
         $k4Key = $this->key('custom_authentication_flow', 'k4', $account);
-        $this->assertSame(8, $this->store->getBudget($microKey)?->count);
+        $this->assertSame(8, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $microKey)->getBudget($microKey)?->count);
 
         $ninth = $pipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('custom_authentication_flow'), $device);
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $ninth->decision);
-        $this->assertSame(9, $this->store->getBudget($microKey)?->count);
-        $this->assertSame(1, $this->store->getBudget($k4Key)?->count);
+        $this->assertSame(9, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $microKey)->getBudget($microKey)?->count);
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->getBudget($k4Key)?->count);
     }
 
     public function testKnownDeviceMicroCapIsIsolatedByEnvironmentScope(): void
@@ -258,31 +255,31 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
             $result = $prodPipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('custom_authentication_flow'), $device);
             $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
         }
-        $this->assertSame(8, $this->store->getBudget($prodMicroKey)?->count);
-        $this->assertNull($this->store->getBudget($stagingMicroKey));
+        $this->assertSame(8, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $prodMicroKey)->getBudget($prodMicroKey)?->count);
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $stagingMicroKey)->getBudget($stagingMicroKey));
 
         $stagingFirst = $stagingPipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('custom_authentication_flow'), $device);
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $stagingFirst->decision);
-        $this->assertSame(1, $this->store->getBudget($stagingMicroKey)?->count);
-        $this->assertSame(8, $this->store->getBudget($prodMicroKey)?->count);
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $stagingMicroKey)->getBudget($stagingMicroKey)?->count);
+        $this->assertSame(8, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $prodMicroKey)->getBudget($prodMicroKey)?->count);
 
         $prodK4Key = $this->key('custom_authentication_flow', 'k4', $account);
-        $stagingK4Key = hash_hmac('sha256', "custom_authentication_flow:rate_limiter:k4:v2:staging:{$account}", 'test_secret');
-        $this->assertNull($this->store->getBudget($prodK4Key));
+        $stagingK4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('staging'))->derive('k4', 'custom_authentication_flow', ($account), 'test_secret');
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $prodK4Key)->getBudget($prodK4Key));
 
         $prodNinth = $prodPipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('custom_authentication_flow'), $device);
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $prodNinth->decision);
-        $this->assertSame(9, $this->store->getBudget($prodMicroKey)?->count);
-        $this->assertSame(1, $this->store->getBudget($prodK4Key)?->count);
-        $this->assertSame(1, $this->store->getBudget($stagingMicroKey)?->count);
-        $this->assertNull($this->store->getBudget($stagingK4Key));
+        $this->assertSame(9, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $prodMicroKey)->getBudget($prodMicroKey)?->count);
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $prodK4Key)->getBudget($prodK4Key)?->count);
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $stagingMicroKey)->getBudget($stagingMicroKey)?->count);
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $stagingK4Key)->getBudget($stagingK4Key));
     }
 
     public function testTrustedSessionFloorsBudgetLevelsForLoginAndOtp(): void
     {
         $loginAccount = 'trusted-login-floor';
         $loginKey = $this->key('login_protection', 'k4', $loginAccount);
-        $this->store->incrementBudget($loginKey, 86400, 20);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $loginKey)->incrementBudget($loginKey, 86400, 20);
         $login = $this->pipeline()->process(
             new LoginProtectionPolicy(),
             $this->context($loginAccount),
@@ -292,7 +289,7 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
 
         $otpAccount = 'trusted-otp-floor';
         $otpKey = $this->key('otp_protection', 'k4', $otpAccount);
-        $this->store->incrementBudget($otpKey, 86400, 10);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $otpKey)->incrementBudget($otpKey, 86400, 10);
         $otp = $this->pipeline()->process(
             new OtpProtectionPolicy(),
             $this->context($otpAccount),
@@ -310,8 +307,8 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
     {
         $account = 'soft-class-aggregation';
         $k4Key = $this->key('login_protection', 'k4', $account);
-        $this->store->set($k4Key, 2, 86400);
-        $this->store->incrementBudget($k4Key, 86400, 19);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->set($k4Key, 2, 86400);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->incrementBudget($k4Key, 86400, 19);
 
         $result = $this->pipeline()->process(
             new LoginProtectionPolicy(),
@@ -323,7 +320,7 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
         $this->assertSame(3, $result->blockLevel);
         $this->assertSame(3600, $result->retryAfter);
-        $this->assertSame(1, $this->store->checkBlock($k4Key)?->level);
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->checkBlock($k4Key)?->level);
     }
 
     public function testLosingNormalSoftDoesNotPersistWhenCorrelationHardWins(): void
@@ -331,7 +328,7 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
         $account = 'hard-wins-over-soft';
         $k4Key = $this->key('login_protection', 'k4', $account);
         $k2Key = $this->correlationK2Key('login_protection');
-        $this->store->set($k4Key, 5, 86400);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->set($k4Key, 5, 86400);
         $churnScope = hash_hmac(
             'sha256',
             "login_protection:rate_limiter:correlation:churn:v1:prod:scope:{$k2Key}",
@@ -359,15 +356,15 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
 
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         $this->assertSame(2, $result->blockLevel);
-        $this->assertNull($this->store->checkBlock($k4Key));
-        $this->assertSame(2, $this->store->checkBlock($k2Key)?->level);
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->checkBlock($k4Key));
+        $this->assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k2Key)->checkBlock($k2Key)?->level);
     }
 
     public function testRecoveryGuardHandlesNineToTenThenBudgetHandlesEleven(): void
     {
         $account = 'recovery-guard';
         $k4Key = $this->key('otp_protection', 'k4', $account);
-        $this->store->incrementBudget($k4Key, 86400, 9);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->incrementBudget($k4Key, 86400, 9);
         $device = $this->device('recovery-fp', 'HIGH', true);
         $pipeline = $this->pipeline();
 
@@ -375,22 +372,22 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $guard->decision);
         $this->assertSame(2, $guard->blockLevel);
         $this->assertSame(60, $guard->retryAfter);
-        $this->assertSame(10, $this->store->getBudget($k4Key)?->count);
-        $this->assertNull($this->store->get($this->cooldownKey('otp_protection', $account)));
+        $this->assertSame(10, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->getBudget($k4Key)?->count);
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->cooldownKey('otp_protection', $account))->get($this->cooldownKey('otp_protection', $account)));
 
         $next = $pipeline->process(new OtpProtectionPolicy(), $this->context($account), RateLimitCommand::recordFailure('otp_protection'), $device);
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $next->decision);
         $this->assertSame(3, $next->blockLevel);
         $this->assertSame(7200, $next->retryAfter);
-        $this->assertSame(11, $this->store->getBudget($k4Key)?->count);
-        $this->assertSame(1, $this->store->get($this->cooldownKey('otp_protection', $account))?->value);
+        $this->assertSame(11, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->getBudget($k4Key)?->count);
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->cooldownKey('otp_protection', $account))->get($this->cooldownKey('otp_protection', $account))?->value);
     }
 
     public function testAntiEquilibriumThirdSoftStaysSoftAndNextFailureBecomesHard(): void
     {
         $account = 'anti-equilibrium';
         $k4Key = $this->key('login_protection', 'k4', $account);
-        $this->store->set($k4Key, 5, 86400);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->set($k4Key, 5, 86400);
         $policy = new LoginProtectionPolicy();
         $pipeline = $this->pipeline();
 
@@ -399,47 +396,47 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
             $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $soft->decision);
             $this->assertSame(1, $soft->blockLevel);
         }
-        $this->assertSame(3, $this->correlationStore->getWatchFlag($this->auxiliaryKey('login_protection', 'anti_equilibrium', $account)));
+        $this->assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $this->auxiliaryKey('login_protection', 'anti_equilibrium', $account))->getWatchFlag($this->auxiliaryKey('login_protection', 'anti_equilibrium', $account)));
 
-        $this->store->set($k4Key, 0, 86400);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->set($k4Key, 0, 86400);
         $allow = $pipeline->process($policy, $this->context($account), RateLimitCommand::checkOnly('login_protection'), $this->device('anti-fp'));
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $allow->decision);
-        $this->assertSame(3, $this->correlationStore->getWatchFlag($this->auxiliaryKey('login_protection', 'anti_equilibrium', $account)));
+        $this->assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $this->auxiliaryKey('login_protection', 'anti_equilibrium', $account))->getWatchFlag($this->auxiliaryKey('login_protection', 'anti_equilibrium', $account)));
 
-        $this->store->incrementBudget($k4Key, 86400, 20);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->incrementBudget($k4Key, 86400, 20);
         $failure = $pipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('login_protection'), $this->device('anti-fp'));
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $failure->decision);
         $this->assertSame(2, $failure->blockLevel);
-        $this->assertNull($this->store->get($this->cooldownKey('login_protection', $account)));
-        $this->assertSame(3, $this->correlationStore->getWatchFlag($this->auxiliaryKey('login_protection', 'anti_equilibrium', $account)));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->cooldownKey('login_protection', $account))->get($this->cooldownKey('login_protection', $account)));
+        $this->assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $this->auxiliaryKey('login_protection', 'anti_equilibrium', $account))->getWatchFlag($this->auxiliaryKey('login_protection', 'anti_equilibrium', $account)));
     }
 
     public function testCooldownRotationReadsPreviousWritesCurrentAndDoesNotExtend(): void
     {
         $account = 'cooldown-rotation';
         $oldBudgetKey = $this->key('login_protection', 'k4', $account, 'old_secret');
-        $this->store->incrementBudget($oldBudgetKey, 86400, 20);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $oldBudgetKey)->incrementBudget($oldBudgetKey, 86400, 20);
         $pipeline = $this->pipeline('old_secret', 'new_secret');
 
         $first = $pipeline->process(new LoginProtectionPolicy(), $this->context($account), RateLimitCommand::checkOnly('login_protection'), $this->device('rotation-fp'));
         $currentCooldown = $this->cooldownKey('login_protection', $account, 'new_secret');
         $previousCooldown = $this->cooldownKey('login_protection', $account, 'old_secret');
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $first->decision);
-        $this->assertSame(1, $this->store->get($currentCooldown)?->value);
-        $this->assertNull($this->store->get($previousCooldown));
-        $createdAt = $this->store->get($currentCooldown)?->updatedAt;
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $currentCooldown)->get($currentCooldown)?->value);
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $previousCooldown)->get($previousCooldown));
+        $createdAt = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $currentCooldown)->get($currentCooldown)?->updatedAt;
 
         $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:00:30'));
         $second = $pipeline->process(new LoginProtectionPolicy(), $this->context($account), RateLimitCommand::checkOnly('login_protection'), $this->device('rotation-fp'));
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $second->decision);
-        $this->assertSame($createdAt, $this->store->get($currentCooldown)?->updatedAt);
+        $this->assertSame($createdAt, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $currentCooldown)->get($currentCooldown)?->updatedAt);
 
         $previousActiveAccount = 'cooldown-previous-active';
-        $this->store->incrementBudget($this->key('login_protection', 'k4', $previousActiveAccount, 'old_secret'), 86400, 20);
-        $this->store->increment($this->cooldownKey('login_protection', $previousActiveAccount, 'old_secret'), 3600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k4', $previousActiveAccount, 'old_secret'))->incrementBudget($this->key('login_protection', 'k4', $previousActiveAccount, 'old_secret'), 86400, 20);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->cooldownKey('login_protection', $previousActiveAccount, 'old_secret'))->increment($this->cooldownKey('login_protection', $previousActiveAccount, 'old_secret'), 3600);
         $previousActive = $pipeline->process(new LoginProtectionPolicy(), $this->context($previousActiveAccount), RateLimitCommand::checkOnly('login_protection'), $this->device('rotation-fp'));
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $previousActive->decision);
-        $this->assertNull($this->store->get($this->cooldownKey('login_protection', $previousActiveAccount, 'new_secret')));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->cooldownKey('login_protection', $previousActiveAccount, 'new_secret'))->get($this->cooldownKey('login_protection', $previousActiveAccount, 'new_secret')));
     }
 
     private function pipeline(?string $previousSecret = null, string $currentSecret = 'test_secret', string $env = 'prod'): EvaluationPipeline
@@ -447,13 +444,13 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
         return new EvaluationPipeline(
             $this->store,
             $this->correlationStore,
-            new BudgetTracker($this->store, $this->clock),
-            new AntiEquilibriumGate($this->correlationStore),
             new DecayCalculator($this->clock),
-            new EphemeralBucket($this->correlationStore),
             $currentSecret,
             $env,
             $this->clock,
+            $this->clock,
+            null,
+            null,
             $previousSecret,
         );
     }
@@ -515,17 +512,17 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
 
     private function key(string $policy, string $type, string $scope, string $secret = 'test_secret'): string
     {
-        return hash_hmac('sha256', "{$policy}:rate_limiter:{$type}:v2:prod:{$scope}", $secret);
+        return \Maatify\RateLimiter\Tests\Support\FixtureKeys::scope(($type), ($policy), 'prod', ($scope), $secret);
     }
 
     private function microCapKey(string $policy, string $account, string $fingerprint, string $secret = 'test_secret', string $env = 'prod'): string
     {
-        return hash_hmac('sha256', "{$policy}:rate_limiter:microcap:k5:v1:{$env}:{$account}:{$fingerprint}", $secret);
+        return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver(($env)))->derive('microcap.k5', ($policy), ($account), $secret, ($fingerprint));
     }
 
     private function cooldownKey(string $policy, string $account, string $secret = 'test_secret'): string
     {
-        return hash_hmac('sha256', "{$policy}:rate_limiter:budget_cooldown:v1:prod:{$account}", $secret);
+        return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('budget_cooldown', ($policy), ($account), $secret);
     }
 
     private function auxiliaryKey(
@@ -534,11 +531,7 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
         string $account,
         string $secret = 'test_secret',
     ): string {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:aux:{$purpose}:v1:prod:{$account}",
-            $secret,
-        );
+        return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('aux.' . ($purpose), ($policy), ($account), $secret);
     }
 
     private function correlationK2Key(string $policy, string $ip = '198.51.100.40', string $secret = 'test_secret'): string

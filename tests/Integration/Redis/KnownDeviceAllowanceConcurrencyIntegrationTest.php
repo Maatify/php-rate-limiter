@@ -16,10 +16,7 @@ use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 use Maatify\RateLimiter\Exception\RateLimitConcurrencyException;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
@@ -95,9 +92,9 @@ final class KnownDeviceAllowanceConcurrencyIntegrationTest extends TestCase
         self::assertSame(array_fill(0, self::WORKERS + 8, 'ALLOW'), $outcomes);
         $store = $this->store();
         foreach (['owner-a' => self::WORKERS, 'owner-b' => 8] as $account => $failures) {
-            self::assertSame($failures, $store->getBudget($this->auxiliaryKey($policy->getName(), $account, 'test_secret'))?->count);
-            self::assertSame(2 * $failures, $store->get($this->key($policy->getName(), 'k5', "{$account}:concurrent-fp"))?->value);
-            self::assertSame(3 * ($failures - 4), $store->get($this->key($policy->getName(), 'k4', $account))?->value);
+            self::assertSame($failures, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->auxiliaryKey($policy->getName(), $account, 'test_secret'))->getBudget($this->auxiliaryKey($policy->getName(), $account, 'test_secret'))?->count);
+            self::assertSame(2 * $failures, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->key($policy->getName(), 'k5', "{$account}:concurrent-fp"))->get($this->key($policy->getName(), 'k5', "{$account}:concurrent-fp"))?->value);
+            self::assertSame(3 * ($failures - 4), \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->key($policy->getName(), 'k4', $account))->get($this->key($policy->getName(), 'k4', $account))?->value);
         }
     }
 
@@ -121,14 +118,14 @@ final class KnownDeviceAllowanceConcurrencyIntegrationTest extends TestCase
         );
 
         $store = $this->store();
-        $consumed = $store->getBudget($this->auxiliaryKey('login_protection', 'login-owner', 'test_secret'))->count ?? 0;
+        $consumed = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->auxiliaryKey('login_protection', 'login-owner', 'test_secret'))->getBudget($this->auxiliaryKey('login_protection', 'login-owner', 'test_secret'))->count ?? 0;
         $conflicts = count(array_filter($outcomes, static fn(string $outcome): bool => $outcome === 'conflict'));
         $early = 2 * self::WORKERS - $consumed;
-        $k5 = $store->get($this->key('login_protection', 'k5', 'login-owner:concurrent-fp'))->value ?? 0;
-        $k4 = $store->get($this->key('login_protection', 'k4', 'login-owner'))->value ?? 0;
+        $k5 = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->key('login_protection', 'k5', 'login-owner:concurrent-fp'))->get($this->key('login_protection', 'k5', 'login-owner:concurrent-fp'))->value ?? 0;
+        $k4 = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->key('login_protection', 'k4', 'login-owner'))->get($this->key('login_protection', 'k4', 'login-owner'))->value ?? 0;
         $blocked = max(
-            $store->checkBlock($this->key('login_protection', 'k5', 'login-owner:concurrent-fp'))->level ?? 0,
-            $store->checkBlock($this->key('login_protection', 'k4', 'login-owner'))->level ?? 0,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->key('login_protection', 'k5', 'login-owner:concurrent-fp'))->checkBlock($this->key('login_protection', 'k5', 'login-owner:concurrent-fp'))->level ?? 0,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->key('login_protection', 'k4', 'login-owner'))->checkBlock($this->key('login_protection', 'k4', 'login-owner'))->level ?? 0,
         );
 
         self::assertGreaterThan(0, $early);
@@ -156,9 +153,9 @@ final class KnownDeviceAllowanceConcurrencyIntegrationTest extends TestCase
 
         self::assertSame(array_fill(0, self::WORKERS, 'ALLOW'), $outcomes);
         $store = $this->store();
-        self::assertSame(3, $store->getBudget($this->auxiliaryKey($policy->getName(), 'rotating-owner', 'old_secret'))?->count);
-        self::assertSame(3 + self::WORKERS, $store->getBudget($this->auxiliaryKey($policy->getName(), 'rotating-owner', 'new_secret'))?->count);
-        self::assertSame(3 * (3 + self::WORKERS - 4), $store->get($this->key($policy->getName(), 'k4', 'rotating-owner', 'new_secret'))?->value);
+        self::assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->auxiliaryKey($policy->getName(), 'rotating-owner', 'old_secret'))->getBudget($this->auxiliaryKey($policy->getName(), 'rotating-owner', 'old_secret'))?->count);
+        self::assertSame(3 + self::WORKERS, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->auxiliaryKey($policy->getName(), 'rotating-owner', 'new_secret'))->getBudget($this->auxiliaryKey($policy->getName(), 'rotating-owner', 'new_secret'))?->count);
+        self::assertSame(3 * (3 + self::WORKERS - 4), \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $this->key($policy->getName(), 'k4', 'rotating-owner', 'new_secret'))->get($this->key($policy->getName(), 'k4', 'rotating-owner', 'new_secret'))?->value);
     }
 
     /**
@@ -243,13 +240,13 @@ final class KnownDeviceAllowanceConcurrencyIntegrationTest extends TestCase
         return new EvaluationPipeline(
             $store,
             $store,
-            new BudgetTracker($store, $clock),
-            new AntiEquilibriumGate($store),
             new DecayCalculator($clock),
-            new EphemeralBucket($store),
             $secret,
             'prod',
             $clock,
+            $clock,
+            null,
+            null,
             $previousSecret,
         );
     }
@@ -272,12 +269,12 @@ final class KnownDeviceAllowanceConcurrencyIntegrationTest extends TestCase
 
     private function key(string $policy, string $type, string $scope, string $secret = 'test_secret'): string
     {
-        return hash_hmac('sha256', "{$policy}:rate_limiter:{$type}:v2:prod:{$scope}", $secret);
+        return \Maatify\RateLimiter\Tests\Support\FixtureKeys::scope(($type), ($policy), 'prod', ($scope), $secret);
     }
 
     private function auxiliaryKey(string $policy, string $account, string $secret): string
     {
-        return hash_hmac('sha256', "{$policy}:rate_limiter:aux:known_device_allowance:v1:prod:{$account}", $secret);
+        return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('aux.known_device_allowance', ($policy), ($account), $secret);
     }
 
     private function storePattern(): string

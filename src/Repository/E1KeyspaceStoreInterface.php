@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Repository;
 
 /**
- * Optional capability of a store that can keep the account-bearing keys of the E1 derivation under their own physical prefix (DEC-044).
+ * Required capability for score runtime composition (DEC-046), keeping the account-bearing keys of the E1 derivation under their own physical prefix (DEC-044).
  *
  * `e1Keyspace()` returns a view of the SAME store instance: it is not a second store. It shares the request state, the exclusive request
  * ownership and `transactRequest()` of the store it came from, so a request that writes keys of both layouts is saved in one commit
@@ -15,6 +15,6 @@ namespace Maatify\RateLimiter\Repository;
  */
 interface E1KeyspaceStoreInterface
 {
-    /** The view of this very store bound to the E1 layout. Calling it again returns the same view. */
+    /** The view of this very store bound to the E1 layout. The root returns a distinct stable view; the view returns itself. No backend commands are issued. */
     public function e1Keyspace(): static;
 }

@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
-### Added (#284, DEC-044) — Opt-in E1 key encoding for the account-bearing keys
+### Changed (#284, DEC-046) — Breaking: E1-only account composition
 
-- `RateLimiterBuilder::withKeyScopeEncoding(KeyScopeEncodingEnum::E1)` derives the K4/K4P, K5/K5p, micro-cap, budget-cooldown and account auxiliary keys from a length-prefixed preimage with an HMAC key domain of its own, kept under the physical prefix `maatify:rate-limiter:e1:`. A single derivation component serves the runtime and the operational reader, for Current and Previous. `V2` stays the default and every V2 physical key is unchanged. The E1 layout is carried by `E1KeyspaceStoreInterface::e1Keyspace()`, a view of the same store instance, so a request that writes both layouts is one commit per attempt (DEC-037, DEC-041, DEC-042, DEC-045). E1 never reads V2 state; moving existing traffic is a separate migration. Hosts that restrict Redis keys must grant `~maatify:rate-limiter:e1:*` for reads and writes before selecting E1. See `docs/KEY_SCOPE_ENCODING_E1.md` §12 and the Usage Guide.
+- Removed V2 account derivation, KeyScopeEncodingEnum, withKeyScopeEncoding and injected derivation strategies. Existing E1 bytes/vectors, root plain-string methods, Set B/C scope, secret/material rotation and Redis request/ownership/ACL/expiry contracts remain.
+- Closed Pipeline composition: BudgetTracker/Gate use the exact validated account views; EphemeralBucket uses the root. Advanced callers provide evaluation/budget/nullable Gate/nullable Bucket clocks explicitly. Reader composition requires no unused correlation/mutation capability. Custom adapter semantics need conformance evidence.
+- Existing V2 traffic loses visibility of account blocks/scores/budgets/history and derivative identities on transfer. This is not a live migration, mixed-worker or rollback facility. Start new isolated traffic after capability/ACL setup. No Redis state or historical evidence is deleted. G2/G3 framing and epoch/cohort work remain outside G1 and block release separately.
+
+Historical opt-in implementation/acceptance remains recorded under DEC-044 and KEY_SCOPE_ENCODING_E1 §12; it does not qualify G1.
 
 ### Fixed (#286) — Validate the intent of a command carrying an admission permit
 

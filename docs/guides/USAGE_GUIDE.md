@@ -534,21 +534,19 @@ that did not opt in (no admission, no lane, no permit needed).
    closes, the counters, sets, buckets and permits expire by their TTLs; the binding epochs and the
    fence have no TTL (`KEY_STRATEGY.md` §4.8).
 
-## Choosing the E1 key encoding (DEC-044)
+## Account-scope E1 and the breaking pre-Stable boundary (DEC-046)
 
-The account-bearing keys (K4/K4P, K5/K5p, micro-cap, budget cooldown and the account auxiliary states) are derived by one component for the runtime and its operational reader. The default is `V2`, the shipped derivation, and nothing changes for a configuration that does not choose otherwise. `E1` is an explicit, opt-in encoding that cannot confuse two different environment-scope and account pairs:
+The account-bearing keys always use E1. Do not call `withKeyScopeEncoding()` or use `KeyScopeEncodingEnum`: both are removed. Use the ordinary Builder and `buildOperationalReader()`; they agree on E1 automatically.
 
-```php
-$builder = RateLimiterBuilder::fromFullCapabilityStore($config, $store, $emitter)
-    ->withKeyScopeEncoding(KeyScopeEncodingEnum::E1);
-```
+The rate-limit and correlation roots used by the score runtime must implement `E1KeyspaceStoreInterface`, returning distinct stable idempotent views of those roots. Required operation and caller-time capabilities must be preserved on the actual views. The reader requires only its rate-store/view and read-only capabilities, not unused correlation or mutation capabilities. Custom adapters must prove layout, shared transaction and ownership semantics; a type check alone proves none of them.
 
-- **Once per builder.** The runtime from `build()` and the reader from `buildOperationalReader()` of that builder use the same derivation. Choose it when the runtime is composed, never per request.
-- **A store that can keep it.** The rate-limit store and the correlation store must implement `E1KeyspaceStoreInterface` (`RedisFullCapabilityStore` does, as one store serving both roles). Composition fails with a `RateLimiterException` otherwise, before anything is written.
-- **A new key space.** E1 never reads V2 state: scores, budgets, cooldowns and active blocks of an account start from zero. Start E1 for traffic in a new, isolated namespace and environment scope. Moving existing traffic is a migration with its own contract, and any migration must keep the active blocks.
-- **Redis ACL.** E1 keys live under `maatify:rate-limiter:e1:*`. An account restricted to `~maatify:rate-limiter:v1:*` must also be granted `~maatify:rate-limiter:e1:*`, **for reads and for writes**, before E1 is selected. Without the grant a request is refused where it first reads an E1 key, nothing is saved, and the commit is never reached. An account that can read the E1 keys but lacks a write command of the save is refused by the commit with `NOPERM request commit …`, before any write (DEC-042).
-- **Direct store calls are unchanged.** A string given to a store method, including one that looks like an E1 key, keeps its `v1` physical key; only the E1 view of the store (used by the runtime) accepts E1 keys.
-- **What E1 does not replace.** K1 to K3, the correlation state, simple fixed-window throttling and the admission layer keep their current keys. The V2 account state an E1 runtime ignores stays where it is until its own expiry.
+The Pipeline creates its own account BudgetTracker/Gate and root EphemeralBucket. Advanced construction no longer accepts those helpers or a deriver. Its clock dependencies are explicit: evaluation clock, required budget clock, nullable Gate clock and nullable Bucket clock, followed by the optional previous key secret. Null retains backend-time operations. Standalone helper APIs do not change; no time authority is silently substituted.
+
+For new traffic use an isolated namespace/environment with no prior V2 state for those accounts and homogeneous workers. Grant the required v1 and e1 key-pattern reads/writes and commands before traffic. With v1-only access a request fails at entry; with read access but an incomplete write plan it fails at commit with DEC-042 NOPERM before any save. No automatic Redis probing or cleanup is performed during composition.
+
+A package update does not migrate live traffic safely. V2 account blocks, scores, budgets and history are not read by E1; derivative Set B identities also differ. Mixed V2/E1 workers and live rollback are unsupported. Do not infer old-block expiry from a namespace change. No dual-read, seeding across encodings or deletion of Redis state is provided. Secret/material Current/Previous rotation **inside E1** remains supported and atomic.
+
+Direct root store methods still place every plain string, even an E1-shaped one, in layout v1. The explicit account view accepts only the registered E1 families and key grammar. K1–K3 and non-account families retain their G1 identities. Adjacent Admission/other framing defects remain release blockers on #284; this change does not fix them or authorize losing their state.
 
 ## Walkthrough: Pre-Check
 

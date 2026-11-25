@@ -13,12 +13,9 @@ use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Service\AdmissionCredentialCodec;
 use Maatify\RateLimiter\Service\AdmissionRuntime;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\CircuitBreaker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\FingerprintHasher;
@@ -51,7 +48,10 @@ final class AdmissionEngineS0GoldensTest extends TestCase
         /** @var array<string, array{decisions: string, state: string}> $golden */
         $golden = (new \ReflectionClassConstant(FamilyS0ParityTest::class, 'GOLDEN'))->getValue();
 
-        return $golden[$policy];
+        $expected = $golden[$policy];
+        $expected['state'] = \Maatify\RateLimiter\Tests\Fixtures\E1GoldenState::PIPELINE[$policy];
+
+        return $expected;
     }
 
     /** @return iterable<string, array{BlockPolicyInterface, 'open'|'closed'|'none'}> */
@@ -79,13 +79,13 @@ final class AdmissionEngineS0GoldensTest extends TestCase
         $pipeline = new $pipelineClass(
             $store,
             $corr,
-            new BudgetTracker($store, $clock),
-            new AntiEquilibriumGate($corr),
             new DecayCalculator($clock),
-            new EphemeralBucket($corr),
             'lab-secret',
             'prod',
             $clock,
+            $clock,
+            null,
+            null,
         );
         $codec = new AdmissionCredentialCodec(EngineLab::BINDING_SECRET);
         $admission = null;

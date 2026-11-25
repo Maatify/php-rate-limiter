@@ -17,7 +17,6 @@ use Maatify\RateLimiter\DTO\PunishmentLifecycleTransitionDTO;
 use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotStoreInterface;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
-use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
 use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
 use Maatify\RateLimiter\Repository\CircuitBreakerStateCasStoreInterface;
@@ -67,8 +66,26 @@ final class ExampleDeterministicClock implements ClockInterface
  * Replace these adapters with the host application's atomic storage and
  * observability integrations in production.
  */
-final class ExampleRateLimitStore implements PunishmentLifecycleStoreInterface, SnapshotFencedScoreStoreInterface, ScoreReplaceStoreInterface, OperationalReadOnlyStoreInterface
+final class ExampleRateLimitStore implements PunishmentLifecycleStoreInterface, SnapshotFencedScoreStoreInterface, ScoreReplaceStoreInterface, OperationalReadOnlyStoreInterface, \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface
 {
+    private bool $accountLayout = false;
+    private ?self $accountView = null;
+
+    /** Example-local isolated in-memory account layout; production Redis shares a transaction through its official view. */
+    public function e1Keyspace(): static
+    {
+        if ($this->accountLayout) {
+            return $this;
+        }
+        if ($this->accountView === null) {
+            $view = clone $this;
+            $view->accountLayout = true;
+            $view->accountView = null;
+            $this->accountView = $view;
+        }
+        return $this->accountView;
+    }
+
     private const PAUSE_HISTORY_RETENTION_SECONDS = 86400;
 
     /** @var array<string, array{value: int, updatedAt: int, expiresAt: int}> */
@@ -556,8 +573,26 @@ final class ExampleRateLimitStore implements PunishmentLifecycleStoreInterface, 
     }
 }
 
-final class ExampleCorrelationStore implements BoundedCorrelationSnapshotStoreInterface
+final class ExampleCorrelationStore implements BoundedCorrelationSnapshotStoreInterface, \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface
 {
+    private bool $accountLayout = false;
+    private ?self $accountView = null;
+
+    /** Example-local isolated in-memory account layout; production Redis shares a transaction through its official view. */
+    public function e1Keyspace(): static
+    {
+        if ($this->accountLayout) {
+            return $this;
+        }
+        if ($this->accountView === null) {
+            $view = clone $this;
+            $view->accountLayout = true;
+            $view->accountView = null;
+            $this->accountView = $view;
+        }
+        return $this->accountView;
+    }
+
     /** @var array<string, array{items: array<string, true>, expiresAt: int}> */
     private array $sets = [];
 

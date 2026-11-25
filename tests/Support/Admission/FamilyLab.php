@@ -9,15 +9,9 @@ use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Enum\AdmissionLaneEnum;
-use Maatify\RateLimiter\Enum\KeyScopeEncodingEnum;
-use Maatify\RateLimiter\Service\AccountScopeKeyDeriverInterface;
 use Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver;
-use Maatify\RateLimiter\Service\V2AccountScopeKeyDeriver;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
@@ -62,15 +56,14 @@ final class FamilyLab
         $this->pipeline = new $pipelineClass(
             $this->store,
             $this->corr,
-            new BudgetTracker($this->store, $this->clock),
-            new AntiEquilibriumGate($this->corr),
             new DecayCalculator($this->clock),
-            new EphemeralBucket($this->corr),
             $secret,
             'prod',
             $this->clock,
+            $this->clock,
+            null,
+            null,
             $previousSecret,
-            self::deriver(),
         );
         $this->resolver = new DeviceIdentityResolver(
             new FingerprintHasher($secret),
@@ -78,17 +71,9 @@ final class FamilyLab
         );
     }
 
-    /**
-     * The key encoding under test: V2 unless the environment variable KEY_SCOPE_ENCODING is `e1` (DEC-044). The same suites run under both.
-     */
-    public static function encoding(): KeyScopeEncodingEnum
+    public static function deriver(string $env = 'prod'): E1AccountScopeKeyDeriver
     {
-        return getenv('KEY_SCOPE_ENCODING') === 'e1' ? KeyScopeEncodingEnum::E1 : KeyScopeEncodingEnum::V2;
-    }
-
-    public static function deriver(string $env = 'prod'): AccountScopeKeyDeriverInterface
-    {
-        return self::encoding() === KeyScopeEncodingEnum::E1 ? new E1AccountScopeKeyDeriver($env) : new V2AccountScopeKeyDeriver($env);
+        return new E1AccountScopeKeyDeriver($env);
     }
 
     public function at(int $secondsFromStart): void

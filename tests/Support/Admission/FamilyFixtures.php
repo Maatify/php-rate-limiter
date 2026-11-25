@@ -128,9 +128,25 @@ final class FamilyFixtures
         return FamilyLab::deriver()->derive('aux.known_device_allowance' . $suffix, $lab->policy->getName(), $account, $lab->secret);
     }
 
+    /** Archived key prefixes are presentation labels only. All state above/below is read under the actual E1 identity. */
+    private static function historicalKeyLabel(FamilyLab $lab, RateLimitContextDTO $context, bool $allowance): string
+    {
+        $previous = new \Maatify\RateLimiter\Tests\Fixtures\KeyScopeV2Reference('prod');
+        if ($allowance) {
+            $purpose = 'aux.known_device_allowance' . ($lab->lane === AdmissionLaneEnum::P ? '_p' : '');
+            $key = $previous->derive($purpose, $lab->policy->getName(), $context->accountId ?? '', $lab->secret);
+        } else {
+            $device = $lab->resolver->resolve($context);
+            $purpose = $lab->lane === AdmissionLaneEnum::P ? 'k5p' : 'k5';
+            $key = $previous->derive($purpose, $lab->policy->getName(), $context->accountId ?? '', $lab->secret, $device->deviceIdHash ?? $device->fingerprintHash);
+        }
+
+        return substr($key, 0, 12);
+    }
+
     public static function blockLevel(FamilyLab $lab, string $key): ?int
     {
-        $b = $lab->store->checkBlock($key);
+        $b = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($lab->store, $key)->checkBlock($key);
 
         return $b !== null && $b->expiresAt > $lab->clock->now()->getTimestamp() ? $b->level : null;
     }
@@ -143,12 +159,12 @@ final class FamilyFixtures
         $allowance = self::allowanceKey($lab, (string) $c->accountId);
 
         return [
-            'k5key' => substr($k5, 0, 12),
-            'k5score' => $lab->store->get($k5)?->value,
+            'k5key' => self::historicalKeyLabel($lab, $c, false),
+            'k5score' => \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($lab->store, $k5)->get($k5)?->value,
             'blkK5' => self::blockLevel($lab, $k5),
             'blkK4' => self::blockLevel($lab, $k4),
-            'allowKey' => substr($allowance, 0, 12),
-            'allowance' => $lab->store->getBudget($allowance)?->count,
+            'allowKey' => self::historicalKeyLabel($lab, $c, true),
+            'allowance' => \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($lab->store, $allowance)->getBudget($allowance)?->count,
         ];
     }
 
@@ -186,7 +202,7 @@ final class FamilyFixtures
                 $lab->at($t);
                 $c = self::context(self::UA_A, $inst('i:kd'));
                 self::attempt($lab, $c, $dec, $reach);
-                $maxK4 = max($maxK4, $lab->store->get(self::k4Key($lab, $c))->value ?? 0);
+                $maxK4 = max($maxK4, $lab->store->e1Keyspace()->get(self::k4Key($lab, $c))->value ?? 0);
             }
 
             return ['reach' => $reach, 'maxK4score' => $maxK4];
@@ -269,8 +285,8 @@ final class FamilyFixtures
                 }
                 $out[$k] = $a;
             }
-            $keyA = substr(self::k5Key($lab, self::context(self::UA_A, 'i:a')), 0, 12);
-            $keyB = substr(self::k5Key($lab, self::context(self::UA_B, null)), 0, 12);
+            $keyA = self::historicalKeyLabel($lab, self::context(self::UA_A, 'i:a'), false);
+            $keyB = self::historicalKeyLabel($lab, self::context(self::UA_B, null), false);
 
             return [
                 'both' => $out['both'], 'ctl' => $out['ctl'], 'k5KeyA' => $keyA, 'k5KeyB' => $keyB,

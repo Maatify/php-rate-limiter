@@ -12,12 +12,9 @@ use Maatify\RateLimiter\DTO\FailureStateDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\CircuitBreaker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\FingerprintHasher;
@@ -117,13 +114,13 @@ final class RedisHealthStatusReplyRegressionTest extends TestCase
         $pipeline = new EvaluationPipeline(
             $store,
             $correlationStore,
-            new BudgetTracker($store, $clock),
-            new AntiEquilibriumGate($correlationStore),
             new DecayCalculator($clock),
-            new EphemeralBucket($correlationStore),
             'test-secret',
             'prod',
             $clock,
+            $clock,
+            null,
+            null,
         );
 
         return new RateLimiterEngine(

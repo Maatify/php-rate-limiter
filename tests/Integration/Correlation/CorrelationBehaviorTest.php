@@ -8,10 +8,8 @@ use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
@@ -39,13 +37,13 @@ final class CorrelationBehaviorTest extends TestCase
         $this->pipeline = new EvaluationPipeline(
             $this->store,
             $this->correlationStore,
-            new BudgetTracker($this->store, $this->clock),
-            new AntiEquilibriumGate($this->correlationStore),
             new DecayCalculator($this->clock),
-            new EphemeralBucket($this->correlationStore),
             'test_secret',
             'prod',
             $this->clock,
+            $this->clock,
+            null,
+            null,
         );
     }
 
@@ -96,7 +94,7 @@ final class CorrelationBehaviorTest extends TestCase
             "otp_protection:rate_limiter:correlation:dilution_watch:v1:prod:{$dilutionScope}",
             'test_secret',
         );
-        $this->assertSame(1, $this->correlationStore->getWatchFlag($dilutionWatch));
+        $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $dilutionWatch)->getWatchFlag($dilutionWatch));
 
         $result = $this->pipeline->process(
             $this->policy,
@@ -121,6 +119,6 @@ final class CorrelationBehaviorTest extends TestCase
         $gate->recordSoftBlock('login-state-key');
 
         $this->assertTrue($gate->shouldEscalate('login-state-key'));
-        $this->assertSame(3, $this->correlationStore->getWatchFlag('login-state-key'));
+        $this->assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, 'login-state-key')->getWatchFlag('login-state-key'));
     }
 }

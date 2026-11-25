@@ -28,7 +28,6 @@ use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
 use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
-use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Repository\AdmissionReservationStoreInterface;
 use Maatify\RateLimiter\Repository\AtomicAdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Repository\SharedAdmissionConfigStoreInterface;
@@ -41,8 +40,6 @@ use Maatify\RateLimiter\Repository\ScoreReplaceStoreInterface;
 use Maatify\RateLimiter\Repository\OperationalReadOnlyStoreInterface;
 use Maatify\RateLimiter\Service\AdmissionCredentialCodec;
 use Maatify\RateLimiter\Service\AdmissionRuntime;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\CircuitBreaker;
 use Maatify\RateLimiter\Service\CompositeRateLimitOperationalReader;
 use Maatify\RateLimiter\Service\CompositeRateLimitOperationalReaderInterface;
@@ -51,22 +48,16 @@ use Maatify\RateLimiter\Service\CompositeRateLimiterRuntimeInterface;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
 use Maatify\RateLimiter\Service\DeviceIdentityResolverInterface;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
+use Maatify\RateLimiter\Service\E1StoreBinding;
 use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\Service\FixedWindowSimpleRateLimiter;
 use Maatify\RateLimiter\Service\RateLimitOperationalReader;
 use Maatify\RateLimiter\Service\RateLimiterEngine;
-use Maatify\RateLimiter\Service\RateLimiterInterface;
 use Maatify\RateLimiter\Service\RequestScopedClock;
 use Maatify\RateLimiter\Service\SimpleRateLimitOperationalReader;
-use Maatify\RateLimiter\Enum\KeyScopeEncodingEnum;
 use Maatify\RateLimiter\Exception\RateLimiterException;
-use Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface;
-use Maatify\RateLimiter\Service\AccountScopeKeyDeriverInterface;
-use Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver;
-use Maatify\RateLimiter\Service\V2AccountScopeKeyDeriver;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\SharedCommon\Infrastructure\SystemClock;
 
@@ -85,16 +76,6 @@ final class RateLimiterBuilder
     private ?DeviceIdentityResolverInterface $deviceIdentityResolver = null;
 
     private ?int $provenPendingPermitLimit = null;
-
-    private KeyScopeEncodingEnum $keyScopeEncoding = KeyScopeEncodingEnum::V2;
-
-    private ?AccountScopeKeyDeriverInterface $accountKeyDeriver = null;
-
-    /** True once a runtime or reader was built successfully from this builder (anywhere, including inside another build): the selection is then final. */
-    private bool $selectionFixed = false;
-
-    /** Builds in progress on this builder (a Host callback can start another one from inside a build): the selection cannot change meanwhile. */
-    private int $buildDepth = 0;
 
     private ?ExecutionContextProviderInterface $contextProvider = null;
 
@@ -161,25 +142,6 @@ final class RateLimiterBuilder
      * Override the clock shared by the Builder's clock-dependent runtime and
      * operational-read components.
      */
-    /**
-     * Choose the derivation of the account-bearing keys for the runtime and the operational reader this builder composes (DEC-044).
-     *
-     * `V2` is the default and keeps every physical key of the shipped derivation. `E1` is explicit and chosen once per builder: the length-prefixed
-     * encoding with its own HMAC key domain, kept under its own physical prefix. It starts a new key space: V2 state is never read from E1.
-     * The stores must implement {@see E1KeyspaceStoreInterface}; composition fails otherwise, before anything is written.
-     */
-    public function withKeyScopeEncoding(KeyScopeEncodingEnum $encoding): self
-    {
-        if (($this->selectionFixed || $this->buildDepth > 0) && $encoding !== $this->keyScopeEncoding) {
-            // F295-02: a runtime or reader already derived keys with the first selection; a second encoding on this builder would let the
-            // writer and a later reader disagree on every account-scope key.
-            throw new RateLimiterException('The key scope encoding is fixed once a build has started from this builder, until every attempt has failed, and for good after one succeeded (DEC-044).');
-        }
-        $this->keyScopeEncoding = $encoding;
-
-        return $this;
-    }
-
     public function withClock(ClockInterface $clock): self
     {
         $this->clock = $clock;
@@ -261,27 +223,11 @@ final class RateLimiterBuilder
      */
     public function build(): CompositeRateLimiterRuntimeInterface
     {
-        $this->buildDepth++;
-        $succeeded = false;
-        try {
-            $runtime = $this->composeRuntime();
-            $succeeded = true;
-
-            return $runtime;
-        } finally {
-            // `finally`, not `catch (\Throwable)`: a build suspended in a Fiber that is destroyed is unwound through `finally` only.
-            $this->buildDepth--;
-            if ($succeeded) {
-                $this->selectionFixed = true;
-            } else {
-                $this->releaseSelectionAfterFailedBuild();
-            }
-        }
+        return $this->composeRuntime();
     }
 
     private function composeRuntime(): CompositeRateLimiterRuntimeInterface
     {
-        $this->assertKeyScopeEncodingSupported();
         $this->assertCapabilitiesSatisfied();
 
         // One reading of the Host clock per runtime call, shared by every
@@ -289,30 +235,18 @@ final class RateLimiterBuilder
         $clock = new RequestScopedClock($this->clock ?? new SystemClock(new DateTimeZone('UTC')));
         $deviceIdentityResolver = $this->deviceIdentityResolver ?? $this->defaultDeviceIdentityResolver();
 
-        $accountKeys = $this->accountKeyDeriver();
-        // Under E1 the K4 budget and the auxiliary watchers live in the E1 layout of the same stores (views of the same instances).
-        $accountStore = $this->keyScopeEncoding === KeyScopeEncodingEnum::E1 && $this->rateLimitStore instanceof E1KeyspaceStoreInterface
-            ? $this->rateLimitStore->e1Keyspace()
-            : $this->rateLimitStore;
-        $accountCorrelation = $this->keyScopeEncoding === KeyScopeEncodingEnum::E1 && $this->correlationStore instanceof E1KeyspaceStoreInterface
-            ? $this->correlationStore->e1Keyspace()
-            : $this->correlationStore;
-        $budgetTracker = new BudgetTracker($accountStore, $clock);
-        $antiEquilibriumGate = new AntiEquilibriumGate($accountCorrelation, $clock);
         $decayCalculator = new DecayCalculator($clock);
-        $ephemeralBucket = new EphemeralBucket($this->correlationStore, $clock);
         $evaluationPipeline = new EvaluationPipeline(
             $this->rateLimitStore,
             $this->correlationStore,
-            $budgetTracker,
-            $antiEquilibriumGate,
             $decayCalculator,
-            $ephemeralBucket,
             $this->config->keySecret(),
             $this->config->environmentScope(),
             $clock,
+            $clock,
+            $clock,
+            $clock,
             $this->config->previousKeySecret(),
-            $accountKeys,
         );
         $circuitBreaker = new CircuitBreaker(
             $this->circuitBreakerStore,
@@ -321,7 +255,7 @@ final class RateLimiterBuilder
         );
         // DEC-041: the whole resource set of the graph is bound to one context domain, or the build fails without binding anything.
         $binding = OwnershipRegistry::bindGraph(
-            OwnershipRegistry::collect([$this->rateLimitStore, $this->correlationStore, $this->circuitBreakerStore, $circuitBreaker], [], [$clock]),
+            OwnershipRegistry::collect([$evaluationPipeline, $this->circuitBreakerStore, $circuitBreaker], [], [$clock]),
             $this->contextProvider,
         );
 
@@ -389,22 +323,7 @@ final class RateLimiterBuilder
      */
     public function buildOperationalReader(): CompositeRateLimitOperationalReaderInterface
     {
-        $this->buildDepth++;
-        $succeeded = false;
-        try {
-            $reader = $this->composeReader();
-            $succeeded = true;
-
-            return $reader;
-        } finally {
-            // `finally`, not `catch (\Throwable)`: a build suspended in a Fiber that is destroyed is unwound through `finally` only.
-            $this->buildDepth--;
-            if ($succeeded) {
-                $this->selectionFixed = true;
-            } else {
-                $this->releaseSelectionAfterFailedBuild();
-            }
-        }
+        return $this->composeReader();
     }
 
     private function composeReader(): CompositeRateLimitOperationalReaderInterface
@@ -416,12 +335,16 @@ final class RateLimiterBuilder
         $clock = $this->clock ?? new SystemClock(new DateTimeZone('UTC'));
         $deviceIdentityResolver = $this->deviceIdentityResolver ?? $this->defaultDeviceIdentityResolver();
         // DEC-041: the readers' resources are the rate-limit store and the circuit-breaker store; their clock is the Host clock as before.
-        $binding = OwnershipRegistry::bindGraph(OwnershipRegistry::collect([$this->rateLimitStore, $this->circuitBreakerStore]), $this->contextProvider);
+        $accountBinding = E1StoreBinding::capture($this->rateLimitStore);
+        if (! $accountBinding->view instanceof OperationalReadOnlyStoreInterface) {
+            throw new RateLimiterException('Operational Read requires an account view implementing OperationalReadOnlyStoreInterface.');
+        }
+        $binding = OwnershipRegistry::bindGraph(OwnershipRegistry::collect([$this->rateLimitStore, $accountBinding->view, $this->circuitBreakerStore], [], [$clock]), $this->contextProvider);
 
         /** @var list<object> $built filled as each entry class is constructed (the catch below runs after any of them) */
         $built = [];
         try {
-            return $this->composeOperationalReader($deviceIdentityResolver, $clock, $built);
+            return $this->composeOperationalReader($deviceIdentityResolver, $clock, $built, $accountBinding);
         } catch (\Throwable $failure) {
             // A reader build that fails after its stores were bound leaves no binding of its own behind (a binding that existed stays):
             // the holds of the readers it constructed itself are released first.
@@ -436,7 +359,7 @@ final class RateLimiterBuilder
     /**
      * @param list<object> $built the readers this build constructed, filled as each one is constructed
      */
-    private function composeOperationalReader(DeviceIdentityResolverInterface $deviceIdentityResolver, ClockInterface $clock, array &$built): CompositeRateLimitOperationalReaderInterface
+    private function composeOperationalReader(DeviceIdentityResolverInterface $deviceIdentityResolver, ClockInterface $clock, array &$built, E1StoreBinding $accountBinding): CompositeRateLimitOperationalReaderInterface
     {
         $scoreReader = new RateLimitOperationalReader(
             $deviceIdentityResolver,
@@ -447,7 +370,7 @@ final class RateLimiterBuilder
             $this->config->keySecret(),
             $this->config->environmentScope(),
             $this->config->previousKeySecret(),
-            $this->accountKeyDeriver(),
+            $accountBinding,
         );
         $built[] = $scoreReader;
 
@@ -486,39 +409,6 @@ final class RateLimiterBuilder
      *
      * @throws RateLimiterException when a required typed capability is absent.
      */
-    /**
-     * F295-02: the selection is fixed by the first SUCCESSFUL build. A build that fails, at any point and for any reason, leaves nothing
-     * derived behind, so the Host can correct the cause and still choose either encoding; a failure never undoes a selection that an earlier
-     * (or nested) successful build already fixed.
-     */
-    private function releaseSelectionAfterFailedBuild(): void
-    {
-        if (! $this->selectionFixed && $this->buildDepth === 0) {
-            $this->accountKeyDeriver = null;
-        }
-    }
-
-    /** One derivation source per builder: the runtime and its reader receive the same instance, so they cannot select different encodings. */
-    private function accountKeyDeriver(): AccountScopeKeyDeriverInterface
-    {
-        $this->assertKeyScopeEncodingSupported();
-
-        return $this->accountKeyDeriver ??= $this->keyScopeEncoding === KeyScopeEncodingEnum::E1
-            ? new E1AccountScopeKeyDeriver($this->config->environmentScope())
-            : new V2AccountScopeKeyDeriver($this->config->environmentScope());
-    }
-
-    /** E1 over a store that cannot keep the E1 layout fails here, before the first write (DEC-044, E1 contract §8.6). */
-    private function assertKeyScopeEncodingSupported(): void
-    {
-        if ($this->keyScopeEncoding !== KeyScopeEncodingEnum::E1) {
-            return;
-        }
-        if (! $this->rateLimitStore instanceof E1KeyspaceStoreInterface || ! $this->correlationStore instanceof E1KeyspaceStoreInterface) {
-            throw new RateLimiterException('The E1 key encoding requires a rate-limit store and a correlation store implementing E1KeyspaceStoreInterface (DEC-044).');
-        }
-    }
-
     private function assertCapabilitiesSatisfied(): void
     {
         $this->assertPunishmentLifecycleCapability();

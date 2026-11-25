@@ -75,7 +75,7 @@ final class AdmissionOutcomeDuringRecoveryRedisTest extends TestCase
             return 'adm:' . $m[1];
         }
 
-        return preg_match('/^maatify:rate-limiter:v1:[0-9a-f]{64}:([a-z0-9_-]+):/', $key, $m) === 1 ? $m[1] : 'other';
+        return preg_match('/^maatify:rate-limiter:(?:v1|e1):[0-9a-f]{64}:([a-z0-9_-]+):/', $key, $m) === 1 ? $m[1] : 'other';
     }
 
     /** @return array<string, string> key => exact DUMP and PEXPIRETIME read from outside Lua */

@@ -42,7 +42,11 @@ final class SnapshotFencedScoreCapabilityTest extends TestCase
     public function testTheOperationalReaderDoesNotRequireTheCapability(): void
     {
         // The reader needs only its read-only reads (DEC-032), not the snapshot-fenced write.
-        $this->builder($this->createStub(FullCapabilityReadOnlyReadsStoreInterface::class))->buildOperationalReader();
+        $root = $this->createStub(FullCapabilityReadOnlyReadsStoreInterface::class);
+        $view = clone $root;
+        $root->method('e1Keyspace')->willReturn($view);
+        $view->method('e1Keyspace')->willReturn($view);
+        $this->builder($root)->buildOperationalReader();
 
         $this->addToAssertionCount(1);
     }

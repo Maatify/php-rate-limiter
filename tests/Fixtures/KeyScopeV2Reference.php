@@ -2,24 +2,19 @@
 
 declare(strict_types=1);
 
-namespace Maatify\RateLimiter\Service;
+namespace Maatify\RateLimiter\Tests\Fixtures;
 
-use Maatify\RateLimiter\Enum\KeyScopeEncodingEnum;
+use Maatify\RateLimiter\Service\AccountScopePurpose;
 
 /**
- * The shipped derivation (V2): the same preimage text and the same plain HMAC as before DEC-044, moved behind the single derivation
+ * Historical source fixture pinned to main@6db1378 (not a runtime option). V2: the same preimage text and the same plain HMAC as before DEC-044, moved behind the single derivation
  * source. Its output is byte-identical to the derivation it replaced.
  *
  * @internal
  */
-final class V2AccountScopeKeyDeriver implements AccountScopeKeyDeriverInterface
+final class KeyScopeV2Reference
 {
     public function __construct(private readonly string $envScope) {}
-
-    public function encoding(): KeyScopeEncodingEnum
-    {
-        return KeyScopeEncodingEnum::V2;
-    }
 
     public function derive(string $purpose, string $policy, string $account, string $secret, ?string $material = null): string
     {

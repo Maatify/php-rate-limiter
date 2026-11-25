@@ -14,10 +14,7 @@ use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\Correlation\NullCorrelationStore;
@@ -61,12 +58,12 @@ final class DistributedAccountAttackTest extends TestCase
             array_map(static fn(RateLimitResultDTO $result): string => $result->decision, $results),
         );
         self::assertSame(2, $results[3]->blockLevel);
-        self::assertNull($this->store->checkBlock($this->key('login_protection', 'k4', 'distributed-login')));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k4', 'distributed-login'))->checkBlock($this->key('login_protection', 'k4', 'distributed-login')));
 
         foreach (range(1, 4) as $index) {
             self::assertSame(
                 2,
-                $this->store->checkBlock($this->key('login_protection', 'k5', "distributed-login:fp-{$index}"))?->level,
+                \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k5', "distributed-login:fp-{$index}"))->checkBlock($this->key('login_protection', 'k5', "distributed-login:fp-{$index}"))?->level,
             );
         }
 
@@ -101,7 +98,7 @@ final class DistributedAccountAttackTest extends TestCase
         $scope = $this->distributedDeviceScope($policy->getName(), $account, self::SECRET);
         $occurrenceScope = $this->occurrenceScope($policy->getName(), $account, self::SECRET);
         $oldK5 = $this->key($policy->getName(), 'k5', "{$account}:fp-1");
-        $oldExpiry = $this->store->checkBlock($oldK5)?->expiresAt;
+        $oldExpiry = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $oldK5)->checkBlock($oldK5)?->expiresAt;
         self::assertNotNull($oldExpiry);
         self::assertSame(1, $this->correlationStore->distinctCount($occurrenceScope));
 
@@ -118,8 +115,8 @@ final class DistributedAccountAttackTest extends TestCase
 
             self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
             self::assertSame(2, $result->blockLevel);
-            self::assertSame(2, $this->store->checkBlock($currentK5)?->level);
-            self::assertSame($oldExpiry, $this->store->checkBlock($oldK5)?->expiresAt);
+            self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $currentK5)->checkBlock($currentK5)?->level);
+            self::assertSame($oldExpiry, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $oldK5)->checkBlock($oldK5)?->expiresAt);
             self::assertSame(4, $this->correlationStore->distinctCount($scope));
             self::assertSame(1, $this->correlationStore->distinctCount($occurrenceScope));
         }
@@ -134,9 +131,9 @@ final class DistributedAccountAttackTest extends TestCase
 
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $ephemeral->decision);
         self::assertSame(2, $ephemeral->blockLevel);
-        self::assertNull($this->store->checkBlock($ephemeralK5));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $ephemeralK5)->checkBlock($ephemeralK5));
         self::assertSame(4, $this->correlationStore->distinctCount($scope));
-        $this->assertBlockExpiry($this->store->checkBlock($oldK5), $oldExpiry);
+        $this->assertBlockExpiry(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $oldK5)->checkBlock($oldK5), $oldExpiry);
     }
 
     public function testThreeDevicesSetOneWatchAndSecondQualifyingObservationReachesHardL2(): void
@@ -155,7 +152,7 @@ final class DistributedAccountAttackTest extends TestCase
         }
 
         $watch = $this->distributedWatch('login_protection', 'watch-account', self::SECRET);
-        self::assertSame(1, $this->correlationStore->watchValue($watch));
+        self::assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $watch)->watchValue($watch));
 
         $result = $pipeline->process(
             $policy,
@@ -166,12 +163,12 @@ final class DistributedAccountAttackTest extends TestCase
 
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         self::assertSame(2, $result->blockLevel);
-        self::assertSame(2, $this->correlationStore->watchValue($watch));
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $watch)->watchValue($watch));
 
         foreach (range(1, 3) as $index) {
             self::assertSame(
                 2,
-                $this->store->checkBlock($this->key('login_protection', 'k5', "watch-account:fp-{$index}"))?->level,
+                \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k5', "watch-account:fp-{$index}"))->checkBlock($this->key('login_protection', 'k5', "watch-account:fp-{$index}"))?->level,
             );
         }
     }
@@ -200,8 +197,8 @@ final class DistributedAccountAttackTest extends TestCase
         }
 
         $previousWatch = $this->distributedWatch($policy->getName(), $account, $oldSecret);
-        $previousWatchExpiry = $this->correlationStore->watchExpiresAt($previousWatch);
-        self::assertSame(1, $this->correlationStore->watchValue($previousWatch), $shape);
+        $previousWatchExpiry = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousWatch)->watchExpiresAt($previousWatch);
+        self::assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousWatch)->watchValue($previousWatch), $shape);
         self::assertNotNull($previousWatchExpiry);
 
         $previousScope = $this->distributedDeviceScope($policy->getName(), $account, $oldSecret);
@@ -223,11 +220,11 @@ final class DistributedAccountAttackTest extends TestCase
         self::assertSame(2, $result->blockLevel, $shape);
         $currentWatch = $this->distributedWatch($policy->getName(), $account, $currentSecret);
         if ($shape === 'fingerprint-only') {
-            self::assertSame(2, $this->correlationStore->watchValue($currentWatch), $shape);
+            self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $currentWatch)->watchValue($currentWatch), $shape);
         } else {
-            self::assertSame(1, $this->correlationStore->watchValue($currentWatch), $shape);
+            self::assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $currentWatch)->watchValue($currentWatch), $shape);
         }
-        self::assertSame($previousWatchExpiry, $this->correlationStore->watchExpiresAt($previousWatch), $shape);
+        self::assertSame($previousWatchExpiry, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousWatch)->watchExpiresAt($previousWatch), $shape);
         self::assertSame($previousItems, $this->correlationStore->distinctItems($previousScope), $shape);
         self::assertSame($previousExpiry, $this->correlationStore->distinctExpiresAt($previousScope), $shape);
         self::assertSame(
@@ -263,7 +260,7 @@ final class DistributedAccountAttackTest extends TestCase
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $fifth->decision);
         self::assertSame(4, $this->correlationStore->distinctCount($this->distributedDeviceScope('login_protection', 'one-occurrence', self::SECRET)));
         self::assertSame(1, $this->correlationStore->distinctCount($occurrenceScope));
-        self::assertSame(2, $this->store->checkBlock($this->key('login_protection', 'k5', 'one-occurrence:fp-5'))?->level);
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k5', 'one-occurrence:fp-5'))->checkBlock($this->key('login_protection', 'k5', 'one-occurrence:fp-5'))?->level);
     }
 
     public function testThirdSeparateWindowHardBlocksK4AtL4AndRetainsK5L2(): void
@@ -291,7 +288,7 @@ final class DistributedAccountAttackTest extends TestCase
                 $this->correlationStore->distinctCount($this->occurrenceScope($policy->getName(), $account, self::SECRET)),
             );
             if ($window < 3) {
-                $k4Block = $this->store->checkBlock($k4);
+                $k4Block = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4)->checkBlock($k4);
                 if ($k4Block !== null) {
                     self::assertLessThan(2, $k4Block->level);
                 }
@@ -302,13 +299,13 @@ final class DistributedAccountAttackTest extends TestCase
             }
         }
 
-        $accountBlock = $this->store->checkBlock($k4);
+        $accountBlock = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4)->checkBlock($k4);
         self::assertNotNull($accountBlock);
         self::assertSame(4, $accountBlock->level);
         self::assertSame(1800, $accountBlock->expiresAt - $this->clock->now()->getTimestamp());
         self::assertSame(
             2,
-            $this->store->checkBlock($this->key($policy->getName(), 'k5', "{$account}:fp-31"))?->level,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k5', "{$account}:fp-31"))->checkBlock($this->key($policy->getName(), 'k5', "{$account}:fp-31"))?->level,
         );
         self::assertSame(3, $this->correlationStore->distinctCount($this->occurrenceScope($policy->getName(), $account, self::SECRET)));
 
@@ -352,7 +349,7 @@ final class DistributedAccountAttackTest extends TestCase
 
         $occurrenceScope = $this->occurrenceScope($policy->getName(), $account, self::SECRET);
         self::assertSame(3, $this->correlationStore->distinctCount($occurrenceScope));
-        self::assertSame(4, $this->store->checkBlock($this->key($policy->getName(), 'k4', $account))?->level);
+        self::assertSame(4, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k4', $account))->checkBlock($this->key($policy->getName(), 'k4', $account))?->level);
         $this->clock->setNow($this->clock->now()->modify('+86401 seconds'));
 
         for ($index = 41; $index <= 44; $index++) {
@@ -370,7 +367,7 @@ final class DistributedAccountAttackTest extends TestCase
         }
 
         self::assertSame(1, $this->correlationStore->distinctCount($occurrenceScope));
-        self::assertNull($this->store->checkBlock($this->key($policy->getName(), 'k4', $account)));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k4', $account))->checkBlock($this->key($policy->getName(), 'k4', $account)));
     }
 
     #[DataProvider('policies')]
@@ -508,7 +505,7 @@ final class DistributedAccountAttackTest extends TestCase
                 array_map(static fn(RateLimitResultDTO $result): string => $result->decision, $results),
                 $policy->getName(),
             );
-            self::assertNull($this->store->checkBlock($this->key($policy->getName(), 'k4', $account)));
+            self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k4', $account))->checkBlock($this->key($policy->getName(), 'k4', $account)));
             self::assertSame(4, $this->correlationStore->distinctCount($this->distributedDeviceScope($policy->getName(), $account, self::SECRET)));
         }
 
@@ -542,10 +539,10 @@ final class DistributedAccountAttackTest extends TestCase
             }
         }
 
-        self::assertSame(4, $this->store->checkBlock($k4)?->level);
+        self::assertSame(4, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4)->checkBlock($k4)?->level);
         self::assertSame(
             2,
-            $this->store->checkBlock($this->key($policy->getName(), 'k5', "{$account}:fp-31"))?->level,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k5', "{$account}:fp-31"))->checkBlock($this->key($policy->getName(), 'k5', "{$account}:fp-31"))?->level,
         );
     }
 
@@ -579,7 +576,7 @@ final class DistributedAccountAttackTest extends TestCase
         foreach ($members as $member) {
             self::assertStringNotContainsString($account, $member);
             self::assertStringNotContainsString('fp-', $member);
-            self::assertNotNull($this->store->checkBlock($member));
+            self::assertNotNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $member)->checkBlock($member));
         }
     }
 
@@ -663,14 +660,14 @@ final class DistributedAccountAttackTest extends TestCase
                 : "fp-{$index}";
             self::assertSame(
                 2,
-                $this->store->checkBlock($this->key($policy->getName(), 'k5', "{$account}:{$oldFingerprint}", $oldSecret))?->level,
+                \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k5', "{$account}:{$oldFingerprint}", $oldSecret))->checkBlock($this->key($policy->getName(), 'k5', "{$account}:{$oldFingerprint}", $oldSecret))?->level,
                 $shape,
             );
         }
 
         if ($shape === 'both') {
-            self::assertNull($this->store->checkBlock($this->key($policy->getName(), 'k5', "{$account}:old-fp-3", $currentSecret)));
-            self::assertNull($this->store->checkBlock($this->key($policy->getName(), 'k5', "{$account}:new-fp-3", $oldSecret)));
+            self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k5', "{$account}:old-fp-3", $currentSecret))->checkBlock($this->key($policy->getName(), 'k5', "{$account}:old-fp-3", $currentSecret)));
+            self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k5', "{$account}:new-fp-3", $oldSecret))->checkBlock($this->key($policy->getName(), 'k5', "{$account}:new-fp-3", $oldSecret)));
             self::assertSame(1, $this->correlationStore->distinctCount($this->occurrenceScope($policy->getName(), $account, $currentSecret)));
             self::assertSame(0, $this->correlationStore->distinctCount($this->occurrenceScope($policy->getName(), $account, $oldSecret)));
         }
@@ -718,7 +715,7 @@ final class DistributedAccountAttackTest extends TestCase
         self::assertSame(1, $this->correlationStore->distinctCount($oldScope));
         self::assertSame(
             2,
-            $this->store->checkBlock($this->key($policy->getName(), 'k5', "{$account}:fp-5", self::SECRET))?->level,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k5', "{$account}:fp-5", self::SECRET))->checkBlock($this->key($policy->getName(), 'k5', "{$account}:fp-5", self::SECRET))?->level,
         );
         self::assertSame(0, $this->correlationStore->distinctCount($this->occurrenceScope($policy->getName(), $account, self::SECRET)));
     }
@@ -754,7 +751,7 @@ final class DistributedAccountAttackTest extends TestCase
         $oldOccurrenceExpiry = $this->correlationStore->distinctExpiresAt($oldOccurrenceScope);
         self::assertCount(1, $oldOccurrenceItems, $shape);
         self::assertNotNull($oldOccurrenceExpiry);
-        self::assertNull($this->store->checkBlock($this->key($policy->getName(), 'k4', $account, $oldSecret)));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k4', $account, $oldSecret))->checkBlock($this->key($policy->getName(), 'k4', $account, $oldSecret)));
 
         $this->clock->setNow($this->clock->now()->modify('+601 seconds'));
         $currentPipeline = $this->pipeline($currentSecret, $previousOuter);
@@ -786,7 +783,7 @@ final class DistributedAccountAttackTest extends TestCase
             self::assertSame($window === 2 ? 2 : 4, $qualification->blockLevel, $shape);
 
             if ($window === 2) {
-                $accountBlock = $this->store->checkBlock($currentK4);
+                $accountBlock = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $currentK4)->checkBlock($currentK4);
                 if ($accountBlock !== null) {
                     self::assertLessThan(2, $accountBlock->level, $shape);
                 }
@@ -809,11 +806,11 @@ final class DistributedAccountAttackTest extends TestCase
             }
         }
 
-        self::assertSame(4, $this->store->checkBlock($currentK4)?->level);
+        self::assertSame(4, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $currentK4)->checkBlock($currentK4)?->level);
         $currentFingerprint = $shape === 'outer-only' ? 'fp-31' : 'new-fp-31';
         self::assertSame(
             2,
-            $this->store->checkBlock($this->key($policy->getName(), 'k5', "{$account}:{$currentFingerprint}", $currentSecret))?->level,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k5', "{$account}:{$currentFingerprint}", $currentSecret))->checkBlock($this->key($policy->getName(), 'k5', "{$account}:{$currentFingerprint}", $currentSecret))?->level,
             $shape,
         );
     }
@@ -836,13 +833,13 @@ final class DistributedAccountAttackTest extends TestCase
         return new EvaluationPipeline(
             $this->store,
             $store,
-            new BudgetTracker($this->store, $this->clock),
-            new AntiEquilibriumGate($store),
             new DecayCalculator($this->clock),
-            new EphemeralBucket($store),
             $currentSecret,
             'prod',
             $this->clock,
+            $this->clock,
+            null,
+            null,
             $previousSecret,
         );
     }
@@ -886,7 +883,7 @@ final class DistributedAccountAttackTest extends TestCase
 
     private function key(string $policy, string $type, string $scope, string $secret = self::SECRET): string
     {
-        return hash_hmac('sha256', "{$policy}:rate_limiter:{$type}:v2:prod:{$scope}", $secret);
+        return \Maatify\RateLimiter\Tests\Support\FixtureKeys::scope(($type), ($policy), 'prod', ($scope), $secret);
     }
 
     private function distributedDeviceScope(string $policy, string $account, string $secret): string

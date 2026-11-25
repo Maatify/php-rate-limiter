@@ -165,7 +165,7 @@ final class AdmissionBuilderActivationTest extends TestCase
             (new \ReflectionClass(RateLimiterBuilder::class))->getMethods(\ReflectionMethod::IS_PUBLIC),
         );
         sort($builderMethods);
-        self::assertSame(['__construct', 'build', 'buildOperationalReader', 'fromFullCapabilityStore', 'withClock', 'withDeviceIdentityResolver', 'withExecutionContextProvider', 'withKeyScopeEncoding', 'withPolicy', 'withProvenPendingPermitLimit', 'withSimpleThrottlePolicy'], $builderMethods);
+        self::assertSame(['__construct', 'build', 'buildOperationalReader', 'fromFullCapabilityStore', 'withClock', 'withDeviceIdentityResolver', 'withExecutionContextProvider', 'withPolicy', 'withProvenPendingPermitLimit', 'withSimpleThrottlePolicy'], $builderMethods);
         // #206: `withProvenPendingPermitLimit(int)` is the one Host-set admission bound. It is opt-in (absent means no bound, the
         // `provenPendingPermitCap` field stays null in `packageDefaults()`) and takes a plain integer, never an `AdmissionBudgetsDTO`.
 

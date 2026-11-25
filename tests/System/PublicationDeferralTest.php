@@ -9,12 +9,9 @@ use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\CircuitBreaker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\FingerprintHasher;
@@ -102,10 +99,11 @@ final class PublicationDeferralTest extends TestCase
         $store->arm(PHP_INT_MAX);
         $this->failure($pipeline);
         $k4Key = $this->controlRun()['k4Key'];
-        $k5Key = hash_hmac('sha256', 'login_protection:rate_limiter:k5:v2:prod:' . self::ACCOUNT . ':' . self::DEVICE, 'test_secret');
-        $generation = $store->readGenerationBoundScoreState($k4Key, null)?->generation;
+        $k5Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k5', 'login_protection', (self::ACCOUNT), 'test_secret', (self::DEVICE));
+        $generation = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $k4Key)->readGenerationBoundScoreState($k4Key, null)?->generation;
         self::assertNotNull($generation);
         (new \ReflectionProperty($pipeline, 'lifecycleEligibleKeys'))->setValue($pipeline, [$k4Key => $generation]);
+        (new \ReflectionProperty($pipeline, 'accountScopedKeys'))->setValue($pipeline, [$k4Key => true]);
         $store->arm(PHP_INT_MAX);
         $candidate = [
             'decision' => RateLimitResultDTO::DECISION_HARD_BLOCK,
@@ -217,8 +215,8 @@ final class PublicationDeferralTest extends TestCase
         self::assertSame($k5Only->retryAfter, $result->retryAfter, 'the decision of the same request without K4');
         self::assertNull($result->metadata?->cause, 'a dropped K4 is not a deferred publication');
         self::assertSame(1, $store->publicationCalls);
-        self::assertSame(2, $store->checkBlock($control['k5Key'])?->level, 'the K5 block is published');
-        self::assertNull($store->checkBlock($control['k4Key']), 'no K4 block is published');
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $control['k5Key'])->checkBlock($control['k5Key'])?->level, 'the K5 block is published');
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $control['k4Key'])->checkBlock($control['k4Key']), 'no K4 block is published');
         $scores = $this->scores($store);
         self::assertSame(0, $scores[$control['k4Key']] ?? null, 'K4 is what the scripted concurrent writer left');
         unset($scores[$control['k4Key']], $control['scores'][$control['k4Key']]);
@@ -272,8 +270,8 @@ final class PublicationDeferralTest extends TestCase
         self::assertSame(3, $result->blockLevel, 'the K4 level, the higher of the two');
         self::assertSame($control['result']->retryAfter, $result->retryAfter);
         self::assertNull($result->metadata?->cause);
-        self::assertSame(3, $store->checkBlock($control['k4Key'])?->level);
-        self::assertSame(2, $store->checkBlock($control['k5Key'])?->level);
+        self::assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $control['k4Key'])->checkBlock($control['k4Key'])?->level);
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $control['k5Key'])->checkBlock($control['k5Key'])?->level);
         self::assertSame($control['scores'], $this->scores($store));
     }
 
@@ -293,8 +291,8 @@ final class PublicationDeferralTest extends TestCase
         self::assertSame('k4', $result->metadata->context->scope);
         self::assertSame(4, $store->publicationCalls);
         self::assertSame(3, $store->snapshotReadsAfterLoss);
-        self::assertSame(2, $store->checkBlock($control['k5Key'])?->level, 'LT-S-06: the remaining blocks are published');
-        self::assertNull($store->checkBlock($control['k4Key']), 'the K4 block is deferred');
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $control['k5Key'])->checkBlock($control['k5Key'])?->level, 'LT-S-06: the remaining blocks are published');
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $control['k4Key'])->checkBlock($control['k4Key']), 'the K4 block is deferred');
         self::assertSame($control['scores'], $this->scores($store));
     }
 
@@ -324,7 +322,7 @@ final class PublicationDeferralTest extends TestCase
             'result' => $result,
             'scores' => $this->scores($store),
             'blocks' => $this->blocks($store),
-            'k4Key' => hash_hmac('sha256', 'login_protection:rate_limiter:k4:v2:prod:' . self::ACCOUNT, 'test_secret'),
+            'k4Key' => (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'login_protection', (self::ACCOUNT), 'test_secret'),
         ];
     }
 
@@ -364,13 +362,13 @@ final class PublicationDeferralTest extends TestCase
         }
         $result = $this->mixedFailure($pipeline);
         $fingerprint = (new DeviceIdentityResolver(new FingerprintHasher('test_secret')))->resolve($this->mixedContext())->fingerprintHash;
-        $k4Key = hash_hmac('sha256', 'login_protection:rate_limiter:k4:v2:prod:' . self::MIXED_ACCOUNT, 'test_secret');
-        $k5Key = hash_hmac('sha256', 'login_protection:rate_limiter:k5:v2:prod:' . self::MIXED_ACCOUNT . ':' . $fingerprint, 'test_secret');
+        $k4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'login_protection', (self::MIXED_ACCOUNT), 'test_secret');
+        $k5Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k5', 'login_protection', (self::MIXED_ACCOUNT), 'test_secret', ($fingerprint));
         $scores = $this->scores($store);
         self::assertSame(12, $scores[$k4Key] ?? null, 'K4 at L3 in the twelfth failure');
         self::assertSame(14, $scores[$k5Key] ?? null, 'K5 at L2 in the twelfth failure');
-        self::assertSame(3, $store->checkBlock($k4Key)?->level);
-        self::assertSame(2, $store->checkBlock($k5Key)?->level);
+        self::assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $k4Key)->checkBlock($k4Key)?->level);
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $k5Key)->checkBlock($k5Key)?->level);
 
         return ['result' => $result, 'scores' => $scores, 'k4Key' => $k4Key, 'k5Key' => $k5Key];
     }
@@ -397,8 +395,8 @@ final class PublicationDeferralTest extends TestCase
         }
         $result = $this->mixedFailure($pipeline, $policy);
         $fingerprint = (new DeviceIdentityResolver(new FingerprintHasher('test_secret')))->resolve($this->mixedContext())->fingerprintHash;
-        $k4Key = hash_hmac('sha256', 'login_protection:rate_limiter:k4:v2:prod:' . self::MIXED_ACCOUNT, 'test_secret');
-        $k5Key = hash_hmac('sha256', 'login_protection:rate_limiter:k5:v2:prod:' . self::MIXED_ACCOUNT . ':' . $fingerprint, 'test_secret');
+        $k4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'login_protection', (self::MIXED_ACCOUNT), 'test_secret');
+        $k5Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k5', 'login_protection', (self::MIXED_ACCOUNT), 'test_secret', ($fingerprint));
         $scores = $this->scores($store);
         self::assertArrayNotHasKey($k4Key, $scores, 'K4 is never written in the K5-only control');
         self::assertSame(14, $scores[$k5Key] ?? null, 'K5 as in the mixed scenario');
@@ -442,13 +440,13 @@ final class PublicationDeferralTest extends TestCase
         return new EvaluationPipeline(
             $store,
             $correlation,
-            new BudgetTracker($store, $clock),
-            new AntiEquilibriumGate($correlation),
             new DecayCalculator($clock),
-            new EphemeralBucket($correlation),
             'test_secret',
             'prod',
             $clock,
+            $clock,
+            null,
+            null,
             null,
         );
     }
@@ -460,13 +458,13 @@ final class PublicationDeferralTest extends TestCase
         $pipeline = new EvaluationPipeline(
             $store,
             $correlation,
-            new BudgetTracker($store, $clock),
-            new AntiEquilibriumGate($correlation),
             new DecayCalculator($clock),
-            new EphemeralBucket($correlation),
             'test_secret',
             'prod',
             $clock,
+            $clock,
+            null,
+            null,
             null,
         );
 
@@ -491,6 +489,9 @@ final class PublicationDeferralTest extends TestCase
     {
         /** @var array<string, array{value: int}> $data */
         $data = (new \ReflectionProperty(InMemoryRateLimitStore::class, 'data'))->getValue($store);
+        /** @var array<string, array{value: int}> $accountData */
+        $accountData = (new \ReflectionProperty(InMemoryRateLimitStore::class, 'data'))->getValue($store->e1Keyspace());
+        $data += $accountData;
         $scores = array_map(static fn(array $row): int => $row['value'], $data);
         ksort($scores);
 
@@ -502,6 +503,9 @@ final class PublicationDeferralTest extends TestCase
     {
         /** @var array<string, array{level: int}> $blocks */
         $blocks = (new \ReflectionProperty(InMemoryRateLimitStore::class, 'blocks'))->getValue($store);
+        /** @var array<string, array{level: int}> $accountBlocks */
+        $accountBlocks = (new \ReflectionProperty(InMemoryRateLimitStore::class, 'blocks'))->getValue($store->e1Keyspace());
+        $blocks += $accountBlocks;
         $levels = array_map(static fn(array $row): int => $row['level'], $blocks);
         ksort($levels);
 

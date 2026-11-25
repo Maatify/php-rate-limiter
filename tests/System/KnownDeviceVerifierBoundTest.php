@@ -16,10 +16,7 @@ use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 use Maatify\RateLimiter\Exception\BackendFailureException;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore;
@@ -69,9 +66,9 @@ final class KnownDeviceVerifierBoundTest extends TestCase
         // The L1 decision comes from the K5 score (8), which decays one point
         // per 300 s; the short L1 block record itself expires after 15 s.
         $this->assertSame(4, $reached);
-        $this->assertSame(8, $this->store->get($this->key('login_protection', 'k5', 'owner:trusted-fp'))?->value);
-        $this->assertNull($this->store->checkBlock($this->key('login_protection', 'k4', 'owner')));
-        $this->assertNull($this->store->get($this->key('login_protection', 'k4', 'owner')));
+        $this->assertSame(8, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k5', 'owner:trusted-fp'))->get($this->key('login_protection', 'k5', 'owner:trusted-fp'))?->value);
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k4', 'owner'))->checkBlock($this->key('login_protection', 'k4', 'owner')));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k4', 'owner'))->get($this->key('login_protection', 'k4', 'owner')));
     }
 
     public function testOtpTrustedSessionOnOwnAccountReachesVerifierTwiceInBurst(): void
@@ -87,7 +84,7 @@ final class KnownDeviceVerifierBoundTest extends TestCase
         }
 
         $this->assertSame(2, $reached);
-        $this->assertNull($this->store->checkBlock($this->key('otp_protection', 'k4', 'owner')));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('otp_protection', 'k4', 'owner'))->checkBlock($this->key('otp_protection', 'k4', 'owner')));
     }
 
     /**
@@ -106,8 +103,8 @@ final class KnownDeviceVerifierBoundTest extends TestCase
         }
 
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $last->decision);
-        $this->assertSame(2, $this->store->checkBlock($this->key('login_protection', 'k5', 'owner:stolen-session-fp'))?->level);
-        $this->assertNull($this->store->checkBlock($this->key('login_protection', 'k4', 'owner')));
+        $this->assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k5', 'owner:stolen-session-fp'))->checkBlock($this->key('login_protection', 'k5', 'owner:stolen-session-fp'))?->level);
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k4', 'owner'))->checkBlock($this->key('login_protection', 'k4', 'owner')));
 
         $blocked = $pipeline->process($policy, $this->context('owner'), RateLimitCommand::checkOnly('login_protection'), $stolen);
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $blocked->decision);
@@ -137,8 +134,8 @@ final class KnownDeviceVerifierBoundTest extends TestCase
         }
 
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $last->decision);
-        $this->assertSame(2, $this->store->checkBlock($this->key('custom_authentication_flow', 'k5', 'custom-owner:custom-fp'))?->level);
-        $this->assertNull($this->store->checkBlock($this->key('custom_authentication_flow', 'k4', 'custom-owner')));
+        $this->assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('custom_authentication_flow', 'k5', 'custom-owner:custom-fp'))->checkBlock($this->key('custom_authentication_flow', 'k5', 'custom-owner:custom-fp'))?->level);
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('custom_authentication_flow', 'k4', 'custom-owner'))->checkBlock($this->key('custom_authentication_flow', 'k4', 'custom-owner')));
 
         $otherDevice = $pipeline->process(
             $policy,
@@ -241,7 +238,7 @@ final class KnownDeviceVerifierBoundTest extends TestCase
             $pipeline->process($policy, $this->context('custom-compat'), RateLimitCommand::recordFailure('custom_authentication_flow'), $device);
         }
 
-        $this->assertNull($this->store->get($this->key('custom_authentication_flow', 'k4', 'custom-compat')));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('custom_authentication_flow', 'k4', 'custom-compat'))->get($this->key('custom_authentication_flow', 'k4', 'custom-compat')));
     }
 
     /**
@@ -258,12 +255,12 @@ final class KnownDeviceVerifierBoundTest extends TestCase
         for ($attempt = 0; $attempt < 8; $attempt++) {
             $old->process($policy, $this->context('rotating-owner', "198.51.100.{$attempt}"), RateLimitCommand::recordFailure('login_protection'), $this->rotatedDevice($attempt));
         }
-        $this->assertNull($this->store->get($this->key('login_protection', 'k4', 'rotating-owner')));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k4', 'rotating-owner'))->get($this->key('login_protection', 'k4', 'rotating-owner')));
 
         $rotated = $this->pipeline('test_secret', 'new_secret');
         $rotated->process($policy, $this->context('rotating-owner', '198.51.100.8'), RateLimitCommand::recordFailure('login_protection'), $this->rotatedDevice(8));
 
-        $this->assertSame(3, $this->store->get($this->key('login_protection', 'k4', 'rotating-owner', 'new_secret'))?->value);
+        $this->assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k4', 'rotating-owner', 'new_secret'))->get($this->key('login_protection', 'k4', 'rotating-owner', 'new_secret'))?->value);
     }
 
     /**
@@ -277,13 +274,13 @@ final class KnownDeviceVerifierBoundTest extends TestCase
         $pipeline = new EvaluationPipeline(
             $failing,
             $this->correlationStore,
-            new BudgetTracker($failing, $this->clock),
-            new AntiEquilibriumGate($this->correlationStore),
             new DecayCalculator($this->clock),
-            new EphemeralBucket($this->correlationStore),
             'test_secret',
             'prod',
             $this->clock,
+            $this->clock,
+            null,
+            null,
             null,
         );
 
@@ -293,8 +290,8 @@ final class KnownDeviceVerifierBoundTest extends TestCase
         } catch (BackendFailureException) {
         }
 
-        $this->assertNull($this->store->get($this->key('login_protection', 'k5', 'outage-owner:outage-fp')));
-        $this->assertNull($this->store->get($this->key('login_protection', 'k4', 'outage-owner')));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k5', 'outage-owner:outage-fp'))->get($this->key('login_protection', 'k5', 'outage-owner:outage-fp')));
+        $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k4', 'outage-owner'))->get($this->key('login_protection', 'k4', 'outage-owner')));
     }
 
     /**
@@ -345,13 +342,13 @@ final class KnownDeviceVerifierBoundTest extends TestCase
         return new EvaluationPipeline(
             $this->store,
             $this->correlationStore,
-            new BudgetTracker($this->store, $this->clock),
-            new AntiEquilibriumGate($this->correlationStore),
             new DecayCalculator($this->clock),
-            new EphemeralBucket($this->correlationStore),
             $currentSecret,
             'prod',
             $this->clock,
+            $this->clock,
+            null,
+            null,
             $previousSecret,
         );
     }
@@ -405,6 +402,6 @@ final class KnownDeviceVerifierBoundTest extends TestCase
 
     private function key(string $policy, string $type, string $scope, string $secret = 'test_secret'): string
     {
-        return hash_hmac('sha256', "{$policy}:rate_limiter:{$type}:v2:prod:{$scope}", $secret);
+        return \Maatify\RateLimiter\Tests\Support\FixtureKeys::scope(($type), ($policy), 'prod', ($scope), $secret);
     }
 }

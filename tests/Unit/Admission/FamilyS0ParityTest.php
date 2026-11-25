@@ -10,11 +10,8 @@ use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\Tests\Fixtures\S0Baseline\S0LoginProtectionPolicy;
@@ -62,6 +59,7 @@ final class FamilyS0ParityTest extends TestCase
     public function testLaneOmittedAndLaneNullReproduceTheRecordedBaseline(BlockPolicyInterface $policy): void
     {
         $golden = self::GOLDEN[$policy->getName()];
+        $golden['state'] = \Maatify\RateLimiter\Tests\Fixtures\E1GoldenState::PIPELINE[$policy->getName()];
 
         $omitted = self::play($policy, EvaluationPipeline::class, 'both');
         $explicitNull = self::play($policy, EvaluationPipeline::class, 'both', passNull: true);
@@ -113,7 +111,7 @@ final class FamilyS0ParityTest extends TestCase
         $broken = self::play($policy, $mutant, 'both');
 
         self::assertNotSame($withoutId['state'], $withId['state']);
-        self::assertNotSame(self::GOLDEN['login_protection']['state'], $broken['state']);
+        self::assertNotSame(\Maatify\RateLimiter\Tests\Fixtures\E1GoldenState::PIPELINE['login_protection'], $broken['state']);
     }
 
     /**
@@ -129,13 +127,13 @@ final class FamilyS0ParityTest extends TestCase
         $pipeline = new $pipelineClass(
             $store,
             $corr,
-            new BudgetTracker($store, $clock),
-            new AntiEquilibriumGate($corr),
             new DecayCalculator($clock),
-            new EphemeralBucket($corr),
             'lab-secret',
             'prod',
             $clock,
+            $clock,
+            null,
+            null,
         );
         $resolver = new DeviceIdentityResolver(new FingerprintHasher('lab-secret'));
         $name = $policy->getName();

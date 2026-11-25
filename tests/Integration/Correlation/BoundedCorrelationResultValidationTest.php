@@ -13,8 +13,6 @@ use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\BoundedCorrelationRotationStoreInterface;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
@@ -23,8 +21,10 @@ use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-final class MalformedBoundedCorrelationStore implements BoundedCorrelationRotationStoreInterface
+final class MalformedBoundedCorrelationStore implements BoundedCorrelationRotationStoreInterface, \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface
 {
+    use \Maatify\RateLimiter\Tests\Support\E1View;
+
     public function __construct(
         private readonly BoundedDistinctResultDTO $invalidResult,
         private readonly bool $returnValidDeviceCaps = false,
@@ -176,13 +176,13 @@ final class BoundedCorrelationResultValidationTest extends TestCase
         return new EvaluationPipeline(
             $rateStore,
             $correlationStore,
-            new BudgetTracker($rateStore, $clock),
-            new AntiEquilibriumGate($correlationStore),
             new DecayCalculator($clock),
-            new EphemeralBucket($correlationStore),
             'test-secret',
             'prod',
             $clock,
+            $clock,
+            null,
+            null,
         );
     }
 }

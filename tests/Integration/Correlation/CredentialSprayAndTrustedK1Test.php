@@ -8,17 +8,13 @@ use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
-use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\DTO\BoundedDistinctResultDTO;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
 use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore;
@@ -62,7 +58,7 @@ final class CredentialSprayAndTrustedK1Test extends TestCase
 
         self::assertSame(
             2,
-            $this->store->checkBlock($this->key('login_protection', 'k1', '198.51.100.60'))?->level,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k1', '198.51.100.60'))->checkBlock($this->key('login_protection', 'k1', '198.51.100.60'))?->level,
         );
     }
 
@@ -173,8 +169,8 @@ final class CredentialSprayAndTrustedK1Test extends TestCase
         $pipeline->process($policy, $firstFailure, RateLimitCommand::recordFailure('login_protection'), $this->device());
         $pipeline->process($policy, $secondFailure, RateLimitCommand::recordFailure('login_protection'), $this->device());
 
-        self::assertSame(3, $this->store->get($this->key('login_protection', 'k4', 'k4-account-a'))?->value);
-        self::assertSame(3, $this->store->get($this->key('login_protection', 'k4', 'k4-account-b'))?->value);
+        self::assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k4', 'k4-account-a'))->get($this->key('login_protection', 'k4', 'k4-account-a'))?->value);
+        self::assertSame(3, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k4', 'k4-account-b'))->get($this->key('login_protection', 'k4', 'k4-account-b'))?->value);
     }
 
     public function testNullCorrelationIdFallsBackToAccountId(): void
@@ -253,7 +249,7 @@ final class CredentialSprayAndTrustedK1Test extends TestCase
             self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
         }
 
-        self::assertNull($this->store->checkBlock($this->key('api_heavy_protection', 'k1', '198.51.100.66')));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('api_heavy_protection', 'k1', '198.51.100.66'))->checkBlock($this->key('api_heavy_protection', 'k1', '198.51.100.66')));
     }
 
     public function testCheckOnlyThenRecordFailureDoesNotObserveSprayTwice(): void
@@ -378,7 +374,7 @@ final class CredentialSprayAndTrustedK1Test extends TestCase
         );
 
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $trustedResult->decision);
-        self::assertSame(2, $this->store->checkBlock($this->key('login_protection', 'k1', '198.51.100.71'))?->level);
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key('login_protection', 'k1', '198.51.100.71'))->checkBlock($this->key('login_protection', 'k1', '198.51.100.71'))?->level);
 
         $untrustedResult = $pipeline->process(
             $policy,
@@ -439,9 +435,9 @@ final class CredentialSprayAndTrustedK1Test extends TestCase
         $result = $pipeline->process($policy, $context, RateLimitCommand::recordFailure('login_protection'), $device);
 
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
-        self::assertSame(5, $this->store->get($this->keyForContext('login_protection', 'k1', $context, $device))?->value);
-        self::assertNull($this->store->get($this->keyForContext('login_protection', 'k4', $context, $device)));
-        self::assertNull($this->store->checkBlock($this->keyForContext('login_protection', 'k4', $context, $device)));
+        self::assertSame(5, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->keyForContext('login_protection', 'k1', $context, $device))->get($this->keyForContext('login_protection', 'k1', $context, $device))?->value);
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->keyForContext('login_protection', 'k4', $context, $device))->get($this->keyForContext('login_protection', 'k4', $context, $device)));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->keyForContext('login_protection', 'k4', $context, $device))->checkBlock($this->keyForContext('login_protection', 'k4', $context, $device)));
     }
 
     #[DataProvider('authoritativeTrustedKeyProvider')]
@@ -450,7 +446,7 @@ final class CredentialSprayAndTrustedK1Test extends TestCase
         $pipeline = $this->createPipeline();
         $context = new RateLimitContextDTO('198.51.100.73', 'Mozilla/5.0 Chrome/123', 'authoritative-account');
         $device = $this->device('authoritative-fp', true, 'HIGH');
-        $this->store->block($this->keyForContext('login_protection', $keyType, $context, $device), 2, 600);
+        \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->keyForContext('login_protection', $keyType, $context, $device))->block($this->keyForContext('login_protection', $keyType, $context, $device), 2, 600);
 
         $result = $pipeline->process(new LoginProtectionPolicy(), $context, RateLimitCommand::checkOnly('login_protection'), $device);
 
@@ -506,13 +502,13 @@ final class CredentialSprayAndTrustedK1Test extends TestCase
         return new EvaluationPipeline(
             $this->store,
             $this->correlationStore,
-            new BudgetTracker($this->store, $this->clock),
-            new AntiEquilibriumGate($this->correlationStore),
             new DecayCalculator($this->clock),
-            new EphemeralBucket($this->correlationStore),
             'test_secret',
             'prod',
             $this->clock,
+            $this->clock,
+            null,
+            null,
         );
     }
 
@@ -523,7 +519,7 @@ final class CredentialSprayAndTrustedK1Test extends TestCase
 
     private function key(string $policyName, string $keyType, string $scope): string
     {
-        return hash_hmac('sha256', "{$policyName}:rate_limiter:{$keyType}:v2:prod:{$scope}", 'test_secret');
+        return \Maatify\RateLimiter\Tests\Support\FixtureKeys::scope(($keyType), ($policyName), 'prod', ($scope), 'test_secret');
     }
 
     private function keyForContext(string $policyName, string $keyType, RateLimitContextDTO $context, DeviceIdentityDTO $device): string

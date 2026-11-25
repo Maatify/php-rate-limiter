@@ -11,10 +11,7 @@ use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
-use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore;
@@ -50,7 +47,7 @@ final class BoundedCorrelationCoverageTest extends TestCase
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $second->decision);
         self::assertSame(2, $this->correlationStore->distinctCount($this->churnScope('203.0.113.10', 'Mozilla/5.0')));
         self::assertSame(1, $this->correlationStore->watchValue($this->churnWatch('203.0.113.10', 'Mozilla/5.0')));
-        self::assertNull($this->store->checkBlock($this->key($policy->getName(), 'k2', '203.0.113.10:Mozilla/5.0')));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k2', '203.0.113.10:Mozilla/5.0'))->checkBlock($this->key($policy->getName(), 'k2', '203.0.113.10:Mozilla/5.0')));
     }
 
     public function testChurnSecondQualifyingObservationHardBlocksAtTwoAndDoesNotGrowPastTwo(): void
@@ -69,7 +66,7 @@ final class BoundedCorrelationCoverageTest extends TestCase
         self::assertSame(2, $this->correlationStore->watchValue($this->churnWatch('203.0.113.11', 'Mozilla/5.0')));
         self::assertSame(
             2,
-            $this->store->checkBlock($this->key($policy->getName(), 'k2', '203.0.113.11:Mozilla/5.0'))?->level,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k2', '203.0.113.11:Mozilla/5.0'))->checkBlock($this->key($policy->getName(), 'k2', '203.0.113.11:Mozilla/5.0'))?->level,
         );
     }
 
@@ -111,8 +108,8 @@ final class BoundedCorrelationCoverageTest extends TestCase
         $previousItems = $this->correlationStore->distinctItems($previousScope);
         $previousExpiry = $this->correlationStore->distinctExpiresAt($previousScope);
         $previousWatch = $this->churnWatch($ip, $ua, $config['oldSecret']);
-        $previousWatchValue = $this->correlationStore->watchValue($previousWatch);
-        $previousWatchExpiry = $this->correlationStore->watchExpiresAt($previousWatch);
+        $previousWatchValue = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousWatch)->watchValue($previousWatch);
+        $previousWatchExpiry = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousWatch)->watchExpiresAt($previousWatch);
 
         $currentPipeline = $this->pipeline($config['currentSecret'], $config['previousSecret']);
         $result = $currentPipeline->process(
@@ -126,12 +123,12 @@ final class BoundedCorrelationCoverageTest extends TestCase
         self::assertSame(2, $result->blockLevel, $shape);
         self::assertSame(
             2,
-            $this->store->checkBlock($this->key($policy->getName(), 'k2', "{$ip}:{$ua}", $config['currentSecret']))?->level,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k2', "{$ip}:{$ua}", $config['currentSecret']))->checkBlock($this->key($policy->getName(), 'k2', "{$ip}:{$ua}", $config['currentSecret']))?->level,
             $shape,
         );
         self::assertSame($previousExpiry, $this->correlationStore->distinctExpiresAt($previousScope), $shape);
-        self::assertSame($previousWatchValue, $this->correlationStore->watchValue($previousWatch), $shape);
-        self::assertSame($previousWatchExpiry, $this->correlationStore->watchExpiresAt($previousWatch), $shape);
+        self::assertSame($previousWatchValue, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousWatch)->watchValue($previousWatch), $shape);
+        self::assertSame($previousWatchExpiry, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousWatch)->watchExpiresAt($previousWatch), $shape);
 
         $currentScope = $this->churnScope($ip, $ua, $config['currentSecret']);
         $currentItems = $this->correlationStore->distinctItems($currentScope);
@@ -157,8 +154,8 @@ final class BoundedCorrelationCoverageTest extends TestCase
         $previousItems = $this->correlationStore->distinctItems($previousScope);
         $previousExpiry = $this->correlationStore->distinctExpiresAt($previousScope);
         $previousWatch = $this->churnWatch($ip, $ua, $config['oldSecret']);
-        $previousWatchValue = $this->correlationStore->watchValue($previousWatch);
-        $previousWatchExpiry = $this->correlationStore->watchExpiresAt($previousWatch);
+        $previousWatchValue = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousWatch)->watchValue($previousWatch);
+        $previousWatchExpiry = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousWatch)->watchExpiresAt($previousWatch);
 
         $result = $this->pipeline($config['currentSecret'], $config['previousSecret'])->process(
             $policy,
@@ -172,10 +169,10 @@ final class BoundedCorrelationCoverageTest extends TestCase
         self::assertSame($previousExpiry, $this->correlationStore->distinctExpiresAt($previousScope), $shape);
         self::assertSame(
             $shape === 'fingerprint-only' ? 2 : $previousWatchValue,
-            $this->correlationStore->watchValue($previousWatch),
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousWatch)->watchValue($previousWatch),
             $shape,
         );
-        self::assertSame($previousWatchExpiry, $this->correlationStore->watchExpiresAt($previousWatch), $shape);
+        self::assertSame($previousWatchExpiry, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousWatch)->watchExpiresAt($previousWatch), $shape);
         self::assertSame(
             2,
             $this->logicalChurnCount(
@@ -216,9 +213,9 @@ final class BoundedCorrelationCoverageTest extends TestCase
                 self::assertSame(2, $result->blockLevel);
                 self::assertSame(
                     2,
-                    $this->store->checkBlock($this->key($policy->getName(), 'k2', "{$ip}:Mozilla/5.0"))?->level,
+                    \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k2', "{$ip}:Mozilla/5.0"))->checkBlock($this->key($policy->getName(), 'k2', "{$ip}:Mozilla/5.0"))?->level,
                 );
-                self::assertNull($this->store->checkBlock($this->key($policy->getName(), 'k3', "{$ip}:{$fingerprint}")));
+                self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k3', "{$ip}:{$fingerprint}"))->checkBlock($this->key($policy->getName(), 'k3', "{$ip}:{$fingerprint}")));
             }
         }
 
@@ -254,9 +251,9 @@ final class BoundedCorrelationCoverageTest extends TestCase
 
         $scope = $this->dilutionScope($policy->getName(), $fingerprint);
         $previousConfirmation = $this->confirmationKey($policy->getName(), $scope, $firstWindowId);
-        $previousConfirmationExpiry = $this->correlationStore->watchExpiresAt($previousConfirmation);
-        self::assertSame(1, $this->correlationStore->watchValue($previousConfirmation));
-        self::assertNull($this->store->checkBlock($this->key($policy->getName(), 'k3', "198.51.101.6:{$fingerprint}")));
+        $previousConfirmationExpiry = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousConfirmation)->watchExpiresAt($previousConfirmation);
+        self::assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousConfirmation)->watchValue($previousConfirmation));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k3', "198.51.101.6:{$fingerprint}"))->checkBlock($this->key($policy->getName(), 'k3', "198.51.101.6:{$fingerprint}")));
 
         $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:10:00'));
         $secondWindowId = $this->windowId();
@@ -274,16 +271,16 @@ final class BoundedCorrelationCoverageTest extends TestCase
             }
         }
 
-        self::assertSame($previousConfirmationExpiry, $this->correlationStore->watchExpiresAt($previousConfirmation));
-        self::assertSame(1, $this->correlationStore->watchValue($previousConfirmation));
+        self::assertSame($previousConfirmationExpiry, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousConfirmation)->watchExpiresAt($previousConfirmation));
+        self::assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousConfirmation)->watchValue($previousConfirmation));
         self::assertSame(
             2,
-            $this->correlationStore->watchValue($this->confirmationKey($policy->getName(), $scope, $secondWindowId)),
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $this->confirmationKey($policy->getName(), $scope, $secondWindowId))->watchValue($this->confirmationKey($policy->getName(), $scope, $secondWindowId)),
         );
         self::assertSame(6, $this->correlationStore->distinctCount($scope));
         self::assertSame(
             2,
-            $this->store->checkBlock($this->key($policy->getName(), 'k3', "198.51.101.12:{$fingerprint}"))?->level,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k3', "198.51.101.12:{$fingerprint}"))->checkBlock($this->key($policy->getName(), 'k3', "198.51.101.12:{$fingerprint}"))?->level,
         );
     }
 
@@ -313,8 +310,8 @@ final class BoundedCorrelationCoverageTest extends TestCase
         $previousItems = $this->correlationStore->distinctItems($previousScope);
         $previousExpiry = $this->correlationStore->distinctExpiresAt($previousScope);
         $previousConfirmation = $this->confirmationKey($policy->getName(), $previousScope, $oldWindowId, $config['oldSecret']);
-        $previousConfirmationExpiry = $this->correlationStore->watchExpiresAt($previousConfirmation);
-        self::assertSame(1, $this->correlationStore->watchValue($previousConfirmation));
+        $previousConfirmationExpiry = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousConfirmation)->watchExpiresAt($previousConfirmation);
+        self::assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousConfirmation)->watchValue($previousConfirmation));
 
         $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:10:00'));
         $currentPipeline = $this->pipeline($config['currentSecret'], $config['previousSecret']);
@@ -336,19 +333,19 @@ final class BoundedCorrelationCoverageTest extends TestCase
         $currentScope = $this->dilutionScope($policy->getName(), $config['currentFingerprint'], $config['currentSecret']);
         self::assertSame($previousItems, $this->correlationStore->distinctItems($previousScope), $shape);
         self::assertSame($previousExpiry, $this->correlationStore->distinctExpiresAt($previousScope), $shape);
-        self::assertSame($previousConfirmationExpiry, $this->correlationStore->watchExpiresAt($previousConfirmation), $shape);
-        self::assertSame(1, $this->correlationStore->watchValue($previousConfirmation), $shape);
+        self::assertSame($previousConfirmationExpiry, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousConfirmation)->watchExpiresAt($previousConfirmation), $shape);
+        self::assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $previousConfirmation)->watchValue($previousConfirmation), $shape);
         self::assertSame(6, $this->correlationStore->distinctCount($currentScope), $shape);
         self::assertSame(
             2,
-            $this->correlationStore->watchValue(
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $this->confirmationKey($policy->getName(), $currentScope, $currentWindowId, $config['currentSecret']))->watchValue(
                 $this->confirmationKey($policy->getName(), $currentScope, $currentWindowId, $config['currentSecret']),
             ),
             $shape,
         );
         self::assertSame(
             2,
-            $this->store->checkBlock(
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k3', "198.51.102.12:{$config['currentFingerprint']}", $config['currentSecret']))->checkBlock(
                 $this->key($policy->getName(), 'k3', "198.51.102.12:{$config['currentFingerprint']}", $config['currentSecret']),
             )?->level,
             $shape,
@@ -389,7 +386,7 @@ final class BoundedCorrelationCoverageTest extends TestCase
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $overflow->decision);
         self::assertSame(
             2,
-            $this->store->checkBlock($this->key($policy->getName(), 'k2', "{$ip}:shared-ua"))?->level,
+            \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k2', "{$ip}:shared-ua"))->checkBlock($this->key($policy->getName(), 'k2', "{$ip}:shared-ua"))?->level,
         );
         self::assertSame(0, $this->correlationStore->distinctCount($this->dilutionScope($policy->getName(), $overflowFingerprint)));
         self::assertSame(0, $this->correlationStore->watchValue($this->dilutionWatch($policy->getName(), $overflowFingerprint)));
@@ -403,8 +400,8 @@ final class BoundedCorrelationCoverageTest extends TestCase
                 ),
             ),
         );
-        self::assertNull($this->store->checkBlock($this->key($policy->getName(), 'k3', "{$ip}:{$overflowFingerprint}")));
-        self::assertNull($this->store->get($this->key($policy->getName(), 'k5', "{$accountId}:{$overflowFingerprint}")));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k3', "{$ip}:{$overflowFingerprint}"))->checkBlock($this->key($policy->getName(), 'k3', "{$ip}:{$overflowFingerprint}")));
+        self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $this->key($policy->getName(), 'k5', "{$accountId}:{$overflowFingerprint}"))->get($this->key($policy->getName(), 'k5', "{$accountId}:{$overflowFingerprint}")));
     }
 
     /** @return iterable<string, array{string}> */
@@ -434,13 +431,13 @@ final class BoundedCorrelationCoverageTest extends TestCase
         return new EvaluationPipeline(
             $this->store,
             $this->correlationStore,
-            new BudgetTracker($this->store, $this->clock),
-            new AntiEquilibriumGate($this->correlationStore),
             new DecayCalculator($this->clock),
-            new EphemeralBucket($this->correlationStore),
             $secret,
             'prod',
             $this->clock,
+            $this->clock,
+            null,
+            null,
             $previousSecret,
         );
     }
@@ -475,7 +472,7 @@ final class BoundedCorrelationCoverageTest extends TestCase
 
     private function key(string $policy, string $type, string $scope, string $secret = self::SECRET): string
     {
-        return hash_hmac('sha256', "{$policy}:rate_limiter:{$type}:v2:prod:{$scope}", $secret);
+        return \Maatify\RateLimiter\Tests\Support\FixtureKeys::scope(($type), ($policy), 'prod', ($scope), $secret);
     }
 
     private function correlationScope(string $policy, string $purpose, string $anchor, string $secret = self::SECRET): string

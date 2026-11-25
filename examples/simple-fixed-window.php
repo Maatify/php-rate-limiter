@@ -16,7 +16,6 @@ use Maatify\RateLimiter\DTO\FailureSignalDTO;
 use Maatify\RateLimiter\DTO\GenerationBoundScoreMutationDTO;
 use Maatify\RateLimiter\DTO\GenerationBoundScoreStateDTO;
 use Maatify\RateLimiter\DTO\HardBlockCycleResultDTO;
-use Maatify\RateLimiter\DTO\PostPunishmentReentryStateDTO;
 use Maatify\RateLimiter\DTO\PunishmentLifecycleTransitionDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
@@ -37,8 +36,26 @@ require dirname(__DIR__) . '/vendor/autoload.php';
  * host application's atomic storage integration in production; see
  * examples/basic-rate-limit.php for a fully annotated version.
  */
-final class SimpleThrottleExampleStore implements PunishmentLifecycleStoreInterface, SnapshotFencedScoreStoreInterface, ScoreReplaceStoreInterface, OperationalReadOnlyStoreInterface
+final class SimpleThrottleExampleStore implements PunishmentLifecycleStoreInterface, SnapshotFencedScoreStoreInterface, ScoreReplaceStoreInterface, OperationalReadOnlyStoreInterface, \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface
 {
+    private bool $accountLayout = false;
+    private ?self $accountView = null;
+
+    /** Example-local isolated in-memory account layout; production Redis shares a transaction through its official view. */
+    public function e1Keyspace(): static
+    {
+        if ($this->accountLayout) {
+            return $this;
+        }
+        if ($this->accountView === null) {
+            $view = clone $this;
+            $view->accountLayout = true;
+            $view->accountView = null;
+            $this->accountView = $view;
+        }
+        return $this->accountView;
+    }
+
     /** @var array<string, array{value: int, updatedAt: int, expiresAt: int}> */
     private array $counters = [];
 
@@ -217,8 +234,26 @@ final class SimpleThrottleExampleStore implements PunishmentLifecycleStoreInterf
     }
 }
 
-final class SimpleThrottleExampleCorrelationStore implements BoundedCorrelationSnapshotStoreInterface
+final class SimpleThrottleExampleCorrelationStore implements BoundedCorrelationSnapshotStoreInterface, \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface
 {
+    private bool $accountLayout = false;
+    private ?self $accountView = null;
+
+    /** Example-local isolated in-memory account layout; production Redis shares a transaction through its official view. */
+    public function e1Keyspace(): static
+    {
+        if ($this->accountLayout) {
+            return $this;
+        }
+        if ($this->accountView === null) {
+            $view = clone $this;
+            $view->accountLayout = true;
+            $view->accountView = null;
+            $this->accountView = $view;
+        }
+        return $this->accountView;
+    }
+
     /** @var array<string, array{items: array<string, true>, expiresAt: int}> */
     private array $sets = [];
 

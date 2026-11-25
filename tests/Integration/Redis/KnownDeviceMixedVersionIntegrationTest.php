@@ -19,7 +19,7 @@ use Maatify\RateLimiter\Service\AntiEquilibriumGate;
 use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\EphemeralBucket;
-use Maatify\RateLimiter\Service\EvaluationPipeline;
+use Maatify\RateLimiter\Tests\Fixtures\PreG1\EvaluationPipeline;
 use Maatify\RateLimiter\Service\RequestScopedClock;
 use Maatify\RateLimiter\Tests\Fixtures\S0Baseline\S0EvaluationPipeline;
 use Maatify\RateLimiter\Tests\Fixtures\S0Baseline\S0LoginProtectionPolicy;
@@ -28,6 +28,10 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
 use PHPUnit\Framework\TestCase;
 
 /**
+ * HISTORICAL V2 replay: the later worker is frozen at main@6db1378, not the G1 runtime.
+ * Original mixed-version/rollback detectors remain intact; they do not qualify an E1 transition.
+ * Current G1 divergence is tested in KeyScopeE1RedisTest.
+ *
  * Mixed-version regression for the known-device bound on real Redis (F117-06,
  * DEC-021). The old worker is the pinned S0 pipeline
  * (S0EvaluationPipeline, provenance-checked) with the S0 Login preset; the new
