@@ -391,17 +391,24 @@ final class OwnershipRegistry
     }
 
     /**
-     * Admission of an operation on a whole resource SET when at least one member is already occupied (F300-03). A set is admitted only
-     * when every member is: occupied members must be owned by this very execution context (legitimate nesting, as `admit`), and the
-     * free members are acquired for the call, all-or-none. Anything else (a member owned or reserved by another context, an
-     * unreadable owner) refuses before the operation starts, and what was reserved here is released. Returns the scope of the members
-     * acquired here (null when every member was nested) for the caller to release.
+     * Admission of an operation on a whole resource SET when at least one member is already occupied (F300-03/04/05), as ONE contract:
+     *
+     *  1. Token. Every occupied member must belong to the SAME owning call (one token) that is simply OWNED: no lookup, crossing or
+     *     reservation in progress on any of them. Two owners, or an owner in a Host crossing, refuse.
+     *  2. Domain. Every member of the set, occupied or free, must be in the domain of the owner; a bound member of another domain refuses.
+     *  3. Context. The owner's execution context is read once (Host code, with a lookup mark on every occupied record so a re-entry from
+     *     the provider is refused) and must be the current one.
+     *  4. Only then does anything change: the unbound members are bound to the domain (failure-atomic, kept in a ledger) and the free
+     *     members are reserved under the owner's own token, so one crossing and one state cover every resource of the call.
+     *
+     * A refusal at any step changes nothing; a failure after the first change rolls the ledger and the reservations back. The returned
+     * scope releases the reservations and undoes the bindings it made when the call ends; the owner ending first ends it too.
      *
      * @param array<int, object> $resources
      * @throws OverlappingRequestException
      * @throws RateLimiterException
      */
-    public static function admitSet(array $resources, string $entry): ?CallScope
+    public static function admitSet(array $resources, string $entry): CallScope
     {
         $occupied = [];
         $free = [];
@@ -415,26 +422,79 @@ final class OwnershipRegistry
         if ($occupied === []) {
             throw new RateLimiterException('admitSet requires an occupied member; acquire a free set with acquire().');
         }
-        // Provider-free refusal first: a member that is not simply owned (a lookup, a crossing or a reservation in progress) refuses.
+
+        // 1. One owning token, simply owned.
+        $first = self::slot($occupied[0])->record ?? throw new OverlappingRequestException($entry);
+        $token = $first->token;
         foreach ($occupied as $resource) {
             $record = self::slot($resource)->record;
-            if ($record === null || $record->token->state !== CallToken::OWNED || $record->lookupBy !== null || $record->lookups > 0 || $record->token->crossings > 0) {
+            if ($record === null || $record->token !== $token || $token->state !== CallToken::OWNED
+                || $record->lookupBy !== null || $record->lookups > 0 || $token->crossings > 0) {
                 throw new OverlappingRequestException($entry);
             }
         }
+
+        // 2. One domain for the whole set (nothing is bound yet).
         $domain = self::domainOf($occupied[0], self::slot($occupied[0]), null);
-        foreach ($free as $resource) {
-            if (! self::slot($resource)->bound) {
-                self::bindAll([$resource], $domain->rawProvider());
+        foreach ($occupied as $resource) {
+            if (! self::slotInDomain(self::slot($resource), $domain)) {
+                throw new RateLimiterException(sprintf('Inconsistent execution context domain on %s at %s.', $resource::class, $entry));
             }
         }
-        $scope = $free === [] ? null : self::acquire($free, $entry, $domain);
-        try {
-            foreach ($occupied as $resource) {
-                self::admit($resource, $entry);
+        $unbound = [];
+        foreach ($free as $resource) {
+            $slot = self::slot($resource);
+            if (! $slot->bound) {
+                $unbound[] = $resource;
+            } elseif (! self::slotInDomain($slot, $domain)) {
+                throw new RateLimiterException(sprintf('Inconsistent execution context domain on %s at %s.', $resource::class, $entry));
             }
+        }
+
+        // 3. The owner's context, read once under a lookup mark on every occupied record.
+        $lease = $domain->provider();
+        foreach ($occupied as $resource) {
+            $mark = self::slot($resource)->record;
+            if ($mark !== null) {
+                $mark->lookups++;
+            }
+        }
+        try {
+            $key = $lease->currentContext();
         } catch (\Throwable $failure) {
-            $scope?->release();
+            throw new RateLimiterException('The execution context provider failed.', 0, $failure);
+        } finally {
+            foreach ($occupied as $resource) {
+                $record = self::slot($resource)->record;
+                if ($record !== null && $record->token === $token) {
+                    $record->lookups--;
+                }
+            }
+        }
+        if (! $token->sameContext($key)) {
+            throw new OverlappingRequestException($entry);
+        }
+
+        // 4. Change: bind, then reserve under the owner's token.
+        $scope = new CallScope($token, $lease, true);
+        $ledger = null;
+        try {
+            if ($unbound !== []) {
+                $ledger = self::bindAll($unbound, $domain->rawProvider());
+                $scope->bindings($ledger);
+            }
+            foreach ($free as $resource) {
+                $slot = self::slot($resource);
+                if ($slot->record !== null) {
+                    throw new OverlappingRequestException($entry); // taken meanwhile (a re-entry during the lookup)
+                }
+                $record = new SlotRecord($token);
+                $slot->record = $record;
+                $scope->add($resource, $record);
+            }
+            $token->joins[] = $scope;
+        } catch (\Throwable $failure) {
+            $scope->release();
             throw $failure;
         }
 

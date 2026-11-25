@@ -45,6 +45,7 @@ final class G1ReviewRegressionRedisTest extends TestCase
         }
         $this->admin = new RespRedisCommandExecutor($host, (int) $port);
         $this->admin->execute(['FLUSHDB']);
+        $this->perStore = new \ArrayObject(['rate' => 0, 'correlation' => 0]);
     }
 
     private function store(string $namespace = 'review-300'): RedisFullCapabilityStore
@@ -302,8 +303,8 @@ final class G1ReviewRegressionRedisTest extends TestCase
 
     // ---------------------------------------------------------------------------------------------------------------- F300-03
 
-    /** @var array<string, int> backend commands per store (rate, correlation) */
-    private array $perStore = ['rate' => 0, 'correlation' => 0];
+    /** @var \ArrayObject<string, int> backend commands per store (rate, correlation) */
+    private \ArrayObject $perStore;
 
     private function countedStore(string $name, string $namespace): RedisFullCapabilityStore
     {
@@ -353,7 +354,7 @@ final class G1ReviewRegressionRedisTest extends TestCase
         $commandsInside = ['rate' => 0, 'correlation' => 0];
         $registryBefore = $registryAfter = [];
         $call = function () use ($pipeline, $policy, $command, $registry, &$outcome, &$commandsInside, &$registryBefore, &$registryAfter): void {
-            $startedAt = $this->perStore;
+            $startedAt = $this->perStore->getArrayCopy();
             $registryBefore = $registry->getValue($pipeline);
             try {
                 $outcome = $pipeline->process($policy, $this->context(), $command, $this->device())->decision;
@@ -416,5 +417,56 @@ final class G1ReviewRegressionRedisTest extends TestCase
         }
 
         return $state;
+    }
+    /** @return iterable<string, array{string}> */
+    public static function reentryTargets(): iterable
+    {
+        yield 'the correlation root (joined resource)' => ['correlation'];
+        yield 'the rate root (the owner)' => ['rate'];
+    }
+
+    /**
+     * F300-04: while a nested Pipeline call runs on two official roots, ONE crossing protects every resource of the call: a Host policy
+     * getter that calls a store directly, on either root, in the same context, is refused before any backend command.
+     */
+    #[DataProvider('reentryTargets')]
+    public function testAHostGetterCannotReenterEitherResourceOfANestedPipelineCall(string $target): void
+    {
+        $rate = $this->countedStore('rate', 'f300-04-rate');
+        $correlation = $this->countedStore('correlation', 'f300-04-correlation');
+        $pipeline = $this->pipeline($rate, $correlation);
+        /** @var \ArrayObject<string, mixed> $sink */
+        $sink = new \ArrayObject(['outcome' => null, 'commands' => null]);
+        $stores = ['rate' => $rate, 'correlation' => $correlation];
+        $policy = new class ($sink, $stores[$target], $target, $this->perStore) extends \Maatify\RateLimiter\Config\LoginProtectionPolicy {
+            /**
+             * @param \ArrayObject<string, mixed> $sink
+             * @param \ArrayObject<string, int> $counters
+             */
+            public function __construct(private \ArrayObject $sink, private RedisFullCapabilityStore $store, private string $name, private \ArrayObject $counters) {}
+
+            public function getScoreDeltas(): \Maatify\RateLimiter\DTO\ScoreDeltasDTO
+            {
+                if ($this->sink['outcome'] === null) {
+                    $this->sink['outcome'] = 'running';
+                    $before = $this->counters[$this->name];
+                    try {
+                        $this->store->incrementAt('host-reentry', 60, 1, 1_793_793_600);
+                        $this->sink['outcome'] = 'ACCEPTED';
+                    } catch (\Throwable $failure) {
+                        $this->sink['outcome'] = $failure::class;
+                    }
+                    $this->sink['commands'] = $this->counters[$this->name] - $before;
+                }
+
+                return parent::getScoreDeltas();
+            }
+        };
+
+        $decision = $rate->transactRequest(fn(): string => $pipeline->process($policy, $this->context(), RateLimitCommand::recordFailure('login_protection'), $this->device())->decision);
+
+        self::assertSame(OverlappingRequestException::class, $sink['outcome'], "A Host getter calling {$target} directly is refused.");
+        self::assertSame(0, $sink['commands'], 'No backend command was issued by the refused direct call.');
+        self::assertSame('ALLOW', $decision, 'Negative control: the legitimate nested call itself is unaffected.');
     }
 }

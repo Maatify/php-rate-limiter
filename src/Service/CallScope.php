@@ -19,10 +19,23 @@ final class CallScope
 
     private bool $released = false;
 
+    private ?BindingLedger $ledger = null;
+
+    /**
+     * @param bool $joined true for a scope that extends the ownership of an existing call: it shares that call's token (so one crossing and
+     *     one state cover every resource of the call), clears only its own records and never ends the token
+     */
     public function __construct(
         public readonly CallToken $token,
         private ?ExecutionContextProviderInterface $lease,
+        private readonly bool $joined = false,
     ) {}
+
+    /** The bindings this scope created; undone when the scope ends and nobody else stands on them. */
+    public function bindings(BindingLedger $ledger): void
+    {
+        $this->ledger = $ledger;
+    }
 
     public function add(object $resource, SlotRecord $record): void
     {
@@ -42,11 +55,26 @@ final class CallScope
             return;
         }
         $this->released = true;
+        if (! $this->joined) {
+            // The owner ends: the scopes that joined it end first.
+            foreach (array_reverse($this->token->joins) as $join) {
+                $join->release();
+            }
+            $this->token->joins = [];
+        }
         foreach (array_reverse($this->taken) as [$resource, $record]) {
             OwnershipRegistry::clear($resource, $record);
         }
         $this->taken = [];
-        $this->token->state = CallToken::RELEASED;
+        if (! $this->joined) {
+            $this->token->state = CallToken::RELEASED;
+        } else {
+            $this->token->joins = array_values(array_filter($this->token->joins, fn(CallScope $join): bool => $join !== $this));
+        }
+        if ($this->ledger !== null) {
+            OwnershipRegistry::rollback($this->ledger);
+            $this->ledger = null;
+        }
         $this->lease = null;
     }
 

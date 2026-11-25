@@ -3425,7 +3425,7 @@ class EvaluationPipeline
                 try {
                     return $operation();
                 } finally {
-                    $scope?->release();
+                    $scope->release();
                 }
             }
         }
