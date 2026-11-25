@@ -43,4 +43,3 @@ PHP64 is native linux/arm64; PHP32 is actual linux/386 under emulation. Compare 
 | unproven | 10658.7 | 10227.6 | -4.0% | 12433.5/13031.3 | 93.5 | 8553.3→8241.7 | 6.0/6.0 | 2200/100/0 |
 
 PHP64 is native linux/arm64; PHP32 is actual linux/386 under emulation. Compare arms within a width. CPU is client user+system CPU; PHP allocated peak is not RSS. Redis CPU, concurrency, network/TLS, production hosts and the custom allowance-only advanced Pipeline are not performance-qualified by this run.
-

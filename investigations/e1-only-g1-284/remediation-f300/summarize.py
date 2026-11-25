@@ -48,4 +48,4 @@ for width in (64, 32):
         counts = current[0]
         lines.append(f"| {scenario} | {before:.1f} | {after:.1f} | {(after / before - 1) * 100:+.1f}% | {percentile(samples['corrected'], .95):.1f}/{percentile(samples['corrected'], .99):.1f} | {300000000 / sum(samples['corrected']):.1f} | {cpu['rejected']:.1f}→{cpu['corrected']:.1f} | {peak['rejected']:.1f}/{peak['corrected']:.1f} | {counts['commands']}/{counts['commits']}/{counts['conflicts']} |")
     lines += ['', 'PHP64 is native linux/arm64; PHP32 is actual linux/386 under emulation. Compare arms within a width. CPU is client user+system CPU; PHP allocated peak is not RSS. Redis CPU, concurrency, network/TLS, production hosts and the custom allowance-only advanced Pipeline are not performance-qualified by this run.', '']
-(ROOT / 'BENCHMARK.md').write_text('\n'.join(lines) + '\n')
+(ROOT / 'BENCHMARK.md').write_text('\n'.join(lines).rstrip() + '\n')
