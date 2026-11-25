@@ -438,21 +438,17 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
         ?string $fingerprint,
         string $outer,
     ): string {
-        $base = "{$policy}:rate_limiter:{$type}:v2:prod:";
         $normalizedUa = DeviceIdentityResolver::normalizeUserAgent($context->ua);
         if (in_array($type, ['k4', 'k5'], true)) {
             self::assertNotNull($context->accountId);
             return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive($type, $policy, $context->accountId, $outer, $type === 'k5' ? $fingerprint : null);
         }
-        $raw = match ($type) {
-            'k3' => $base . $context->ip . ':' . $fingerprint,
-            'k5' => $base . $context->accountId . ':' . $fingerprint,
-            'k4' => $base . $context->accountId,
-            'k2' => $base . $context->ip . ':' . $normalizedUa,
-            default => $base . $context->ip,
-        };
 
-        return hash_hmac('sha256', $raw, $outer);
+        return match ($type) {
+            'k3' => \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k3($policy, 'prod', $context->ip, (string) $fingerprint, $outer),
+            'k2' => \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k2($policy, 'prod', $context->ip, $normalizedUa, $outer),
+            default => \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1($policy, 'prod', $context->ip, $outer),
+        };
     }
 
     private function microKey(string $policy, ?string $accountId, ?string $fingerprint, string $outer): string

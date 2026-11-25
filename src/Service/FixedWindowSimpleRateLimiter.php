@@ -42,6 +42,8 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
     /** @var array<string, SimpleThrottlePolicyInterface> */
     private readonly array $policies;
 
+    private readonly SimpleFixedWindowKeyDeriver $keys;
+
     /**
      * @param SimpleThrottlePolicyInterface[] $policies
      * @param string $keySecret Active, non-blank key-generation secret. Not
@@ -85,6 +87,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
             $indexed[$policy->getName()] = $policy;
         }
         $this->policies = $indexed;
+        $this->keys = new SimpleFixedWindowKeyDeriver($this->environmentScope);
         $this->resources = OwnershipRegistry::collect([$this->store], [], [$this->clock]);
         $this->domain = OwnershipRegistry::adopt($this->resources, $this);
     }
@@ -300,8 +303,8 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
     }
 
     /**
-     * Derive the physical storage key using canonical, collision-safe,
-     * length-prefixed component encoding, HMAC-SHA256'd with the supplied
+     * Derive the physical storage key using the shared canonical, collision-safe,
+     * checked length-prefixed component encoding, HMAC-SHA256'd with the supplied
      * secret. The raw subject never crosses the store boundary directly.
      */
     private function deriveKey(
@@ -312,21 +315,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
         #[\SensitiveParameter]
         string $secret,
     ): string {
-        $preimage = self::encodeComponent('rate_limiter')
-            . self::encodeComponent('simple_fixed_window')
-            . self::encodeComponent('v1')
-            . self::encodeComponent($this->environmentScope)
-            . self::encodeComponent($policyName)
-            . self::encodeComponent((string) $limit)
-            . self::encodeComponent((string) $intervalSeconds)
-            . self::encodeComponent($subject);
-
-        return hash_hmac('sha256', $preimage, $secret);
-    }
-
-    private static function encodeComponent(string $component): string
-    {
-        return pack('N', strlen($component)) . $component;
+        return $this->keys->derive($policyName, $limit, $intervalSeconds, $subject, $secret);
     }
 
     /**

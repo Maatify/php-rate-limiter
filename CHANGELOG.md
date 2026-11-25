@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
+### Changed (#284, #281, DEC-047) — Breaking: Canonical `f1` framing for non-account keys and checked `u32be` bounds (G2)
+
+- Replaced colon-delimited preimages for K1–K3, correlation (`device_cap_ip`, `device_cap_account`, `churn`, `dilution`, distributed account devices/occurrences, watches, bridges, and confirmations), and adaptive IPv6 keys with checked `u32be` length-prefixed framing (`maatify.rate-limiter.non-account.f1\x00`), a closed 33-purpose internal registry (`NonAccountScopePurpose`), and a dedicated HMAC subkey domain (`maatify.rate-limiter.key-domain.non-account.f1`) under the existing physical `v1` root layout. Writer and operational reader share one immutable internal derivation implementation for K1–K3.
+- Introduced shared checked `u32be` framing (`KeyPreimageFraming`) rejecting lengths and tuple counts outside `0..4294967295` before `pack('N')`/HMAC on 64-bit and 32-bit PHP, reused across E1 (`DEC-046`), non-account `f1`, and consolidated simple fixed-window writer/reader derivation (`SimpleFixedWindowKeyDeriver`).
+- Preserved E1 account bytes (`e1:`), simple fixed-window bytes (`v1:budget`), single-field `credential_spray:subject:v1:` and fixed K1/watch wrappers, `LocalFallbackLimiter` (`DEC-011`/`DEC-015`), `DeviceIdentityResolver` / `FingerprintHasher`, policy thresholds, TTLs, caps, and Current/Previous rotation semantics.
+- Breaking pre-Stable boundary: affected non-account families and K1-dependent credential-spray wrappers/watches start a fresh isolated traffic space; existing traffic loses visibility of prior state in those families until old TTLs expire. Mixed workers, live rollback, cross-format block preservation, migration/dual-read/write layers, and Redis data deletion are unsupported. Remaining G3 Admission (`A1`–`A3`) and epoch/cohort blockers remain open on #281 and #284; no rc.4 qualification is claimed.
+
 ### Changed (#284, DEC-046) — Breaking: E1-only account composition
 
 - Removed V2 account derivation, KeyScopeEncodingEnum, withKeyScopeEncoding and injected derivation strategies. Existing E1 bytes/vectors, root plain-string methods, Set B/C scope, secret/material rotation and Redis request/ownership/ACL/expiry contracts remain.

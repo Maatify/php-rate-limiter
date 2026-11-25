@@ -365,7 +365,7 @@ final class CredentialSprayRotationTest extends TestCase
 
     private function k1(string $secret, string $ip): string
     {
-        return hash_hmac('sha256', "login_protection:rate_limiter:k1:v2:prod:{$ip}", $secret);
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1('login_protection', 'prod', $ip, $secret);
     }
 
     private function authoritativeKey(

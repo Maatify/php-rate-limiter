@@ -124,9 +124,9 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $normalizedUa = $device->normalizedUa;
         $fpHash = $device->fingerprintHash;
 
-        $k1Key = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k1:v2:prod:127.0.0.1", 'test_secret');
-        $k2Key = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k2:v2:prod:127.0.0.1:{$normalizedUa}", 'test_secret');
-        $k3Key = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k3:v2:prod:127.0.0.1:{$fpHash}", 'test_secret');
+        $k1Key = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1('api_heavy_protection', 'prod', '127.0.0.1', 'test_secret');
+        $k2Key = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k2('api_heavy_protection', 'prod', '127.0.0.1', $normalizedUa, 'test_secret');
+        $k3Key = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k3('api_heavy_protection', 'prod', '127.0.0.1', (string) $fpHash, 'test_secret');
 
         $k1State = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1Key)->get($k1Key);
         $this->assertNotNull($k1State);
@@ -175,8 +175,8 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $this->assertEquals(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
 
         $normalizedUa = DeviceIdentityResolver::normalizeUserAgent('Mozilla/5.0');
-        $k1Key = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k1:v2:prod:127.0.0.1", 'test_secret');
-        $k2Key = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k2:v2:prod:127.0.0.1:{$normalizedUa}", 'test_secret');
+        $k1Key = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1('api_heavy_protection', 'prod', '127.0.0.1', 'test_secret');
+        $k2Key = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k2('api_heavy_protection', 'prod', '127.0.0.1', $normalizedUa, 'test_secret');
 
         $k1State = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1Key)->get($k1Key);
         $this->assertNotNull($k1State);
@@ -452,7 +452,7 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $command = new RateLimitCommand('api_heavy_protection', 1, false, false, false);
 
         // Seed a readable score under the previous secret. The active key is absent.
-        $oldK1 = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k1:v2:prod:127.0.0.1", 'old_secret');
+        $oldK1 = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1('api_heavy_protection', 'prod', '127.0.0.1', 'old_secret');
         \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $oldK1)->set($oldK1, 7, 3600);
 
         // The real pipeline must read the old score and write the update under the active secret.
@@ -460,7 +460,7 @@ class RateLimiterEngineWorkflowTest extends TestCase
 
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
 
-        $newK1 = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k1:v2:prod:127.0.0.1", 'new_secret');
+        $newK1 = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1('api_heavy_protection', 'prod', '127.0.0.1', 'new_secret');
         $oldState = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $oldK1)->get($oldK1);
         $newState = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $newK1)->get($newK1);
 
@@ -488,15 +488,15 @@ class RateLimiterEngineWorkflowTest extends TestCase
 
         // 64-bit prefix (16 chars)
         $prefix64 = substr($hex, 0, 16);
-        $k1_64 = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k1:v2:prod:{$prefix64}", 'test_secret');
+        $k1_64 = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1('api_heavy_protection', 'prod', $prefix64, 'test_secret');
 
         // Legacy macro prefixes must never become enforcement keys.
         $prefix48 = substr($hex, 0, 12);
-        $k1_48 = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k1:v2:prod:{$prefix48}", 'test_secret');
+        $k1_48 = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1('api_heavy_protection', 'prod', $prefix48, 'test_secret');
         $prefix40 = substr($hex, 0, 10);
-        $k1_40 = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k1:v2:prod:{$prefix40}", 'test_secret');
+        $k1_40 = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1('api_heavy_protection', 'prod', $prefix40, 'test_secret');
         $prefix32 = substr($hex, 0, 8);
-        $k1_32 = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k1:v2:prod:{$prefix32}", 'test_secret');
+        $k1_32 = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1('api_heavy_protection', 'prod', $prefix32, 'test_secret');
 
         $k1_64State = \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1_64)->get($k1_64);
         $this->assertNotNull($k1_64State);
@@ -511,9 +511,10 @@ class RateLimiterEngineWorkflowTest extends TestCase
     {
         $context = new RateLimitContextDTO('2001:db8:85a3::8a2e:370:7334', 'Mozilla/5.0', 'acct_123');
         $hex = bin2hex((string) inet_pton($context->ip));
-        $keyForPrefix = static fn(string $prefix): string => hash_hmac(
-            'sha256',
-            "api_heavy_protection:rate_limiter:k1:v2:prod:{$prefix}",
+        $keyForPrefix = static fn(string $prefix): string => \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1(
+            'api_heavy_protection',
+            'prod',
+            $prefix,
             'test_secret',
         );
 
@@ -532,9 +533,10 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $engine = $this->createEngineWithStore($this->store, $policy);
         $context = new RateLimitContextDTO('2001:db8:85a3::8a2e:370:7334', 'Mozilla/5.0', 'acct_123');
         $hex = bin2hex((string) inet_pton($context->ip));
-        $keyForPrefix = static fn(string $prefix): string => hash_hmac(
-            'sha256',
-            "api_heavy_protection:rate_limiter:k1:v2:prod:{$prefix}",
+        $keyForPrefix = static fn(string $prefix): string => \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1(
+            'api_heavy_protection',
+            'prod',
+            $prefix,
             'test_secret',
         );
         $k1Key = $keyForPrefix(substr($hex, 0, 16));
@@ -565,9 +567,10 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $engine = $this->createEngineWithStore($this->store, $policy);
         $context = new RateLimitContextDTO('2001:db8:85a3::8a2e:370:7334', 'Mozilla/5.0', 'acct_123');
         $hex = bin2hex((string) inet_pton($context->ip));
-        $keyForPrefix = static fn(string $prefix): string => hash_hmac(
-            'sha256',
-            "api_heavy_protection:rate_limiter:k1:v2:prod:{$prefix}",
+        $keyForPrefix = static fn(string $prefix): string => \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1(
+            'api_heavy_protection',
+            'prod',
+            $prefix,
             'test_secret',
         );
         $k1Key = $keyForPrefix(substr($hex, 0, 16));

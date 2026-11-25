@@ -329,20 +329,22 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
         $k4Key = $this->key('login_protection', 'k4', $account);
         $k2Key = $this->correlationK2Key('login_protection');
         \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->set($k4Key, 5, 86400);
-        $churnScope = hash_hmac(
-            'sha256',
-            "login_protection:rate_limiter:correlation:churn:v1:prod:scope:{$k2Key}",
+        $churnScope = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            'correlation.churn.scope',
+            'login_protection',
+            'prod',
             'test_secret',
+            $k2Key,
         );
         $this->correlationStore->addDistinctBounded(
             $churnScope,
-            hash_hmac('sha256', 'login_protection:rate_limiter:correlation:churn:member:v1:first-fingerprint', 'test_secret'),
+            \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive('correlation.churn.member', 'login_protection', 'prod', 'test_secret', 'first-fingerprint'),
             600,
             3,
         );
         $this->correlationStore->addDistinctBounded(
             $churnScope,
-            hash_hmac('sha256', 'login_protection:rate_limiter:correlation:churn:member:v1:second-fingerprint', 'test_secret'),
+            \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive('correlation.churn.member', 'login_protection', 'prod', 'test_secret', 'second-fingerprint'),
             600,
             3,
         );
@@ -536,6 +538,6 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
 
     private function correlationK2Key(string $policy, string $ip = '198.51.100.40', string $secret = 'test_secret'): string
     {
-        return hash_hmac('sha256', "{$policy}:rate_limiter:k2:v2:prod:{$ip}:chrome/123", $secret);
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k2($policy, 'prod', $ip, 'chrome/123', $secret);
     }
 }

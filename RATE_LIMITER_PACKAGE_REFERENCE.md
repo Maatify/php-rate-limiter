@@ -32,7 +32,13 @@ Account-scope derivation is E1 only. The encoding enum/selector, V2 account deri
 
 Writer/reader capture and retain distinct stable root/account-view pairs before binding; an internal closed binding handoff prevents the Builder reader from querying a mutable provider again. It cannot carry an arbitrary view or another root. Custom adapter storage/transaction conformance remains a separate obligation. Reader composition uses only the rate role and its read-only capabilities; its advanced DEC-032 fallback remains documented.
 
-Existing V2 traffic is not migrated. Switching loses visibility of Set A state and derivative Set B identities; mixed workers and live rollback are unsupported. New isolated traffic needs homogeneous workers, compatible store views and complete v1/e1 ACL grants. Current/Previous secret/material generations remain within E1. Adjacent framing/epoch/cohort blockers remain on #284 and are outside G1.
+Existing V2 traffic is not migrated. Switching loses visibility of Set A state and derivative Set B identities; mixed workers and live rollback are unsupported. New isolated traffic needs homogeneous workers, compatible store views and complete v1/e1 ACL grants. Current/Previous secret/material generations remain within E1.
+
+## Breaking non-account key framing boundary (DEC-047)
+
+Non-account keys for K1–K3, correlation (`device_cap_ip`, `device_cap_account`, `churn`, `dilution`, `distributed_account_devices`, `distributed_account_occurrences`, and their bridges/watches/confirmations) and adaptive IPv6 families use canonical checked `u32be` length-prefixed framing (`f1`) with a closed 33-purpose registry and dedicated HMAC domain (`maatify.rate-limiter.key-domain.non-account.f1`). They keep the existing physical `v1` root layout with no `e1.` prefix. Writer and operational reader share one immutable internal implementation for K1–K3 and one shared checked implementation for simple fixed-window throttling.
+
+E1 account bytes (`e1:`) and simple fixed-window bytes (`v1:budget`) are unchanged and have no intended state reset. `LocalFallbackLimiter` and `DeviceIdentityResolver` / `FingerprintHasher` are unchanged. Switching existing traffic starts a fresh isolated key space for affected non-account families and K1-dependent credential-spray wrappers/watches until prior TTLs expire; mixed workers, live rollback, cross-format block preservation, dual-read/write, migration, and Redis data deletion are unsupported. Current/Previous secret and material rotation inside `f1` remains supported. Remaining Admission (`A1`–`A3`) and epoch/cohort blockers stay queued for G3 under [#281](https://github.com/Maatify/php-rate-limiter/issues/281) and [#284](https://github.com/Maatify/php-rate-limiter/issues/284).
 
 ## Source Topology
 

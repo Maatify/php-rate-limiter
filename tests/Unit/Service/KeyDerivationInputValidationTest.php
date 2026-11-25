@@ -148,7 +148,7 @@ final class KeyDerivationInputValidationTest extends TestCase
         // (including surrounding whitespace). Pre-seeding a hard block on
         // that literal key is only observed by process() if the constructor
         // preserved the secret byte-for-byte instead of trimming it.
-        $k1Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k1:v2:prod:127.0.0.1', $secretWithWhitespace);
+        $k1Key = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1('otp_protection', 'prod', '127.0.0.1', $secretWithWhitespace);
         \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $k1Key)->block($k1Key, 2, 600);
 
         $result = $pipeline->process($policy, $context, RateLimitCommand::checkOnly('otp_protection'), $device);

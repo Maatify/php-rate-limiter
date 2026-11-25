@@ -477,19 +477,23 @@ final class BoundedCorrelationCoverageTest extends TestCase
 
     private function correlationScope(string $policy, string $purpose, string $anchor, string $secret = self::SECRET): string
     {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:correlation:{$purpose}:v1:prod:scope:{$anchor}",
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            "correlation.{$purpose}.scope",
+            $policy,
+            'prod',
             $secret,
+            $anchor,
         );
     }
 
     private function correlationStateKey(string $policy, string $purpose, string $anchor, string $secret = self::SECRET): string
     {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:correlation:{$purpose}:v1:prod:{$anchor}",
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            "correlation.{$purpose}",
+            $policy,
+            'prod',
             $secret,
+            $anchor,
         );
     }
 
@@ -524,7 +528,14 @@ final class BoundedCorrelationCoverageTest extends TestCase
         int $windowId,
         string $secret = self::SECRET,
     ): string {
-        return $this->correlationStateKey($policy, 'dilution_confirmation', "{$scope}:{$windowId}", $secret);
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            'correlation.dilution_confirmation',
+            $policy,
+            'prod',
+            $secret,
+            $scope,
+            (string) $windowId,
+        );
     }
 
     private function windowId(): int
@@ -584,10 +595,12 @@ final class BoundedCorrelationCoverageTest extends TestCase
 
     private function correlationBridge(string $policy, string $purpose, string $anchor, string $secret): string
     {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:correlation:{$purpose}:v1:prod:bridge:{$anchor}",
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            "correlation.{$purpose}.bridge",
+            $policy,
+            'prod',
             $secret,
+            $anchor,
         );
     }
 }

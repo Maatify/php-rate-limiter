@@ -2,7 +2,7 @@
 
 # Maatify Rate Limiter
 
-> Pre-Stable breaking change (DEC-046): account keys use E1 only. The encoding selector is removed. Existing V2 state is not migrated; mixed workers/live rollback are unsupported. See [the Usage Guide](docs/guides/USAGE_GUIDE.md#account-scope-e1-and-the-breaking-pre-stable-boundary-dec-046). Adjacent framing blockers remain tracked on #284; no rc.4 publication is claimed.
+> Pre-Stable breaking changes ([DEC-046](docs/decisions/DEC-046_E1_ONLY_ACCOUNT_SCOPE_KEY_ENCODING.md), [DEC-047](docs/decisions/DEC-047_NON_ACCOUNT_CANONICAL_KEY_FRAMING.md)): account keys use E1 only (selector removed) and non-account K1–K3, correlation, and adaptive IPv6 keys use canonical `f1` framing (E1 and simple fixed-window bytes retained). Legacy state for affected families is not migrated; mixed workers and live rollback are unsupported. See [the Usage Guide](docs/guides/USAGE_GUIDE.md#account-scope-e1-and-the-breaking-pre-stable-boundary-dec-046). Remaining G3 Admission/epoch/cohort blockers are tracked on [#281](https://github.com/Maatify/php-rate-limiter/issues/281) and [#284](https://github.com/Maatify/php-rate-limiter/issues/284); no rc.4 qualification or publication is claimed.
 
 ![Maatify.dev](https://www.maatify.dev/assets/img/img/maatify_logo_white.svg)
 

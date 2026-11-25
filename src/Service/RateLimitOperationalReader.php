@@ -39,6 +39,8 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
 
     private readonly E1AccountScopeKeyDeriver $accountKeys;
 
+    private readonly NonAccountScopeKeyDeriver $nonAccountKeys;
+
     /** The captured account view for all account-bearing keys. */
     private readonly RateLimitStoreInterface $accountStore;
 
@@ -89,6 +91,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
             throw new \ArgumentCountError('The reader does not accept a key deriver.');
         }
         $this->accountKeys = new E1AccountScopeKeyDeriver($this->envScope);
+        $this->nonAccountKeys = new NonAccountScopeKeyDeriver($this->envScope);
         $accountStore = ($binding ?? E1StoreBinding::capture($this->store))->forRoot($this->store);
         if (! $accountStore instanceof RateLimitStoreInterface) {
             throw new RateLimiterException('The account view must preserve the rate-limit storage role.');
@@ -459,16 +462,14 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         ?AdmissionLaneEnum $lane = null,
         ?string $k5Material = null,
     ): array {
-        $base = "{$policyName}:rate_limiter";
-        $version = 'v2';
-        $environment = $this->envScope;
+        $ipPrefix = $this->getIpPrefix($context->ip);
 
         $keys = [
-            'k1' => $this->hashKey("{$base}:k1:{$version}:{$environment}:{$this->getIpPrefix($context->ip)}", $secret),
-            'k2' => $this->hashKey("{$base}:k2:{$version}:{$environment}:{$this->getIpPrefix($context->ip)}:{$ua}", $secret),
+            'k1' => $this->nonAccountKeys->deriveK1($policyName, $ipPrefix, $secret),
+            'k2' => $this->nonAccountKeys->deriveK2($policyName, $ipPrefix, $ua, $secret),
             'k3' => ! IdentityPresence::isPresent($fingerprintHash)
                 ? null
-                : $this->hashKey("{$base}:k3:{$version}:{$environment}:{$this->getIpPrefix($context->ip)}:{$fingerprintHash}", $secret),
+                : $this->nonAccountKeys->deriveK3($policyName, $ipPrefix, $fingerprintHash, $secret),
             'k4' => ! IdentityPresence::account($context)
                 ? null
                 : $this->accountKeys->derive($this->k4KeyType($lane), $policyName, $context->accountId, $secret),
@@ -478,11 +479,6 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         ];
 
         return $keys;
-    }
-
-    private function hashKey(string $input, string $secret): string
-    {
-        return hash_hmac('sha256', $input, $secret);
     }
 
     private function getIpPrefix(string $ip, int $cidr = 64): string

@@ -84,15 +84,19 @@ final class CorrelationBehaviorTest extends TestCase
             $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
         }
 
-        $dilutionScope = hash_hmac(
-            'sha256',
-            "otp_protection:rate_limiter:correlation:dilution:v1:prod:scope:{$fingerprint}",
+        $dilutionScope = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            'correlation.dilution.scope',
+            'otp_protection',
+            'prod',
             'test_secret',
+            $fingerprint,
         );
-        $dilutionWatch = hash_hmac(
-            'sha256',
-            "otp_protection:rate_limiter:correlation:dilution_watch:v1:prod:{$dilutionScope}",
+        $dilutionWatch = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            'correlation.dilution_watch',
+            'otp_protection',
+            'prod',
             'test_secret',
+            $dilutionScope,
         );
         $this->assertSame(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->correlationStore, $dilutionWatch)->getWatchFlag($dilutionWatch));
 

@@ -594,22 +594,18 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
         string $outerSecret,
         string $fingerprintSecret,
     ): string {
-        $base = "{$policy}:rate_limiter:{$scope}:v2:prod:";
         $fingerprintHash = $this->fingerprintHash($context, $fingerprintSecret);
         if (in_array($scope, ['k4', 'k5'], true)) {
             self::assertNotNull($context->accountId);
             return (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive($scope, $policy, $context->accountId, $outerSecret, $scope === 'k5' ? $fingerprintHash : null);
         }
-        $raw = match ($scope) {
-            'k1' => $base . $context->ip,
-            'k2' => $base . $context->ip . ':' . DeviceIdentityResolver::normalizeUserAgent($context->ua),
-            'k3' => $base . $context->ip . ':' . $fingerprintHash,
-            'k4' => $base . ($context->accountId ?? ''),
-            'k5' => $base . ($context->accountId ?? '') . ':' . $fingerprintHash,
+
+        return match ($scope) {
+            'k1' => \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1($policy, 'prod', $context->ip, $outerSecret),
+            'k2' => \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k2($policy, 'prod', $context->ip, DeviceIdentityResolver::normalizeUserAgent($context->ua), $outerSecret),
+            'k3' => \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k3($policy, 'prod', $context->ip, $fingerprintHash, $outerSecret),
             default => throw new \InvalidArgumentException("Unsupported scope: {$scope}"),
         };
-
-        return hash_hmac('sha256', $raw, $outerSecret);
     }
 
     private function microCapKey(
@@ -634,10 +630,12 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
     {
         $k4 = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', ($policy), ($account), $secret);
 
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:correlation:distributed_account_devices:v1:prod:scope:{$k4}",
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            'correlation.distributed_account_devices.scope',
+            $policy,
+            'prod',
             $secret,
+            $k4,
         );
     }
 

@@ -100,8 +100,11 @@ churn may observe active macro scopes, but enforcement persists only the
 current canonical `/64` K1 or `/64 + UA` K2. Dilution remains fingerprint-global
 over canonical `/64` members and never replaces them with macro members.
 
-Hierarchy scopes and members use the package-owned HMAC namespace
-`policy:rate_limiter:ipv6_adaptive:purpose:v1:cidr:environment:prefix`.
+Hierarchy scopes, bridges, churn anchors, and adaptive churn/spray observations use canonical
+length-prefixed framing under `DEC-047` (`NonAccountScopeKeyDeriver`, magic
+`maatify.rate-limiter.non-account.f1\x00`, HMAC key domain
+`maatify.rate-limiter.key-domain.non-account.f1`, with registered `ipv6_adaptive.*` purposes and
+`cidr` encoded as a canonical decimal string).
 The `/48` member is the opaque canonical `/64` K1; `/40` and `/32` members are
 opaque adaptive child-scope keys. Raw IPv6 addresses and textual prefixes never
 cross the correlation-store boundary.
@@ -262,7 +265,9 @@ Correlation members MUST also use a domain-separated keyed HMAC derived from the
 
 **E1 (DEC-046, mandatory for account identities).** K4/K4P, K5/K5p, micro-cap, budget cooldown and registered account auxiliary keys use only the length-prefixed framing and HMAC domain in [KEY_SCOPE_ENCODING_E1](KEY_SCOPE_ENCODING_E1.md) §3. Bytes and vectors are unchanged. Writer and operational reader instantiate the same final internal implementation from their validated environment. There is no selector, V2 account implementation or deriver injection. The Pipeline constructs its store-bound helpers on the actual validated account views and keeps EphemeralBucket on the root; advanced callers supply each existing clock role explicitly. Views, resource binding and execution use the same captured handles. See that contract's §4/§8 for custom adapter limits and the breaking new-traffic boundary.
 
-In §4.3 and existing source variable names, **V2/Current and V1/Previous are secret generations**, not the removed account encoding. Rotation and atomic budget seeding within E1 remain required. K1–K3 algorithm literals and store layout v1 are unchanged by G1.
+**Non-account canonical framing `f1` (DEC-047, mandatory for K1–K3, correlation and adaptive IPv6).** K1–K3, correlation (`device_cap_ip`, `device_cap_account`, `churn`, `dilution`, `distributed_account_devices`, `distributed_account_occurrences`, and their bridges/watches/confirmations) and adaptive IPv6 keys use length-prefixed framing (`maatify.rate-limiter.non-account.f1\x00 || u32be(N) || enc(f_1)...`) with closed registered purposes (`NonAccountScopePurpose`), checked `u32be` bounds (`0..4294967295` before `pack('N')`), and HMAC subkey domain `maatify.rate-limiter.key-domain.non-account.f1` (64 lowercase hex output; no `e1.` prefix; physical store root layout `v1` unchanged). Writer and operational reader instantiate the same immutable internal implementation for K1–K3. Compound correlation anchors (`device_cap_account` `k4`/`k1`, `dilution_confirmation` `scope`/`windowId`) are framed as separate fields. Single-field `credential_spray:subject:v1:{subject}`, fixed wrappers around K1 (`credential_spray:{k1}`, `credential_spray:bridge:{k1}`, `{scope}:watch`), `LocalFallbackLimiter`, and `DeviceIdentityResolver` / `FingerprintHasher` retain their proven-injective formats. See [DEC-047](decisions/DEC-047_NON_ACCOUNT_CANONICAL_KEY_FRAMING.md) and [#281](https://github.com/Maatify/php-rate-limiter/issues/281) for the complete 33-purpose tuple table, vectors, and breaking pre-Stable boundary.
+
+In §4.3 and existing source variable names, **V2/Current and V1/Previous are secret generations**, not legacy key encodings. Rotation and atomic budget seeding within E1 and `f1` remain required. Physical store layout `v1` is unchanged by G1/G2.
 
 ---
 
@@ -690,7 +695,7 @@ All keys MUST include:
 
 This prevents cross-action and cross-module leakage.
 
-The removed V2 account derivation joined these fields with `:`. Under sole-E1 (DEC-046) each field is length-prefixed, so a field boundary can never move; the environment scope and the account identifier are opaque byte strings. The physical key of an E1 account-bearing key is `maatify:rate-limiter:e1:{sha256(namespace)}:{family}:{sha256(E1 key)}`; every other key keeps `maatify:rate-limiter:v1:…`. The layout is carried by the typed view `E1KeyspaceStoreInterface::e1Keyspace()` of the same store, never inferred from the shape of a string. E1 never reads V2 account state. Existing-traffic transfer, mixed workers and live rollback are unsupported; no active-block preservation is claimed for that transfer.
+The removed colon-joined account and non-account derivations joined these fields with `:`. Under sole-E1 (`DEC-046`) and canonical non-account `f1` (`DEC-047`), each field is length-prefixed with checked `u32be` bounds (`0..4294967295`), so a field boundary can never move; policy names, environment scopes, and semantic inputs are opaque byte strings. The physical key of an E1 account-bearing key is `maatify:rate-limiter:e1:{sha256(namespace)}:{family}:{sha256(E1 key)}`; non-account `f1` and simple fixed-window keys keep `maatify:rate-limiter:v1:…`. The layout is carried by the typed view `E1KeyspaceStoreInterface::e1Keyspace()` of the same store, never inferred from the shape of a string. Neither E1 nor `f1` reads legacy colon-joined state. Existing-traffic transfer, mixed workers and live rollback are unsupported; no active-block preservation is claimed for that transfer.
 
 ### 4.5 Auxiliary Budget Keys (Locked)
 
@@ -896,7 +901,10 @@ delimiter concatenation. Each component is encoded as:
 pack('N', strlen(component)) . component
 ```
 
-and the preimage is the concatenation of the encoded components in the order above. `limit`
+and the preimage is the concatenation of the encoded components in the order above (using the
+shared checked `u32be` framing primitive of `DEC-047`, which refuses any component byte length
+outside `0..4294967295` before `pack('N')` while preserving identical wire bytes for writer and
+operational reader). `limit`
 and `intervalSeconds` are encoded as their canonical decimal string representation (`(string)
 $limit`, `(string) $intervalSeconds`). The stored key is:
 
@@ -1155,6 +1163,7 @@ Rules:
 
 * Key definitions are part of the public contract
 * E1 alone derives account keys (DEC-046); its bytes are unchanged, and the former opt-in/default selection is removed. A security review covering E1 (injectivity of the encoding, key-domain separation, layout carriage, closed carrier creation, ACL prefix, no V2 read) is recorded in the activation PR for #284.
+* Canonical non-account framing `f1` derives K1–K3, correlation, and adaptive IPv6 keys (DEC-047, #281, #284), while retaining E1 and simple fixed-window bytes and checked `u32be` bounds. Admission framing and epoch/cohort semantics remain queued for G3 (#281, #284).
 * Any change requires:
 
   * version bump

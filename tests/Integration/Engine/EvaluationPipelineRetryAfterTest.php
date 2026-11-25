@@ -55,7 +55,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         // Assert no updates were made to the store
         $k4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'otp_protection', 'acct_123', 'test_secret');
         $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->getBudget($k4Key));
-        $k1 = hash_hmac('sha256', 'otp_protection:rate_limiter:k1:v2:prod:127.0.0.1', 'test_secret');
+        $k1 = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1('otp_protection', 'prod', '127.0.0.1', 'test_secret');
         $this->assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1)->get($k1));
     }
 
@@ -121,7 +121,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $device = new DeviceIdentityDTO('hash_456', 'HIGH', false, false, 'Mozilla');
         $command = RateLimitCommand::checkOnly('otp_protection');
 
-        $k1Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k1:v2:prod:127.0.0.1', 'test_secret');
+        $k1Key = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1('otp_protection', 'prod', '127.0.0.1', 'test_secret');
         $k4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'otp_protection', 'acct_456', 'test_secret');
 
         // Lower level, longer remaining TTL.
@@ -147,8 +147,8 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $device = new DeviceIdentityDTO('hash_789', 'HIGH', false, false, 'Mozilla');
 
         $currentK4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'otp_protection', 'acct_789', 'test_secret');
-        $currentK1Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k1:v2:prod:127.0.0.1', 'test_secret');
-        $previousK1Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k1:v2:prod:127.0.0.1', 'previous_secret');
+        $currentK1Key = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1('otp_protection', 'prod', '127.0.0.1', 'test_secret');
+        $previousK1Key = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1('otp_protection', 'prod', '127.0.0.1', 'previous_secret');
 
         // Active Current restriction on the K4 scope.
         \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $currentK4Key)->block($currentK4Key, 2, 300);
@@ -321,7 +321,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         };
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
-        $k1Key = hash_hmac('sha256', 'independent_gate_fixture:rate_limiter:k1:v2:prod:127.0.0.1', 'test_secret');
+        $k1Key = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1('independent_gate_fixture', 'prod', '127.0.0.1', 'test_secret');
         $k4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'independent_gate_fixture', 'acct_123', 'test_secret');
         \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1Key)->set($k1Key, 3, 3600);
         \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->set($k4Key, 6, 3600);
@@ -377,7 +377,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         };
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
-        $k1Key = hash_hmac('sha256', 'independent_hard_without_k4_fixture:rate_limiter:k1:v2:prod:127.0.0.1', 'test_secret');
+        $k1Key = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1('independent_hard_without_k4_fixture', 'prod', '127.0.0.1', 'test_secret');
         $k4Key = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', 'independent_hard_without_k4_fixture', 'acct_123', 'test_secret');
         \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1Key)->set($k1Key, 3, 3600);
         \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k4Key)->set($k4Key, 4, 3600);
@@ -401,7 +401,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $policy = new ApiHeavyProtectionPolicy(['k1' => 1000, 'k2' => 1000, 'k3' => 300]);
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
-        $k3Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k3:v2:prod:127.0.0.1:hash_123', 'test_secret');
+        $k3Key = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k3('api_heavy_protection', 'prod', '127.0.0.1', 'hash_123', 'test_secret');
         \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k3Key)->set($k3Key, 299, 3600);
 
         $result = $this->pipeline->process(
@@ -420,7 +420,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $policy = new ApiHeavyProtectionPolicy(['k1' => 600, 'k2' => 1000, 'k3' => 1000]);
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
-        $k1Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k1:v2:prod:127.0.0.1', 'test_secret');
+        $k1Key = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1('api_heavy_protection', 'prod', '127.0.0.1', 'test_secret');
         \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1Key)->set($k1Key, 599, 3600);
 
         $result = $this->pipeline->process(
@@ -439,7 +439,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $policy = new ApiHeavyProtectionPolicy(['k1' => 1000, 'k2' => 1000, 'k3' => 300]);
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'LOW', false, false, 'Mozilla');
-        $k3Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k3:v2:prod:127.0.0.1:hash_123', 'test_secret');
+        $k3Key = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k3('api_heavy_protection', 'prod', '127.0.0.1', 'hash_123', 'test_secret');
         \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k3Key)->set($k3Key, 300, 3600);
 
         $result = $this->pipeline->process($policy, $context, RateLimitCommand::checkOnly('api_heavy_protection'), $device);
@@ -447,15 +447,8 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         self::assertSame(2, $result->blockLevel);
         self::assertSame(300, $result->retryAfter);
-        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, hash_hmac(
-            'sha256',
-            'api_heavy_protection:rate_limiter:k2:v2:prod:127.0.0.1:Mozilla',
-            'test_secret',
-        ))->checkBlock(hash_hmac(
-            'sha256',
-            'api_heavy_protection:rate_limiter:k2:v2:prod:127.0.0.1:Mozilla',
-            'test_secret',
-        ))?->level);
+        $k2Key = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k2('api_heavy_protection', 'prod', '127.0.0.1', 'Mozilla', 'test_secret');
+        self::assertSame(2, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k2Key)->checkBlock($k2Key)?->level);
         self::assertNull(\Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k3Key)->checkBlock($k3Key));
     }
 
@@ -464,8 +457,8 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $policy = new ApiHeavyProtectionPolicy(['k1' => 1000, 'k2' => 1000, 'k3' => 300]);
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'LOW', false, false, 'Mozilla');
-        $k2Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k2:v2:prod:127.0.0.1:Mozilla', 'test_secret');
-        $k3Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k3:v2:prod:127.0.0.1:hash_123', 'test_secret');
+        $k2Key = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k2('api_heavy_protection', 'prod', '127.0.0.1', 'Mozilla', 'test_secret');
+        $k3Key = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k3('api_heavy_protection', 'prod', '127.0.0.1', 'hash_123', 'test_secret');
         \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k3Key)->set($k3Key, 299, 3600);
 
         $result = $this->pipeline->process($policy, $context, new RateLimitCommand('api_heavy_protection'), $device);
@@ -569,7 +562,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         );
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
-        $k1Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k1:v2:prod:127.0.0.1', 'test_secret');
+        $k1Key = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1('api_heavy_protection', 'prod', '127.0.0.1', 'test_secret');
         \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1Key)->set($k1Key, 1, 3600);
 
         $result = $pipeline->process($policy, $context, new RateLimitCommand('api_heavy_protection'), $device);
@@ -595,7 +588,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         );
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
-        $k3Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k3:v2:prod:127.0.0.1:hash_123', 'test_secret');
+        $k3Key = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k3('api_heavy_protection', 'prod', '127.0.0.1', 'hash_123', 'test_secret');
         \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k3Key)->set($k3Key, 1, 3600);
         \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($correlationStore, "watch:{$k3Key}")->incrementWatchFlag("watch:{$k3Key}", 1800);
 
@@ -698,9 +691,9 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $result = $this->pipeline->process($apiHeavyPolicy, $context, $command, $device);
         $this->assertEquals(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
 
-        $k1Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k1:v2:prod:203.0.113.10', 'test_secret');
-        $k2Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k2:v2:prod:203.0.113.10:chrome/123', 'test_secret');
-        $k3Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k3:v2:prod:203.0.113.10:known-fingerprint', 'test_secret');
+        $k1Key = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1('api_heavy_protection', 'prod', '203.0.113.10', 'test_secret');
+        $k2Key = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k2('api_heavy_protection', 'prod', '203.0.113.10', 'chrome/123', 'test_secret');
+        $k3Key = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k3('api_heavy_protection', 'prod', '203.0.113.10', 'known-fingerprint', 'test_secret');
 
         $this->assertEquals(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k1Key)->get($k1Key)?->value);
         $this->assertEquals(1, \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($this->store, $k2Key)->get($k2Key)?->value);
