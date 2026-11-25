@@ -1,0 +1,137 @@
+F300 source=/rejected Pipeline.sha256=b04017f151177ea9b1999302a476d8021d85c5d87636e511682946f2d1525e04 PHP_INT_SIZE=4
+PHPUnit 11.5.58 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+Time: 00:01.791, Memory: 42.00 MB
+
+There were 8 failures:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\G1ReviewRegressionRedisTest::testClaimRefusesBeforeChangingOuterRoutingAndBothRedisLayouts with data set "host-intruder" (false, 'intruder')
+An attempted overlap must leave the outer Redis outcome unchanged on both layouts.
+Failed asserting that two arrays are identical.
+--- Expected
++++ Actual
+@@ @@
+ Array &0 [
+-    'maatify:rate-limiter:e1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:block:82dc05b61aec5ae1ab74968fca38e93f80299c8a97c451368a41c0391330e6fd' => '1021210000000400856c6576656c060101896578706972657341740af34f1eeb6a05ff0a003c31345ebfc2120b',
+-    'maatify:rate-limiter:e1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:score:82dc05b61aec5ae1ab74968fca38e93f80299c8a97c451368a41c0391330e6fd' => '10212100000004008576616c7565060301897570646174656441740af3401eeb6a05ff0a00807cf91fc7a7b66b',
++    'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:block:82dc05b61aec5ae1ab74968fca38e93f80299c8a97c451368a41c0391330e6fd' => '1021210000000400856c6576656c060101896578706972657341740af34f1eeb6a05ff0a003c31345ebfc2120b',
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:distinct-meta:53acba4abc5e981c10751be9efc1d46065cb9b9490c4bcf99c77a3d4953b19b7' => '1018180000000200896578706972657341740af3c421eb6a05ff0a00b3a5fd688def5d10',
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:distinct-meta:849861ecf2e86fc21428412e4e6d5336823b7118e71ab043a44b8e66db11615c' => '1018180000000200896578706972657341740af3c421eb6a05ff0a00b3a5fd688def5d10',
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:distinct-meta:969ce57b88cb5ce0f553a40b68f6398508b38e79ec2e468699384d86e5695f27' => '1018180000000200896578706972657341740af39820eb6a05ff0a00ae6968d6383b0c08',
+@@ @@
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:distinct:969ce57b88cb5ce0f553a40b68f6398508b38e79ec2e468699384d86e5695f27' => '02014040616565303832626437313930303236393937613965633061623233616366363830313564623065323462316534666237366563333037643166396661303439370a00ffc934ea2d4af07c',
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:distinct:f8448d89b72cec39e8cdd76350e4d21dcac1dcbe68a4ee0e7d2881a7473347cf' => '02014040653166383466623764366165613461373631643266356664333635373964613233303562666631626434336631666661613264633236306637613039383834330a0064f541fd22ff1b95',
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:score:3e9d1723c41d7e88af458de3887c80c1d554520d4333883fae205c8c4c375705' => '10212100000004008576616c7565060101897570646174656441740af3401eeb6a05ff0a007aa07c3b6db801c1',
++    'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:score:82dc05b61aec5ae1ab74968fca38e93f80299c8a97c451368a41c0391330e6fd' => '10212100000004008576616c7565060301897570646174656441740af3401eeb6a05ff0a00807cf91fc7a7b66b',
+ ]
+
+/app/tests/Integration/Redis/G1ReviewRegressionRedisTest.php:159
+
+2) Maatify\RateLimiter\Tests\Integration\Redis\G1ReviewRegressionRedisTest::testClaimRefusesBeforeChangingOuterRoutingAndBothRedisLayouts with data set "fiber-absent" (true, null)
+An attempted overlap must leave the outer Redis outcome unchanged on both layouts.
+Failed asserting that two arrays are identical.
+--- Expected
++++ Actual
+@@ @@
+ Array &0 [
+-    'maatify:rate-limiter:e1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:block:82dc05b61aec5ae1ab74968fca38e93f80299c8a97c451368a41c0391330e6fd' => '1021210000000400856c6576656c060101896578706972657341740af34f1eeb6a05ff0a003c31345ebfc2120b',
+-    'maatify:rate-limiter:e1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:score:82dc05b61aec5ae1ab74968fca38e93f80299c8a97c451368a41c0391330e6fd' => '10212100000004008576616c7565060301897570646174656441740af3401eeb6a05ff0a00807cf91fc7a7b66b',
++    'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:block:82dc05b61aec5ae1ab74968fca38e93f80299c8a97c451368a41c0391330e6fd' => '1021210000000400856c6576656c060101896578706972657341740af34f1eeb6a05ff0a003c31345ebfc2120b',
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:distinct-meta:53acba4abc5e981c10751be9efc1d46065cb9b9490c4bcf99c77a3d4953b19b7' => '1018180000000200896578706972657341740af3c421eb6a05ff0a00b3a5fd688def5d10',
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:distinct-meta:849861ecf2e86fc21428412e4e6d5336823b7118e71ab043a44b8e66db11615c' => '1018180000000200896578706972657341740af3c421eb6a05ff0a00b3a5fd688def5d10',
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:distinct-meta:969ce57b88cb5ce0f553a40b68f6398508b38e79ec2e468699384d86e5695f27' => '1018180000000200896578706972657341740af39820eb6a05ff0a00ae6968d6383b0c08',
+@@ @@
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:distinct:969ce57b88cb5ce0f553a40b68f6398508b38e79ec2e468699384d86e5695f27' => '02014040616565303832626437313930303236393937613965633061623233616366363830313564623065323462316534666237366563333037643166396661303439370a00ffc934ea2d4af07c',
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:distinct:f8448d89b72cec39e8cdd76350e4d21dcac1dcbe68a4ee0e7d2881a7473347cf' => '02014040653166383466623764366165613461373631643266356664333635373964613233303562666631626434336631666661613264633236306637613039383834330a0064f541fd22ff1b95',
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:score:3e9d1723c41d7e88af458de3887c80c1d554520d4333883fae205c8c4c375705' => '10212100000004008576616c7565060101897570646174656441740af3401eeb6a05ff0a007aa07c3b6db801c1',
++    'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:score:82dc05b61aec5ae1ab74968fca38e93f80299c8a97c451368a41c0391330e6fd' => '10212100000004008576616c7565060301897570646174656441740af3401eeb6a05ff0a00807cf91fc7a7b66b',
+ ]
+
+/app/tests/Integration/Redis/G1ReviewRegressionRedisTest.php:159
+
+3) Maatify\RateLimiter\Tests\Integration\Redis\G1ReviewRegressionRedisTest::testClaimRefusesBeforeChangingOuterRoutingAndBothRedisLayouts with data set "fiber-intruder" (true, 'intruder')
+An attempted overlap must leave the outer Redis outcome unchanged on both layouts.
+Failed asserting that two arrays are identical.
+--- Expected
++++ Actual
+@@ @@
+ Array &0 [
+-    'maatify:rate-limiter:e1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:block:82dc05b61aec5ae1ab74968fca38e93f80299c8a97c451368a41c0391330e6fd' => '1021210000000400856c6576656c060101896578706972657341740af34f1eeb6a05ff0a003c31345ebfc2120b',
+-    'maatify:rate-limiter:e1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:score:82dc05b61aec5ae1ab74968fca38e93f80299c8a97c451368a41c0391330e6fd' => '10212100000004008576616c7565060301897570646174656441740af3401eeb6a05ff0a00807cf91fc7a7b66b',
++    'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:block:82dc05b61aec5ae1ab74968fca38e93f80299c8a97c451368a41c0391330e6fd' => '1021210000000400856c6576656c060101896578706972657341740af34f1eeb6a05ff0a003c31345ebfc2120b',
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:distinct-meta:53acba4abc5e981c10751be9efc1d46065cb9b9490c4bcf99c77a3d4953b19b7' => '1018180000000200896578706972657341740af3c421eb6a05ff0a00b3a5fd688def5d10',
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:distinct-meta:849861ecf2e86fc21428412e4e6d5336823b7118e71ab043a44b8e66db11615c' => '1018180000000200896578706972657341740af3c421eb6a05ff0a00b3a5fd688def5d10',
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:distinct-meta:969ce57b88cb5ce0f553a40b68f6398508b38e79ec2e468699384d86e5695f27' => '1018180000000200896578706972657341740af39820eb6a05ff0a00ae6968d6383b0c08',
+@@ @@
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:distinct:969ce57b88cb5ce0f553a40b68f6398508b38e79ec2e468699384d86e5695f27' => '02014040616565303832626437313930303236393937613965633061623233616366363830313564623065323462316534666237366563333037643166396661303439370a00ffc934ea2d4af07c',
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:distinct:f8448d89b72cec39e8cdd76350e4d21dcac1dcbe68a4ee0e7d2881a7473347cf' => '02014040653166383466623764366165613461373631643266356664333635373964613233303562666631626434336631666661613264633236306637613039383834330a0064f541fd22ff1b95',
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:score:3e9d1723c41d7e88af458de3887c80c1d554520d4333883fae205c8c4c375705' => '10212100000004008576616c7565060101897570646174656441740af3401eeb6a05ff0a007aa07c3b6db801c1',
++    'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:score:82dc05b61aec5ae1ab74968fca38e93f80299c8a97c451368a41c0391330e6fd' => '10212100000004008576616c7565060301897570646174656441740af3401eeb6a05ff0a00807cf91fc7a7b66b',
+ ]
+
+/app/tests/Integration/Redis/G1ReviewRegressionRedisTest.php:159
+
+4) Maatify\RateLimiter\Tests\Integration\Redis\G1ReviewRegressionRedisTest::testClaimRefusesBeforeChangingOuterRoutingAndBothRedisLayouts with data set "host-absent" (false, null)
+An attempted overlap must leave the outer Redis outcome unchanged on both layouts.
+Failed asserting that two arrays are identical.
+--- Expected
++++ Actual
+@@ @@
+ Array &0 [
+-    'maatify:rate-limiter:e1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:block:82dc05b61aec5ae1ab74968fca38e93f80299c8a97c451368a41c0391330e6fd' => '1021210000000400856c6576656c060101896578706972657341740af34f1eeb6a05ff0a003c31345ebfc2120b',
+-    'maatify:rate-limiter:e1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:score:82dc05b61aec5ae1ab74968fca38e93f80299c8a97c451368a41c0391330e6fd' => '10212100000004008576616c7565060301897570646174656441740af3401eeb6a05ff0a00807cf91fc7a7b66b',
++    'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:block:82dc05b61aec5ae1ab74968fca38e93f80299c8a97c451368a41c0391330e6fd' => '1021210000000400856c6576656c060101896578706972657341740af34f1eeb6a05ff0a003c31345ebfc2120b',
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:distinct-meta:53acba4abc5e981c10751be9efc1d46065cb9b9490c4bcf99c77a3d4953b19b7' => '1018180000000200896578706972657341740af3c421eb6a05ff0a00b3a5fd688def5d10',
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:distinct-meta:849861ecf2e86fc21428412e4e6d5336823b7118e71ab043a44b8e66db11615c' => '1018180000000200896578706972657341740af3c421eb6a05ff0a00b3a5fd688def5d10',
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:distinct-meta:969ce57b88cb5ce0f553a40b68f6398508b38e79ec2e468699384d86e5695f27' => '1018180000000200896578706972657341740af39820eb6a05ff0a00ae6968d6383b0c08',
+@@ @@
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:distinct:969ce57b88cb5ce0f553a40b68f6398508b38e79ec2e468699384d86e5695f27' => '02014040616565303832626437313930303236393937613965633061623233616366363830313564623065323462316534666237366563333037643166396661303439370a00ffc934ea2d4af07c',
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:distinct:f8448d89b72cec39e8cdd76350e4d21dcac1dcbe68a4ee0e7d2881a7473347cf' => '02014040653166383466623764366165613461373631643266356664333635373964613233303562666631626434336631666661613264633236306637613039383834330a0064f541fd22ff1b95',
+     'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:score:3e9d1723c41d7e88af458de3887c80c1d554520d4333883fae205c8c4c375705' => '10212100000004008576616c7565060101897570646174656441740af3401eeb6a05ff0a007aa07c3b6db801c1',
++    'maatify:rate-limiter:v1:e07af59140ccb9dcf7590c6a83db43132b6a6d55b121b983685c80205dabb82f:score:82dc05b61aec5ae1ab74968fca38e93f80299c8a97c451368a41c0391330e6fd' => '10212100000004008576616c7565060301897570646174656441740af3401eeb6a05ff0a00807cf91fc7a7b66b',
+ ]
+
+/app/tests/Integration/Redis/G1ReviewRegressionRedisTest.php:159
+
+5) Maatify\RateLimiter\Tests\Integration\Redis\G1ReviewRegressionRedisTest::testAllowanceWithoutBudgetRejectsMissingSeedBeforeAnyBackendAccess with data set "verified device" (false)
+No reads or writes, including correlation, before capability refusal.
+Failed asserting that 28 is identical to 0.
+
+/app/tests/Integration/Redis/G1ReviewRegressionRedisTest.php:198
+
+6) Maatify\RateLimiter\Tests\Integration\Redis\G1ReviewRegressionRedisTest::testAllowanceWithoutBudgetRejectsMissingSeedBeforeAnyBackendAccess with data set "trusted session" (true)
+No reads or writes, including correlation, before capability refusal.
+Failed asserting that 28 is identical to 0.
+
+/app/tests/Integration/Redis/G1ReviewRegressionRedisTest.php:198
+
+7) Maatify\RateLimiter\Tests\Integration\Redis\G1ReviewRegressionRedisTest::testHealthEntryGuardsCustomStoreBeforeCallingItsBackend
+The custom store must not receive the health call during another request.
+Failed asserting that 13 is identical to 12.
+
+/app/tests/Integration/Redis/G1ReviewRegressionRedisTest.php:296
+/app/tests/Support/Redis/AllowanceOnlyPolicy.php:40
+/app/tests/Support/Redis/AllowanceOnlyPolicy.php:40
+/rejected/src/Service/EvaluationPipeline.php:3338
+/rejected/src/Service/OwnershipRegistry.php:409
+/rejected/src/Service/EvaluationPipeline.php:3511
+/rejected/src/Service/EvaluationPipeline.php:3488
+/rejected/src/Service/EvaluationPipeline.php:3338
+/rejected/src/Service/EvaluationPipeline.php:3369
+/rejected/src/Service/EvaluationPipeline.php:724
+/rejected/src/Service/EvaluationPipeline.php:412
+/rejected/src/Service/EvaluationPipeline.php:303
+/rejected/src/Service/EvaluationPipeline.php:3431
+/rejected/src/Service/EvaluationPipeline.php:289
+/app/tests/Integration/Redis/G1ReviewRegressionRedisTest.php:298
+
+8) Maatify\RateLimiter\Tests\Integration\Redis\G1ReviewRegressionRedisTest::testSupportedAllowanceMigratesPreviousAndMemoizesGuardedPolicyGetter
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/G1ReviewRegressionRedisTest.php:262
+
+FAILURES!
+Tests: 17, Assertions: 488, Failures: 8.

@@ -207,7 +207,7 @@ class EvaluationPipeline
      */
     public function isBackendHealthy(): bool
     {
-        return $this->store->isHealthy();
+        return $this->withinCall('isBackendHealthy', fn(): bool => $this->store->isHealthy());
     }
 
     /**
@@ -234,20 +234,22 @@ class EvaluationPipeline
         string $lifecycleId,
         ?AdmissionLaneEnum $lane = null,
     ): bool {
-        if (! $this->accountStore instanceof PunishmentLifecycleStoreInterface) {
-            throw new RateLimiterException('Post-punishment re-entry requires PunishmentLifecycleStoreInterface.');
-        }
-        $this->accountScopedKeys = [];
-        $current = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $policyName, $this->secret, $lane, $this->k5Material($device, $lane));
-        $previous = $this->hasPreviousGeneration($device)
-            ? $this->buildKeys($context, $device->normalizedUa, $this->previousFingerprintHash($device), $policyName, $this->previousSecret ?? $this->secret, $lane, $this->previousK5Material($device, $lane))
-            : [];
-        $currentKey = $current['k4'] ?? null;
-        if ($currentKey === null) {
-            return false;
-        }
+        return $this->withinCall('claimPostPunishmentReentry', function () use ($context, $device, $policyName, $lifecycleId, $lane): bool {
+            if (! $this->accountStore instanceof PunishmentLifecycleStoreInterface) {
+                throw new RateLimiterException('Post-punishment re-entry requires PunishmentLifecycleStoreInterface.');
+            }
+            $this->accountScopedKeys = [];
+            $current = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $policyName, $this->secret, $lane, $this->k5Material($device, $lane));
+            $previous = $this->hasPreviousGeneration($device)
+                ? $this->buildKeys($context, $device->normalizedUa, $this->previousFingerprintHash($device), $policyName, $this->previousSecret ?? $this->secret, $lane, $this->previousK5Material($device, $lane))
+                : [];
+            $currentKey = $current['k4'] ?? null;
+            if ($currentKey === null) {
+                return false;
+            }
 
-        return CallerTimeStore::claimPostPunishmentReentry($this->accountStore, $currentKey, $previous['k4'] ?? null, $lifecycleId, $this->clock->now());
+            return CallerTimeStore::claimPostPunishmentReentry($this->accountStore, $currentKey, $previous['k4'] ?? null, $lifecycleId, $this->clock->now());
+        });
     }
 
     /** T-5: the store that saves one request at once, or null when the store cannot (DEC-037). */
@@ -3467,7 +3469,20 @@ class EvaluationPipeline
         if ($deltas->k4_repeated_missing_fp > 0) {
             $requirements[] = [$this->accountStore, ScoreReplaceStoreInterface::class];
         }
-        if ($budget !== null && (($this->previousSecret !== null) || ($previous && $budget->known_device_micro_cap !== null))) {
+        $rotatingBudget = $budget !== null && (($this->previousSecret !== null) || ($previous && $budget->known_device_micro_cap !== null));
+        // The fingerprint-independent allowance has no dependency on getBudgetConfig(). Before reading the device caps we
+        // cannot know whether this device will be ephemeral, so cover every request that can reach the allowance write.
+        $rotatingAllowance = ! $rotatingBudget
+            && $this->previousSecret !== null
+            && ! $request->isPreCheck
+            && $request->isFailure
+            && IdentityPresence::account($context)
+            && IdentityPresence::fingerprint($device)
+            && $deltas->k5_failure > 0
+            && $this->isKnownForAccount($device)
+            && $policy instanceof KnownDeviceAccountAllowancePolicyInterface
+            && $this->policyValue('getKnownDeviceAccountAllowance', fn() => $policy->getKnownDeviceAccountAllowance()) !== null;
+        if ($rotatingBudget || $rotatingAllowance) {
             $requirements[] = [$this->accountStore, BudgetSeedStoreInterface::class];
         }
         foreach ($requirements as [$target, $capability]) {
