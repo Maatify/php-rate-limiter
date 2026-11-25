@@ -21,9 +21,27 @@ use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-final class MalformedBoundedCorrelationStore implements BoundedCorrelationRotationStoreInterface, \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface
+final class MalformedBoundedCorrelationStore implements \Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotRotationStoreInterface, BoundedCorrelationRotationStoreInterface, \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface
 {
     use \Maatify\RateLimiter\Tests\Support\E1View;
+
+    public int $invalidCalls = 0;
+
+    private function invalid(): BoundedDistinctResultDTO
+    {
+        $this->invalidCalls++;
+        return $this->invalidResult;
+    }
+
+    public function addDistinctBoundedWithSnapshot(string $key, string $item, int $ttlSeconds, int $maxDistinct): \Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO
+    {
+        return new \Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO(1, true, true, [$item], 1735732800 + $ttlSeconds);
+    }
+
+    public function addDistinctBoundedWithSnapshotAcrossRotation(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct): \Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO
+    {
+        return $this->addDistinctBoundedWithSnapshot($currentKey, $currentMember, $ttlSeconds, $maxDistinct);
+    }
 
     public function __construct(
         private readonly BoundedDistinctResultDTO $invalidResult,
@@ -44,7 +62,7 @@ final class MalformedBoundedCorrelationStore implements BoundedCorrelationRotati
     ): BoundedDistinctResultDTO {
         return $this->returnValidDeviceCaps && in_array($maxDistinct, [10, 50], true)
             ? new BoundedDistinctResultDTO(1, true)
-            : $this->invalidResult;
+            : $this->invalid();
     }
 
     public function addDistinctAcrossRotation(
@@ -73,7 +91,7 @@ final class MalformedBoundedCorrelationStore implements BoundedCorrelationRotati
 
         return $this->returnValidDeviceCaps && in_array($maxDistinct, [10, 50], true)
             ? new BoundedDistinctResultDTO(1, true)
-            : $this->invalidResult;
+            : $this->invalid();
     }
 
     public function incrementWatchFlag(string $key, int $ttlSeconds): int
@@ -132,12 +150,16 @@ final class BoundedCorrelationResultValidationTest extends TestCase
         $pipeline = $this->pipeline($clock, $rateStore, $correlationStore);
 
         $this->expectException(RateLimiterException::class);
-        $pipeline->process(
-            new OtpProtectionPolicy(),
-            new RateLimitContextDTO('203.0.113.50', 'Mozilla/5.0', 'account'),
-            RateLimitCommand::checkOnly('otp_protection'),
-            new DeviceIdentityDTO('fingerprint', 'LOW', false, false, 'mozilla/5.0'),
-        );
+        try {
+            $pipeline->process(
+                new OtpProtectionPolicy(),
+                new RateLimitContextDTO('203.0.113.50', 'Mozilla/5.0', 'account'),
+                RateLimitCommand::checkOnly('otp_protection'),
+                new DeviceIdentityDTO('fingerprint', 'LOW', false, false, 'mozilla/5.0'),
+            );
+        } finally {
+            self::assertGreaterThan(0, $correlationStore->invalidCalls, 'The original malformed-result detector must be exercised.');
+        }
     }
 
     #[DataProvider('invalidResults')]
@@ -149,12 +171,16 @@ final class BoundedCorrelationResultValidationTest extends TestCase
         $pipeline = $this->pipeline($clock, $rateStore, $correlationStore);
 
         $this->expectException(RateLimiterException::class);
-        $pipeline->process(
-            new LoginProtectionPolicy(),
-            new RateLimitContextDTO('203.0.113.51', 'Mozilla/5.0', 'account', correlationId: 'subject'),
-            RateLimitCommand::checkOnly('login_protection'),
-            new DeviceIdentityDTO(null, 'LOW', false, false, 'other/0'),
-        );
+        try {
+            $pipeline->process(
+                new LoginProtectionPolicy(),
+                new RateLimitContextDTO('203.0.113.51', 'Mozilla/5.0', 'account', correlationId: 'subject'),
+                RateLimitCommand::checkOnly('login_protection'),
+                new DeviceIdentityDTO(null, 'LOW', false, false, 'other/0'),
+            );
+        } finally {
+            self::assertGreaterThan(0, $correlationStore->invalidCalls, 'The original malformed-result detector must be exercised.');
+        }
     }
 
     /** @return array<string, array{BoundedDistinctResultDTO}> */

@@ -1,0 +1,23 @@
+PHPUnit 11.5.58 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+Time: 00:01.153, Memory: 16.00 MB
+
+There was 1 failure:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\KeyScopeE1RedisTest::testTheClosedBudgetTrackerReadsTheAccountViewThroughThePublicRuntime
+A root-bound BudgetTracker would incorrectly report an empty budget.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'SOFT_BLOCK'
++'ALLOW'
+
+/app/tests/Integration/Redis/KeyScopeE1RedisTest.php:250
+
+FAILURES!
+Tests: 25, Assertions: 1980, Failures: 1.
+Expected detection: budget width=64 exit=1

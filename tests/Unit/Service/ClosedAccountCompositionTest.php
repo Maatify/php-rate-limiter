@@ -289,4 +289,105 @@ final class ClosedAccountCompositionTest extends TestCase
         self::assertFalse(interface_exists('Maatify\\RateLimiter\\Service\\AccountScopeKeyDeriverInterface'));
         self::assertFalse(class_exists('Maatify\\RateLimiter\\Service\\V2AccountScopeKeyDeriver'));
     }
+
+    public function testANonIdempotentViewIsRejectedBeforeStorage(): void
+    {
+        $root = $this->createMock(FullCapabilityInMemoryStore::class);
+        $view = $this->createMock(FullCapabilityInMemoryStore::class);
+        $root->expects(self::never())->method('get');
+        $view->expects(self::never())->method('get');
+        $root->method('e1Keyspace')->willReturn($view);
+        $view->method('e1Keyspace')->willReturn($root);
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('distinct, stable, idempotent');
+        E1StoreBinding::capture($root);
+    }
+
+    public function testANonStaticAdapterReturnFailsAtItsPhpBoundary(): void
+    {
+        $root = $this->createMock(\Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface::class);
+        $root->method('e1Keyspace')->willReturnCallback(static fn(): FullCapabilityInMemoryStore => new FullCapabilityInMemoryStore(new FixedClock()));
+        $this->expectException(\TypeError::class);
+        E1StoreBinding::capture($root);
+    }
+
+    public function testTheCapturedBucketRetainsBackendAndCallerTimeAcrossRotation(): void
+    {
+        foreach ([false, true] as $callerTime) {
+            foreach ([false, true] as $rotation) {
+                $roleClock = new class ('2026-01-01 12:00:00') extends FixedClock {
+                    public int $reads = 0;
+                    public function now(): \DateTimeImmutable
+                    {
+                        $this->reads++;
+                        return parent::now();
+                    }
+                };
+                $clock = new FixedClock('2025-01-01 12:00:00');
+                $root = new class ($clock) extends FullCapabilityInMemoryStore {
+                    /** @var list<string> */
+                    public array $calls = [];
+                    public function addDistinctBounded(string $key, string $item, int $ttlSeconds, int $maxDistinct): \Maatify\RateLimiter\DTO\BoundedDistinctResultDTO
+                    {
+                        $this->calls[] = 'current:backend';
+                        return new \Maatify\RateLimiter\DTO\BoundedDistinctResultDTO(1, true);
+                    }
+                    public function addDistinctBoundedAt(string $key, string $item, int $ttlSeconds, int $maxDistinct, int $now): \Maatify\RateLimiter\DTO\BoundedDistinctResultDTO
+                    {
+                        $this->calls[] = 'current:' . $now;
+                        return new \Maatify\RateLimiter\DTO\BoundedDistinctResultDTO(1, true);
+                    }
+                    public function addDistinctBoundedAcrossRotation(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct): \Maatify\RateLimiter\DTO\BoundedDistinctResultDTO
+                    {
+                        $this->calls[] = 'rotation:backend';
+                        return new \Maatify\RateLimiter\DTO\BoundedDistinctResultDTO(1, true);
+                    }
+                    public function addDistinctBoundedAcrossRotationAt(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct, int $nowMilliseconds): \Maatify\RateLimiter\DTO\BoundedDistinctResultDTO
+                    {
+                        $this->calls[] = 'rotation:' . $nowMilliseconds;
+                        return new \Maatify\RateLimiter\DTO\BoundedDistinctResultDTO(1, true);
+                    }
+                    public function addDistinctBoundedAcrossRotationAtMilliseconds(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct, string $nowMilliseconds): \Maatify\RateLimiter\DTO\BoundedDistinctResultDTO
+                    {
+                        $this->calls[] = 'rotation:' . $nowMilliseconds;
+                        return new \Maatify\RateLimiter\DTO\BoundedDistinctResultDTO(1, true);
+                    }
+                };
+                $pipeline = new EvaluationPipeline($root, $root, new DecayCalculator($clock), 'secret', 'prod', $clock, $clock, null, $callerTime ? $roleClock : null);
+                $bucket = (new \ReflectionProperty($pipeline, 'ephemeralBucket'))->getValue($pipeline);
+                self::assertInstanceOf(\Maatify\RateLimiter\Service\EphemeralBucket::class, $bucket);
+                $ip = new \Maatify\RateLimiter\DTO\BoundedCorrelationObservationDTO('ip', 'member', $rotation ? 'ip-old' : null, $rotation ? 'member-old' : null, $rotation ? 'ip-bridge' : null);
+                $account = new \Maatify\RateLimiter\DTO\BoundedCorrelationObservationDTO('account', 'member', $rotation ? 'account-old' : null, $rotation ? 'member-old' : null, $rotation ? 'account-bridge' : null);
+                self::assertFalse($bucket->check($ip, $account)->isEphemeral);
+                $expected = ($rotation ? 'rotation:' : 'current:') . ($callerTime ? ($rotation ? '1767268800000' : '1767268800') : 'backend');
+                self::assertSame([$expected, $expected], $root->calls);
+                self::assertSame($callerTime ? 2 : 0, $roleClock->reads);
+            }
+        }
+    }
+
+    public function testBuilderReaderNeedsNoMutationOnlyCapabilityOrCorrelationView(): void
+    {
+        $root = $this->createMockForIntersectionOfInterfaces([
+            \Maatify\RateLimiter\Repository\OperationalReadOnlyStoreInterface::class,
+            \Maatify\RateLimiter\Repository\E1KeyspaceStoreInterface::class,
+        ]);
+        $view = clone $root;
+        $root->method('e1Keyspace')->willReturn($view);
+        $view->method('e1Keyspace')->willReturn($view);
+        $root->expects(self::never())->method('increment');
+        $view->expects(self::never())->method('increment');
+        self::assertInstanceOf(\Maatify\RateLimiter\Repository\RateLimitStoreInterface::class, $root);
+        self::assertNotInstanceOf(\Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface::class, $root);
+        self::assertNotInstanceOf(\Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface::class, $root);
+        $builder = new \Maatify\RateLimiter\Builder\RateLimiterBuilder(
+            new \Maatify\RateLimiter\Config\RateLimiterConfig('secret', 'fp', 'prod'),
+            $root,
+            $this->createStub(\Maatify\RateLimiter\Repository\CorrelationStoreInterface::class),
+            new \Maatify\RateLimiter\Tests\Support\CircuitBreaker\InMemoryCircuitBreakerStore(),
+            new \Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter(),
+        );
+        $reader = $builder->withClock(new FixedClock())->buildOperationalReader();
+        self::assertNull($reader->readScorePolicy(new \Maatify\RateLimiter\DTO\RateLimitContextDTO('203.0.113.1', 'browser', 'account'), 'login_protection')->scopes->k4?->score);
+    }
 }
