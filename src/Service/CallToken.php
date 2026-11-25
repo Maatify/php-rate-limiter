@@ -22,7 +22,7 @@ final class CallToken
     /** Open Host crossings of this call (executor, emitter, clock, resolver, provider). */
     public int $crossings = 0;
 
-    /** @var list<CallScope> scopes that joined this call's ownership (F300-03/04/05): they end with it, whichever ends first */
+    /** @var list<array{\WeakReference<object>, SlotRecord}> reservations that joined this call (weak resource, own record): cleared with it, never kept alive by it */
     public array $joins = [];
 
     private int|string|null $scalarKey = null;

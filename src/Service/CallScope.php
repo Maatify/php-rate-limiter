@@ -40,6 +40,9 @@ final class CallScope
     public function add(object $resource, SlotRecord $record): void
     {
         $this->taken[] = [$resource, $record];
+        if ($this->joined) {
+            $this->token->joins[] = [\WeakReference::create($resource), $record];
+        }
     }
 
     /** @return list<SlotRecord> */
@@ -55,10 +58,14 @@ final class CallScope
             return;
         }
         $this->released = true;
+        $mine = $this->records();
         if (! $this->joined) {
-            // The owner ends: the scopes that joined it end first.
-            foreach (array_reverse($this->token->joins) as $join) {
-                $join->release();
+            // The owner ends: the reservations that joined it end first (weak references, so a collected resource is simply skipped).
+            foreach (array_reverse($this->token->joins) as [$ref, $record]) {
+                $resource = $ref->get();
+                if ($resource !== null) {
+                    OwnershipRegistry::clear($resource, $record);
+                }
             }
             $this->token->joins = [];
         }
@@ -69,7 +76,10 @@ final class CallScope
         if (! $this->joined) {
             $this->token->state = CallToken::RELEASED;
         } else {
-            $this->token->joins = array_values(array_filter($this->token->joins, fn(CallScope $join): bool => $join !== $this));
+            $this->token->joins = array_values(array_filter(
+                $this->token->joins,
+                static fn(array $join): bool => ! in_array($join[1], $mine, true),
+            ));
         }
         if ($this->ledger !== null) {
             OwnershipRegistry::rollback($this->ledger);

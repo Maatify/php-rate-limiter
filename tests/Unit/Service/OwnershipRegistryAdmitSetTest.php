@@ -76,8 +76,8 @@ final class OwnershipRegistryAdmitSetTest extends TestCase
         $owner->release(); // out of order, as when an owner's Fiber is destroyed
 
         self::assertFalse(OwnershipRegistry::isOccupied($free), 'No stale reservation outlives the owner.');
+        $join->release(); // idempotent; undoes the binding the join made
         self::assertSame('unbound', OwnershipRegistry::domainKind($free));
-        $join->release(); // idempotent
         self::assertFalse(OwnershipRegistry::isOccupied($owned));
     }
 
@@ -138,6 +138,79 @@ final class OwnershipRegistryAdmitSetTest extends TestCase
         self::assertSame('unbound', OwnershipRegistry::domainKind($unbound), 'No member was bound by the refused call.');
         self::assertFalse(OwnershipRegistry::isOccupied($foreign));
         self::assertFalse(OwnershipRegistry::isOccupied($unbound));
+        $owner->release();
+    }
+
+    public function testEveryFreeMemberIsReservedBeforeTheProviderIsAsked(): void
+    {
+        // F300-06 (DEC-041 phase 0 before phase 1): during the Host identity lookup no member of the set is unprotected.
+        $owned = $this->resource();
+        $free = $this->resource();
+        /** @var \ArrayObject<string, bool> $seen */
+        $seen = new \ArrayObject(['armed' => false]);
+        $provider = new StubContextProvider(static function () use ($seen, $free, $owned): int {
+            if (! $seen['armed']) {
+                return 1;
+            }
+            $seen['occupied'] = OwnershipRegistry::isOccupied($free);
+            foreach (['refused' => $free, 'ownerRefused' => $owned] as $name => $target) {
+                try {
+                    OwnershipRegistry::admit($target, 'reentry-from-provider');
+                    $seen[$name] = false;
+                } catch (OverlappingRequestException) {
+                    $seen[$name] = true;
+                }
+            }
+
+            return 1;
+        });
+        OwnershipRegistry::bindAll([$owned], $provider);
+        $owner = OwnershipRegistry::acquire([$owned], 'owner', ContextDomain::forProvider($provider));
+        $seen['armed'] = true;
+        $join = OwnershipRegistry::admitSet([$owned, $free], 'nested');
+
+        self::assertSame(['armed' => true, 'occupied' => true, 'refused' => true, 'ownerRefused' => true], $seen->getArrayCopy());
+        $join->release();
+        $owner->release();
+    }
+
+    public function testAFailingLookupLeavesNoReservationAndNoBinding(): void
+    {
+        $owned = $this->resource();
+        $free = $this->resource();
+        $calls = 0;
+        $provider = new StubContextProvider(static function () use (&$calls): int {
+            if (++$calls > 1) {
+                throw new \RuntimeException('boom');
+            }
+
+            return 1;
+        });
+        OwnershipRegistry::bindAll([$owned], $provider);
+        $owner = OwnershipRegistry::acquire([$owned], 'owner', ContextDomain::forProvider($provider));
+        try {
+            OwnershipRegistry::admitSet([$owned, $free], 'nested');
+            self::fail('The provider failure surfaces.');
+        } catch (RateLimiterException) {
+            self::assertFalse(OwnershipRegistry::isOccupied($free));
+            self::assertSame('unbound', OwnershipRegistry::domainKind($free));
+        }
+        $owner->release();
+    }
+
+    public function testTheOwnershipTokenKeepsNoResourceAlive(): void
+    {
+        // F300-07: the token and registry stay weak; an unreleased joined scope dropped with its frame frees its resource.
+        $owned = $this->resource();
+        $owner = $this->own([$owned], 'owner');
+        $ref = (function () use ($owned): \WeakReference {
+            $free = $this->resource();
+            OwnershipRegistry::admitSet([$owned, $free], 'nested');
+
+            return \WeakReference::create($free);
+        })();
+        gc_collect_cycles();
+        self::assertNull($ref->get(), 'A resource is not kept alive by the token of a call it joined.');
         $owner->release();
     }
 }

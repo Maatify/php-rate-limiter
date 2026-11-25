@@ -396,13 +396,13 @@ final class OwnershipRegistry
      *  1. Token. Every occupied member must belong to the SAME owning call (one token) that is simply OWNED: no lookup, crossing or
      *     reservation in progress on any of them. Two owners, or an owner in a Host crossing, refuse.
      *  2. Domain. Every member of the set, occupied or free, must be in the domain of the owner; a bound member of another domain refuses.
-     *  3. Context. The owner's execution context is read once (Host code, with a lookup mark on every occupied record so a re-entry from
-     *     the provider is refused) and must be the current one.
-     *  4. Only then does anything change: the unbound members are bound to the domain (failure-atomic, kept in a ledger) and the free
-     *     members are reserved under the owner's own token, so one crossing and one state cover every resource of the call.
+     *  3. Reservation first. Provider-free: the unbound members are bound (failure-atomic, in a ledger) and every free member is reserved
+     *     under the owner's own token, so one crossing and one state cover every resource of the call and none is unprotected later.
+     *  4. Then the identity lookup (Host code) runs under the reservations of the WHOLE set, inside one crossing of the shared token, and
+     *     must return the owner's context.
      *
-     * A refusal at any step changes nothing; a failure after the first change rolls the ledger and the reservations back. The returned
-     * scope releases the reservations and undoes the bindings it made when the call ends; the owner ending first ends it too.
+     * A refusal at steps 1-2 changes nothing; a failure at 3-4 rolls the reservations and the ledger back. The token holds no strong
+     * reference to a resource: it keeps weak references and the records only, so the owner ending first still clears the reservations.
      *
      * @param array<int, object> $resources
      * @throws OverlappingRequestException
@@ -451,48 +451,42 @@ final class OwnershipRegistry
             }
         }
 
-        // 3. The owner's context, read once under a lookup mark on every occupied record.
+        // 3. Provider-free change first (DEC-041 phase 0): bind what is unbound, then reserve EVERY free member under the owner's token,
+        //    so no member of the set is unprotected when Host code runs.
         $lease = $domain->provider();
-        foreach ($occupied as $resource) {
-            $mark = self::slot($resource)->record;
-            if ($mark !== null) {
-                $mark->lookups++;
-            }
-        }
-        try {
-            $key = $lease->currentContext();
-        } catch (\Throwable $failure) {
-            throw new RateLimiterException('The execution context provider failed.', 0, $failure);
-        } finally {
-            foreach ($occupied as $resource) {
-                $record = self::slot($resource)->record;
-                if ($record !== null && $record->token === $token) {
-                    $record->lookups--;
-                }
-            }
-        }
-        if (! $token->sameContext($key)) {
-            throw new OverlappingRequestException($entry);
-        }
-
-        // 4. Change: bind, then reserve under the owner's token.
         $scope = new CallScope($token, $lease, true);
-        $ledger = null;
         try {
             if ($unbound !== []) {
-                $ledger = self::bindAll($unbound, $domain->rawProvider());
-                $scope->bindings($ledger);
+                $scope->bindings(self::bindAll($unbound, $domain->rawProvider()));
             }
             foreach ($free as $resource) {
                 $slot = self::slot($resource);
                 if ($slot->record !== null) {
-                    throw new OverlappingRequestException($entry); // taken meanwhile (a re-entry during the lookup)
+                    throw new OverlappingRequestException($entry);
                 }
                 $record = new SlotRecord($token);
                 $slot->record = $record;
                 $scope->add($resource, $record);
             }
-            $token->joins[] = $scope;
+
+            // 4. The owner's context, read once (Host code, DEC-041 phase 1) under the reservations of the whole set: one crossing of the
+            //    shared token covers every member, occupied or reserved by this call.
+            $token->crossings++;
+            $providerFailure = null;
+            $key = null;
+            try {
+                $key = $lease->currentContext();
+            } catch (\Throwable $failure) {
+                $providerFailure = $failure;
+            } finally {
+                $token->crossings--;
+            }
+            if ($providerFailure !== null) {
+                throw new RateLimiterException('The execution context provider failed.', 0, $providerFailure);
+            }
+            if (! $token->sameContext($key)) {
+                throw new OverlappingRequestException($entry);
+            }
         } catch (\Throwable $failure) {
             $scope->release();
             throw $failure;
