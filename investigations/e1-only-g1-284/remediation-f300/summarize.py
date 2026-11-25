@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Validate the two-arm F300 rerun, preserving the original G1 benchmark and raw evidence."""
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -9,10 +10,22 @@ ROOT = Path(__file__).parent
 def percentile(values, p):
     return sorted(values)[math.ceil(len(values) * p) - 1]
 
+manifest = json.loads((ROOT / 'source-manifest.json').read_text())
+repo = ROOT.parents[2]
+for path, digest in manifest['shared_sha256'].items():
+    assert hashlib.sha256((repo / path).read_bytes()).hexdigest() == digest, path
+
 lines = ['# F300 corrective measurements', '', 'Rejected HEAD 304a5835 vs corrected source, same unchanged parent bench.php and pinned dependencies. Three repeats of 100 measured operations after 15 warmups per repeat. Pooled nearest-rank percentiles; commands, commits, conflicts and outcomes must match in every pair. Concurrency=1; no production-load or significance claim. Original G1 versus historical E1 results remain in ../BENCHMARK.md.', '']
 for width in (64, 32):
     records = [json.loads(line) for line in (ROOT / f'raw/bench-{width}.jsonl').read_text().splitlines()]
     rows = [r for r in records if 'scenario' in r]
+    sources = [r for r in records if 'pipelineSha256' in r]
+    assert len(sources) == 6
+    for arm in ('rejected', 'corrected'):
+        loaded = [r for r in sources if r['arm'] == arm]
+        expected = manifest['source_arms'][arm]['sha256']
+        assert len(loaded) == 3
+        assert all(r['pipelineSha256'] == expected['src/Service/EvaluationPipeline.php'] and r['builderSha256'] == expected['src/Builder/RateLimiterBuilder.php'] and r['intSize'] == width // 8 for r in loaded), (width, arm, 'loaded source')
     assert len(records) == 90 and len(rows) == 84
     scenarios = sorted({r['scenario'] for r in rows})
     assert len(scenarios) == 14
