@@ -42,13 +42,13 @@ if ($mode === 'slow-first' && $index === 0) {
     usleep(1_500_000);
 }
 
-$readyAt = microtime(true);
+$readyAt = hrtime(true) / 1_000_000_000;
 fwrite(STDOUT, "READY\n");
 fflush(STDOUT);
 if (fgets(STDIN) !== "GO\n") {
     exit(3);
 }
-$releasedAt = microtime(true);
+$releasedAt = hrtime(true) / 1_000_000_000;
 
 if ($mode === 'hang-after-go' && $index === 1) {
     sleep(300);
