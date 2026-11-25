@@ -3408,7 +3408,7 @@ class EvaluationPipeline
 
     /**
      * Admit advanced direct processing too, before new preflight Host callbacks. Calls already inside the engine join its ownership;
-     * independent direct calls acquire their complete resource set atomically. Only the holds created here are released here.
+     * independent direct calls acquire their complete resource set atomically, and a nested call is admitted only when every resource of the set is. Only the holds created here are released here.
      *
      * @template T
      * @param callable(): T $operation
@@ -3416,16 +3416,19 @@ class EvaluationPipeline
      */
     private function withinCall(string $entry, callable $operation): mixed
     {
-        $anchor = OwnershipRegistry::collect([$this->store])[0];
-        if (OwnershipRegistry::isOccupied($anchor)) {
-            $scope = OwnershipRegistry::admit($anchor, $entry);
-            try {
-                return $operation();
-            } finally {
-                $scope?->release();
+        $resources = $this->ownedResources();
+        foreach ($resources as $resource) {
+            if (OwnershipRegistry::isOccupied($resource)) {
+                // F300-03: a call nested in an owner's call is admitted only when EVERY resource of the Pipeline is, not just the anchor:
+                // a member owned by another context refuses here, before any state, Host callback, clock or backend work.
+                $scope = OwnershipRegistry::admitSet($resources, $entry);
+                try {
+                    return $operation();
+                } finally {
+                    $scope?->release();
+                }
             }
         }
-        $resources = $this->ownedResources();
         $domain = OwnershipRegistry::adopt($resources, $this);
         try {
             $scope = OwnershipRegistry::acquire($resources, $entry, $domain);

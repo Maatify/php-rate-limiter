@@ -300,4 +300,121 @@ final class G1ReviewRegressionRedisTest extends TestCase
         self::assertTrue($pipeline->isBackendHealthy(), 'Ordinary health and scope cleanup remain supported.');
     }
 
+    // ---------------------------------------------------------------------------------------------------------------- F300-03
+
+    /** @var array<string, int> backend commands per store (rate, correlation) */
+    private array $perStore = ['rate' => 0, 'correlation' => 0];
+
+    private function countedStore(string $name, string $namespace): RedisFullCapabilityStore
+    {
+        return new RedisFullCapabilityStore(new CallableRedisCommandExecutor(function (array $command) use ($name): mixed {
+            $this->perStore[$name]++;
+            return $this->admin->execute($command);
+        }), $namespace, new FixedClock('@' . self::NOW));
+    }
+
+    /** @return iterable<string, array{bool, bool}> */
+    public static function partialAdmission(): iterable
+    {
+        yield 'late access (no existing block)' => [false, true];
+        yield 'early return (existing K1 L2 block)' => [true, true];
+        yield 'control: rate anchor free, correlation owned' => [false, false];
+    }
+
+    /**
+     * An independent context owns the correlation root while the outer request nests on the rate root: the Pipeline is refused as a
+     * whole before any state, registry, Host callback or backend work (not merely at its first correlation access, and never with a result).
+     */
+    #[DataProvider('partialAdmission')]
+    public function testANestedCallIsAdmittedOnlyWhenEveryPipelineResourceIsAndRefusesBeforeAnyWork(bool $existingBlock, bool $anchorOccupied): void
+    {
+        $rate = $this->countedStore('rate', 'f300-03-rate');
+        $correlation = $this->countedStore('correlation', 'f300-03-correlation');
+        $pipeline = $this->pipeline($rate, $correlation);
+        $policy = new \Maatify\RateLimiter\Config\LoginProtectionPolicy();
+        $command = RateLimitCommand::recordFailure('login_protection');
+        if ($existingBlock) {
+            $decision = null;
+            for ($i = 0; $i < 6 && $decision !== 'HARD_BLOCK'; $i++) {
+                $decision = $pipeline->process($policy, $this->context(), $command, $this->device())->decision;
+            }
+            self::assertSame('HARD_BLOCK', $decision, 'The setup reaches an existing hard block.');
+        }
+        $before = $this->snapshotAllowingAnyTtl();
+
+        $other = new \Fiber(static function () use ($correlation): void {
+            $correlation->transactRequest(static fn() => \Fiber::suspend());
+        });
+        $other->start();
+        self::assertTrue($other->isSuspended(), 'An independent context owns the correlation root.');
+
+        $registry = new \ReflectionProperty($pipeline, 'accountScopedKeys');
+        $outcome = null;
+        $commandsInside = ['rate' => 0, 'correlation' => 0];
+        $registryBefore = $registryAfter = [];
+        $call = function () use ($pipeline, $policy, $command, $registry, &$outcome, &$commandsInside, &$registryBefore, &$registryAfter): void {
+            $startedAt = $this->perStore;
+            $registryBefore = $registry->getValue($pipeline);
+            try {
+                $outcome = $pipeline->process($policy, $this->context(), $command, $this->device())->decision;
+            } catch (\Throwable $failure) {
+                $outcome = $failure::class;
+            }
+            $registryAfter = $registry->getValue($pipeline);
+            $commandsInside = ['rate' => $this->perStore['rate'] - $startedAt['rate'], 'correlation' => $this->perStore['correlation'] - $startedAt['correlation']];
+        };
+        if ($anchorOccupied) {
+            $rate->transactRequest(function () use ($call): int {
+                $call();
+
+                return 0;
+            });
+        } else {
+            $call();
+        }
+
+        self::assertSame(OverlappingRequestException::class, $outcome, 'The whole Pipeline is refused, with no result.');
+        self::assertSame(['rate' => 0, 'correlation' => 0], $commandsInside, 'No backend command was issued by the refused call.');
+        self::assertSame($registryBefore, $registryAfter, 'The per-call routing registry was not touched.');
+        self::assertSame($before, $this->snapshotAllowingAnyTtl(), 'Raw Redis state is unchanged.');
+
+        // The other context finishes; everything is released and the same Pipeline works again.
+        $other->resume();
+        self::assertTrue($other->isTerminated());
+        self::assertSame($existingBlock ? 'HARD_BLOCK' : 'ALLOW', $pipeline->process($policy, $this->context($existingBlock ? 'outer' : 'after'), $command, $this->device())->decision, 'Released: the same Pipeline works again.');
+    }
+
+    public function testNestingOnTheRateRootStillSucceedsWhenTheOtherResourcesAreFreeAndEverythingIsReleased(): void
+    {
+        $rate = $this->countedStore('rate', 'f300-03-rate');
+        $correlation = $this->countedStore('correlation', 'f300-03-correlation');
+        $pipeline = $this->pipeline($rate, $correlation);
+        $policy = new \Maatify\RateLimiter\Config\LoginProtectionPolicy();
+        $command = RateLimitCommand::recordFailure('login_protection');
+
+        $decision = $rate->transactRequest(fn(): string => $pipeline->process($policy, $this->context(), $command, $this->device())->decision);
+        self::assertSame('ALLOW', $decision, 'Legitimate owner nesting is preserved.');
+
+        // Released: a competing context can now own the correlation root, and the Pipeline can be used from a free state again.
+        $correlation->transactRequest(static fn(): int => 0);
+        self::assertSame('ALLOW', $pipeline->process($policy, $this->context('second'), $command, $this->device())->decision);
+        self::assertTrue($pipeline->isBackendHealthy());
+    }
+
+    /** @return array<string, string> raw DUMP per key, expiry excluded */
+    private function snapshotAllowingAnyTtl(): array
+    {
+        $keys = $this->admin->execute(['KEYS', '*']);
+        self::assertIsArray($keys);
+        sort($keys);
+        $state = [];
+        foreach ($keys as $key) {
+            self::assertIsString($key);
+            $dump = $this->admin->execute(['DUMP', $key]);
+            self::assertIsString($dump);
+            $state[$key] = bin2hex($dump);
+        }
+
+        return $state;
+    }
 }

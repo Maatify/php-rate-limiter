@@ -391,6 +391,57 @@ final class OwnershipRegistry
     }
 
     /**
+     * Admission of an operation on a whole resource SET when at least one member is already occupied (F300-03). A set is admitted only
+     * when every member is: occupied members must be owned by this very execution context (legitimate nesting, as `admit`), and the
+     * free members are acquired for the call, all-or-none. Anything else (a member owned or reserved by another context, an
+     * unreadable owner) refuses before the operation starts, and what was reserved here is released. Returns the scope of the members
+     * acquired here (null when every member was nested) for the caller to release.
+     *
+     * @param array<int, object> $resources
+     * @throws OverlappingRequestException
+     * @throws RateLimiterException
+     */
+    public static function admitSet(array $resources, string $entry): ?CallScope
+    {
+        $occupied = [];
+        $free = [];
+        foreach (self::canonical($resources) as $resource) {
+            if (self::slot($resource)->record !== null) {
+                $occupied[] = $resource;
+            } else {
+                $free[] = $resource;
+            }
+        }
+        if ($occupied === []) {
+            throw new RateLimiterException('admitSet requires an occupied member; acquire a free set with acquire().');
+        }
+        // Provider-free refusal first: a member that is not simply owned (a lookup, a crossing or a reservation in progress) refuses.
+        foreach ($occupied as $resource) {
+            $record = self::slot($resource)->record;
+            if ($record === null || $record->token->state !== CallToken::OWNED || $record->lookupBy !== null || $record->lookups > 0 || $record->token->crossings > 0) {
+                throw new OverlappingRequestException($entry);
+            }
+        }
+        $domain = self::domainOf($occupied[0], self::slot($occupied[0]), null);
+        foreach ($free as $resource) {
+            if (! self::slot($resource)->bound) {
+                self::bindAll([$resource], $domain->rawProvider());
+            }
+        }
+        $scope = $free === [] ? null : self::acquire($free, $entry, $domain);
+        try {
+            foreach ($occupied as $resource) {
+                self::admit($resource, $entry);
+            }
+        } catch (\Throwable $failure) {
+            $scope?->release();
+            throw $failure;
+        }
+
+        return $scope;
+    }
+
+    /**
      * Runs Host code with a crossing open on the call that owns the resource (no effect when nobody does).
      *
      * @template T
