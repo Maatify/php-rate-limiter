@@ -70,11 +70,11 @@ $configV1 = new RateLimiterConfig(
 );
 $codecV1 = AdmissionCredentialCodec::fromConfig($configV1);
 
-// 4. Trusted credential minting, verification, and independent bindingKeySecret rotation.
+// 4. Offline synthetic credential minting, verification, and independent bindingKeySecret rotation.
 $now = time();
 $accountId = 'acct-owner-100';
 $deviceInstance = 'device-laptop-01';
-$credEpoch0 = $codecV1->encode(new AdmissionCredentialDTO(
+$offlineCredEpoch0 = $codecV1->encode(new AdmissionCredentialDTO(
     account: $accountId,
     subject: $accountId,
     budgetGroups: ['login'],
@@ -95,8 +95,8 @@ $configBindingRotated = new RateLimiterConfig(
     admissionStateSecret: $admissionStateSecret,
 );
 $codecRotated = AdmissionCredentialCodec::fromConfig($configBindingRotated);
-$verifiedAfterBindingRotation = $codecRotated->verify($credEpoch0, $accountId, $accountId, 'login', $deviceInstance, $now, 0)->verdict;
-$rejectedWrongAccount = $codecRotated->verify($credEpoch0, 'acct-stranger', $accountId, 'login', $deviceInstance, $now, 0)->verdict;
+$verifiedAfterBindingRotation = $codecRotated->verify($offlineCredEpoch0, $accountId, $accountId, 'login', $deviceInstance, $now, 0)->verdict;
+$rejectedWrongAccount = $codecRotated->verify($offlineCredEpoch0, 'acct-stranger', $accountId, 'login', $deviceInstance, $now, 0)->verdict;
 
 // 5. Loss of persistence continuity (distinct from routine rotation):
 //    Keep the same outer/binding keys to isolate trust-domain + state-secret loss: never reuse `admissionStateSecret`.
@@ -109,7 +109,7 @@ $freshRecoveryConfig = new RateLimiterConfig(
     admissionStateSecret: random_bytes(RateLimiterConfig::MIN_ADMISSION_STATE_SECRET_BYTES),
 );
 $freshCodec = AdmissionCredentialCodec::fromConfig($freshRecoveryConfig);
-$legacyVerdictInFreshScope = $freshCodec->verify($credEpoch0, $accountId, $accountId, 'login', $deviceInstance, $now, 0)->verdict;
+$legacyVerdictInFreshScope = $freshCodec->verify($offlineCredEpoch0, $accountId, $accountId, 'login', $deviceInstance, $now, 0)->verdict;
 
 $output = [
     'mode' => 'offline-codec-and-config',
@@ -156,10 +156,8 @@ if ($redisHost !== false || $redisPort !== false) {
     if ($fence < 1) {
         throw new RuntimeException('Expected open admission fence >= 1.');
     }
-    if ($runtimeV1->bindingEpoch($accountId) !== 0) {
-        throw new RuntimeException('Expected initial binding epoch 0.');
-    }
 
+    // Initial unproven check + simulated host authentication (e.g. verified password) + clean outcome settlement.
     $ip = '198.51.100.55';
     $initialCtx = new RateLimitContextDTO($ip, 'Mozilla/5.0 Chrome/126', $accountId, clientInstanceId: $deviceInstance);
     $check = $runtimeV1->limit($initialCtx, RateLimitCommand::checkOnly('login_protection'));
@@ -172,7 +170,23 @@ if ($redisHost !== false || $redisPort !== false) {
         throw new RuntimeException('Expected clean initial settlement.');
     }
 
-    // Revoke account binding (epoch 0 -> 1) and re-issue to eligible device.
+    // Only AFTER host verification and clean outcome settlement: read authoritative bindingEpoch and mint live epoch-0 credential.
+    $liveEpoch0 = $runtimeV1->bindingEpoch($accountId);
+    if ($liveEpoch0 !== 0) {
+        throw new RuntimeException('Expected authoritative binding epoch 0 before revocation.');
+    }
+    $liveCredEpoch0 = $codecV1->encode(new AdmissionCredentialDTO(
+        account: $accountId,
+        subject: $accountId,
+        budgetGroups: ['login'],
+        instance: $deviceInstance,
+        jti: bin2hex(random_bytes(8)),
+        expiresAt: $now + 86400,
+        boundAt: $now,
+        epoch: $liveEpoch0,
+    ));
+
+    // Revoke account binding (epoch 0 -> 1) and re-issue to eligible device using authoritative bindingEpoch.
     $runtimeV1->revokeAccountBinding($accountId);
     $epoch1 = $runtimeV1->bindingEpoch($accountId);
     if ($epoch1 !== 1) {
@@ -218,9 +232,9 @@ if ($redisHost !== false || $redisPort !== false) {
         }
     }
 
-    // Verify revoked epoch-0 credential is rejected to Lane U (`source_capacity`), while re-issued epoch-1 is Lane P (`ALLOW`).
+    // Verify revoked live epoch-0 credential is rejected to Lane U (`source_capacity`), while re-issued epoch-1 is Lane P (`ALLOW`).
     $revokedAttempt = $runtimeV2->limit(
-        new RateLimitContextDTO($ip, 'Mozilla/5.0 Chrome/126', $accountId, clientInstanceId: $deviceInstance, admissionCredential: $credEpoch0),
+        new RateLimitContextDTO($ip, 'Mozilla/5.0 Chrome/126', $accountId, clientInstanceId: $deviceInstance, admissionCredential: $liveCredEpoch0),
         RateLimitCommand::checkOnly('login_protection'),
     );
     if ($revokedAttempt->isAllowed() || $revokedAttempt->metadata?->cause !== 'source_capacity') {

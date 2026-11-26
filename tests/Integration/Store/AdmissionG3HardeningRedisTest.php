@@ -23,8 +23,12 @@ use Maatify\RateLimiter\Service\AdmissionBindingControlInterface;
 use Maatify\RateLimiter\Service\AdmissionBindingEpochInterface;
 use Maatify\RateLimiter\Service\AdmissionCredentialCodec;
 use Maatify\RateLimiter\Service\AdmissionFenceControlInterface;
+use Maatify\RateLimiter\Service\AdmissionKeyDeriver;
+use Maatify\RateLimiter\Service\AdmissionScopePurpose;
 use Maatify\RateLimiter\Service\AdmissionSharedConfigControlInterface;
 use Maatify\RateLimiter\Service\CompositeRateLimiterRuntimeInterface;
+use Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver;
+use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRedisDump;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use PHPUnit\Framework\Attributes\Group;
@@ -194,23 +198,23 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
 
         $beforePSuccCheck = $this->dump();
         $pSuccCheck = $runtime->limit($ctxPSucc, RateLimitCommand::checkOnly('login_protection'));
-        $pSuccArtifacts = $this->capturePreCheckArtifacts($beforePSuccCheck, $this->dump(), $ctxPSucc);
+        $pSuccArtifacts = $this->capturePreCheckArtifacts($beforePSuccCheck, $this->dump(), $ctxPSucc, 'outer-s1', 'jti-p1');
 
         $beforePFailCheck = $this->dump();
         $pFailCheck = $runtime->limit($ctxPFail, RateLimitCommand::checkOnly('login_protection'));
-        $pFailArtifacts = $this->capturePreCheckArtifacts($beforePFailCheck, $this->dump(), $ctxPFail);
+        $pFailArtifacts = $this->capturePreCheckArtifacts($beforePFailCheck, $this->dump(), $ctxPFail, 'outer-s1', 'jti-p2');
 
         $beforeUSuccCheck = $this->dump();
         $uSuccCheck = $runtime->limit($ctxUSucc, RateLimitCommand::checkOnly('login_protection'));
-        $uSuccArtifacts = $this->capturePreCheckArtifacts($beforeUSuccCheck, $this->dump(), $ctxUSucc);
+        $uSuccArtifacts = $this->capturePreCheckArtifacts($beforeUSuccCheck, $this->dump(), $ctxUSucc, 'outer-s1');
 
         $beforeUFailCheck = $this->dump();
         $uFailCheck = $runtime->limit($ctxUFail, RateLimitCommand::checkOnly('login_protection'));
-        $uFailArtifacts = $this->capturePreCheckArtifacts($beforeUFailCheck, $this->dump(), $ctxUFail);
+        $uFailArtifacts = $this->capturePreCheckArtifacts($beforeUFailCheck, $this->dump(), $ctxUFail, 'outer-s1');
 
         $beforePLateCheck = $this->dump();
         $pLateCheck = $runtime->limit($ctxPLate, RateLimitCommand::checkOnly('login_protection'));
-        $pLateArtifacts = $this->capturePreCheckArtifacts($beforePLateCheck, $this->dump(), $ctxPLate);
+        $pLateArtifacts = $this->capturePreCheckArtifacts($beforePLateCheck, $this->dump(), $ctxPLate, 'outer-s1', 'jti-p4');
 
         foreach ([$pSuccCheck, $pFailCheck, $uSuccCheck, $uFailCheck, $pLateCheck] as $c) {
             self::assertTrue($c->isAllowed());
@@ -256,16 +260,16 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
         self::assertSame('permit_unknown', $unknownRes->metadata?->cause);
         self::assertSame($beforeUnknown, $this->dump(), 'Invalid permit under closed fence must not score in S0');
 
-        // P SUCCESS under closed fence: claims exact permit, refunds all 4 proof counters + ppend slot, no pfail/score/control mutation.
+        // P SUCCESS under closed fence: claims exact permit, refunds all 5 named keys (pacct/pacctd/pproof/pproofd/ppend), no pfail/score/control mutation.
         $beforePSuccSettle = $this->dump();
         $pSuccSettle = $runtime->limit($ctxPSucc, new RateLimitCommand('login_protection', 1, false, false, true, $pSuccPermit));
         self::assertNull($pSuccSettle->metadata?->cause);
         $pSuccAfter = $this->dump();
         $this->assertExactPermitClaimed($beforePSuccSettle, $pSuccAfter, $pSuccArtifacts['permitKey'], 'success');
-        self::assertCount(5, $pSuccArtifacts['counterKeys'], 'P admission must touch pacct/pacctd/pproof/pproofd/ppend');
-        foreach ($pSuccArtifacts['counterKeys'] as $counterKey) {
+        self::assertCount(5, $pSuccArtifacts['namedCounterKeys'], 'P admission must name pacct/pacctd/pproof/pproofd/ppend');
+        foreach ($pSuccArtifacts['namedCounterKeys'] as $purpose => $counterKey) {
             self::assertArrayHasKey($pSuccArtifacts['memberId'], $this->zsetMembers($beforePSuccSettle, $counterKey));
-            self::assertArrayNotHasKey($pSuccArtifacts['memberId'], $this->zsetMembers($pSuccAfter, $counterKey), "P success must remove member from {$counterKey}");
+            self::assertArrayNotHasKey($pSuccArtifacts['memberId'], $this->zsetMembers($pSuccAfter, $counterKey), "P success must remove member from {$purpose} ({$counterKey})");
         }
         self::assertSame($this->admSetSizes($beforePSuccSettle), $this->admSetSizes($pSuccAfter), 'P success must not mutate failure sets');
         self::assertSame($this->e1ScoreValues($beforePSuccSettle), $this->e1ScoreValues($pSuccAfter), 'P success must not write E1 scores');
@@ -278,44 +282,42 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
         self::assertSame('permit_conflict', $confP->metadata?->cause);
         self::assertSame($pSuccAfter, $this->dump());
 
-        // P FAILURE under closed fence: claims exact permit, releases only 1 ppend slot (4 proof counters stay), adds to pfail set, scores K4P/K5p!
+        // P FAILURE under closed fence: claims exact permit, releases named ppend only (4 named proof keys stay), adds exact member to exact pfail set, scores exact K4P (not K4)!
         $pFailSettle = $runtime->limit($ctxPFail, new RateLimitCommand('login_protection', 1, false, true, false, $pFailPermit));
         self::assertNull($pFailSettle->metadata?->cause);
         $afterPFail = $this->dump();
         $this->assertExactPermitClaimed($pSuccAfter, $afterPFail, $pFailArtifacts['permitKey'], 'failure');
-        $releasedCounters = 0;
-        $retainedCounters = 0;
-        foreach ($pFailArtifacts['counterKeys'] as $counterKey) {
-            if (! array_key_exists($pFailArtifacts['memberId'], $this->zsetMembers($afterPFail, $counterKey))) {
-                $releasedCounters++;
-            } else {
-                $retainedCounters++;
-            }
+        self::assertArrayNotHasKey($pFailArtifacts['memberId'], $this->zsetMembers($afterPFail, $pFailArtifacts['namedCounterKeys'][AdmissionScopePurpose::PPEND]), 'P failure must release named ppend slot');
+        foreach ([AdmissionScopePurpose::PACCT, AdmissionScopePurpose::PACCTD, AdmissionScopePurpose::PPROOF, AdmissionScopePurpose::PPROOFD] as $proofPurpose) {
+            self::assertArrayHasKey($pFailArtifacts['memberId'], $this->zsetMembers($afterPFail, $pFailArtifacts['namedCounterKeys'][$proofPurpose]), "P failure must NOT refund {$proofPurpose}");
         }
-        self::assertSame(1, $releasedCounters, 'P failure must release only the ppend slot');
-        self::assertSame(4, $retainedCounters, 'P failure must NOT refund the 4 proof counters');
-        self::assertSame(1, array_sum($this->admSetSizes($afterPFail)) - array_sum($this->admSetSizes($pSuccAfter)), 'P failure must add 1 member to pfail');
-        self::assertGreaterThan(count($this->e1ScoreValues($pSuccAfter)), count($this->e1ScoreValues($afterPFail)), 'P failure must score K4P/K5p in e1:score:');
+        $pFailSetKey = $this->deriveAdmSetKey(AdmissionScopePurpose::PFAIL, '198.51.100.71', 'outer-s1');
+        $pFailMember = $this->deriveAdmMember('acct-p-fail', 'outer-s1');
+        $k4pKey = $this->deriveE1ScoreKey('k4p', 'acct-p-fail', 'outer-s1');
+        $k4WrongLaneKey = $this->deriveE1ScoreKey('k4', 'acct-p-fail', 'outer-s1');
+        $this->assertExactFailureAttribution($pSuccAfter, $afterPFail, $pFailSetKey, $pFailMember, $k4pKey, $k4WrongLaneKey);
 
         // U SUCCESS under closed fence: claims exact permit, deletes exact acct-u-succ bucket (absent => full), leaves acct-u-fail bucket intact, zero ufail/score!
         $uSuccSettle = $runtime->limit($ctxUSucc, new RateLimitCommand('login_protection', 1, false, false, true, $uSuccPermit));
         self::assertNull($uSuccSettle->metadata?->cause);
         $afterUSucc = $this->dump();
         $this->assertExactPermitClaimed($afterPFail, $afterUSucc, $uSuccArtifacts['permitKey'], 'success');
-        self::assertArrayHasKey($uSuccArtifacts['bucketKey'], $afterPFail);
-        self::assertArrayNotHasKey($uSuccArtifacts['bucketKey'], $afterUSucc, 'U success must refund exact acct-u-succ bucket back to full (absent)');
-        self::assertSame($afterPFail[$uFailArtifacts['bucketKey']], $afterUSucc[$uFailArtifacts['bucketKey']], 'U success must not touch acct-u-fail bucket');
+        $this->assertExactBucketRefunded($afterPFail, $afterUSucc, $this->deriveAdmBucketKey('acct-u-succ', 'outer-s1'));
+        self::assertSame($afterPFail[$this->deriveAdmBucketKey('acct-u-fail', 'outer-s1')], $afterUSucc[$this->deriveAdmBucketKey('acct-u-fail', 'outer-s1')], 'U success must not touch acct-u-fail bucket');
         self::assertSame($this->admSetSizes($afterPFail), $this->admSetSizes($afterUSucc), 'U success must not add to ufail');
         self::assertSame($this->e1ScoreValues($afterPFail), $this->e1ScoreValues($afterUSucc), 'U success must not write E1 scores');
 
-        // U FAILURE under closed fence: claims exact permit, keeps exact acct-u-fail bucket, adds to ufail set, scores K4!
+        // U FAILURE under closed fence: claims exact permit, keeps exact acct-u-fail bucket, adds exact member to exact ufail set, scores exact K4 (not K4P)!
         $uFailSettle = $runtime->limit($ctxUFail, new RateLimitCommand('login_protection', 1, false, true, false, $uFailPermit));
         self::assertNull($uFailSettle->metadata?->cause);
         $afterUFail = $this->dump();
         $this->assertExactPermitClaimed($afterUSucc, $afterUFail, $uFailArtifacts['permitKey'], 'failure');
-        self::assertSame($afterUSucc[$uFailArtifacts['bucketKey']], $afterUFail[$uFailArtifacts['bucketKey']], 'U failure must not refund acct-u-fail bucket');
-        self::assertSame(1, array_sum($this->admSetSizes($afterUFail)) - array_sum($this->admSetSizes($afterUSucc)), 'U failure must add 1 member to ufail');
-        self::assertGreaterThan(count($this->e1ScoreValues($afterUSucc)), count($this->e1ScoreValues($afterUFail)), 'U failure must score K4 in e1:score:');
+        self::assertSame($afterUSucc[$this->deriveAdmBucketKey('acct-u-fail', 'outer-s1')], $afterUFail[$this->deriveAdmBucketKey('acct-u-fail', 'outer-s1')], 'U failure must not refund acct-u-fail bucket');
+        $uFailSetKey = $this->deriveAdmSetKey(AdmissionScopePurpose::UFAIL, '198.51.100.73', 'outer-s1');
+        $uFailMember = $this->deriveAdmMember('acct-u-fail', 'outer-s1');
+        $k4Key = $this->deriveE1ScoreKey('k4', 'acct-u-fail', 'outer-s1');
+        $k4pWrongLaneKey = $this->deriveE1ScoreKey('k4p', 'acct-u-fail', 'outer-s1');
+        $this->assertExactFailureAttribution($afterUSucc, $afterUFail, $uFailSetKey, $uFailMember, $k4Key, $k4pWrongLaneKey);
 
         // Re-open fence briefly to confirm P pending slot on 198.51.100.70 was genuinely released in Redis!
         $runtime->openAdmissionFence('login');
@@ -357,7 +359,7 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
         $ctx1 = $this->context('acct-rot1', self::SOURCE, 'inst-1', $cred1);
         $beforeS1Check = $this->dump();
         $check1 = $r1->limit($ctx1, RateLimitCommand::checkOnly('login_protection'));
-        $s1Artifacts = $this->capturePreCheckArtifacts($beforeS1Check, $this->dump(), $ctx1);
+        $s1Artifacts = $this->capturePreCheckArtifacts($beforeS1Check, $this->dump(), $ctx1, 'outer-s1', 'jti-1');
         self::assertTrue($check1->isAllowed());
         $permit1 = $check1->metadata?->permit;
         self::assertNotNull($permit1);
@@ -367,24 +369,20 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
         $r2 = $this->buildRuntime($cfg2, pendingLimit: 1);
         $this->closeTestFenceKeys();
 
-        // Settle S1 permit under S2/S1 with closed fence: exact S1 permit claimed, all 5 S1 counter/ppend keys release member!
+        // Settle S1 permit under S2/S1 with closed fence: exact S1 permit claimed, named S1 ppend released, 4 named S1 proof keys & PTTL untouched!
         $beforeRotSettle = $this->dump();
+        $pttlBefore = AdmissionRedisDump::pttl($this->executor);
         $settled = $r2->limit($ctx1, new RateLimitCommand('login_protection', 1, false, false, true, $permit1));
         self::assertNull($settled->metadata?->cause);
         $afterRotSettle = $this->dump();
+        $pttlAfter = AdmissionRedisDump::pttl($this->executor);
         $this->assertExactPermitClaimed($beforeRotSettle, $afterRotSettle, $s1Artifacts['permitKey'], 'success');
-        $releasedRot = 0;
-        $retainedRot = 0;
-        foreach ($s1Artifacts['counterKeys'] as $s1CounterKey) {
-            if (! array_key_exists($s1Artifacts['memberId'], $this->zsetMembers($afterRotSettle, $s1CounterKey))) {
-                $releasedRot++;
-            } else {
-                $retainedRot++;
-                self::assertSame($beforeRotSettle[$s1CounterKey], $afterRotSettle[$s1CounterKey], "Previous proof key {$s1CounterKey} value/TTL must remain untouched across outer rotation");
-            }
+        self::assertArrayNotHasKey($s1Artifacts['memberId'], $this->zsetMembers($afterRotSettle, $s1Artifacts['namedCounterKeys'][AdmissionScopePurpose::PPEND]), 'Named S1 ppend slot must be released across S1->S2/S1');
+        foreach ([AdmissionScopePurpose::PACCT, AdmissionScopePurpose::PACCTD, AdmissionScopePurpose::PPROOF, AdmissionScopePurpose::PPROOFD] as $proofPurpose) {
+            $proofKey = $s1Artifacts['namedCounterKeys'][$proofPurpose];
+            self::assertSame($beforeRotSettle[$proofKey], $afterRotSettle[$proofKey], "Previous proof key {$proofPurpose} value must remain untouched across outer rotation");
+            self::assertLessThanOrEqual($pttlBefore[$proofKey], $pttlAfter[$proofKey], "Previous proof key {$proofPurpose} PTTL must not be refreshed across outer rotation");
         }
-        self::assertSame(1, $releasedRot, 'Exactly 1 S1 ppend slot must be released across S1->S2/S1');
-        self::assertSame(4, $retainedRot, 'All 4 S1 proof counter keys must remain untouched across S1->S2/S1');
         $dup = $r2->limit($ctx1, new RateLimitCommand('login_protection', 1, false, false, true, $permit1));
         self::assertSame('permit_duplicate', $dup->metadata?->cause);
         self::assertSame($afterRotSettle, $this->dump());
@@ -405,7 +403,7 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
         }
     }
 
-    public function testDetectorCatchesWrongPermitAttributionOrUnrelatedPermitMutation(): void
+    public function testDetectorCatchesWrongPermitAttributionOrUnrelatedPermitDeletion(): void
     {
         $permitA = 'maatify:rate-limiter:v1:{ns}:adm:a1:permit:' . str_repeat('a', 64);
         $permitB = 'maatify:rate-limiter:v1:{ns}:adm:a1:permit:' . str_repeat('b', 64);
@@ -413,30 +411,76 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
             $permitA => ['type' => 'hash', 'value' => ['state' => 'ISSUED'], 'hasTtl' => true],
             $permitB => ['type' => 'hash', 'value' => ['state' => 'ISSUED'], 'hasTtl' => true],
         ];
-        $wrongAfter = [
+        $wrongClaim = [
             $permitA => ['type' => 'hash', 'value' => ['state' => 'ISSUED'], 'hasTtl' => true],
             $permitB => ['type' => 'hash', 'value' => ['state' => 'CLAIMED', 'outcome' => 'success'], 'hasTtl' => true],
+        ];
+        $deletedUnrelated = [
+            $permitA => ['type' => 'hash', 'value' => ['state' => 'CLAIMED', 'outcome' => 'success'], 'hasTtl' => true],
+        ];
+
+        foreach ([$wrongClaim, $deletedUnrelated] as $candidate) {
+            $caught = false;
+            try {
+                $this->assertExactPermitClaimed($before, $candidate, $permitA, 'success');
+            } catch (\PHPUnit\Framework\AssertionFailedError) {
+                $caught = true;
+            }
+            self::assertTrue($caught, 'DETECTOR (F302-R3-02): wrong permit claim or deleted unrelated permit must be caught');
+        }
+    }
+
+    public function testDetectorCatchesWrongFailurePurposeOrWrongLaneScore(): void
+    {
+        $pfail = 'maatify:rate-limiter:v1:{ns}:adm:a1:s:' . str_repeat('1', 64);
+        $k4p = 'maatify:rate-limiter:e1:ns:score:' . str_repeat('2', 64);
+        $k4Wrong = 'maatify:rate-limiter:e1:ns:score:' . str_repeat('3', 64);
+        $member = 'a1.scope.member.' . str_repeat('4', 64);
+
+        $before = [];
+        $wrongLaneScoreAfter = [
+            $pfail => ['type' => 'zset', 'value' => [$member => '1767226200'], 'hasTtl' => true],
+            $k4Wrong => ['type' => 'hash', 'value' => ['value' => '5'], 'hasTtl' => true],
         ];
 
         $caught = false;
         try {
-            $this->assertExactPermitClaimed($before, $wrongAfter, $permitA, 'success');
+            $this->assertExactFailureAttribution($before, $wrongLaneScoreAfter, $pfail, $member, $k4p, $k4Wrong);
         } catch (\PHPUnit\Framework\AssertionFailedError) {
             $caught = true;
         }
-        self::assertTrue($caught, 'DETECTOR (F302-R2-03): claiming wrong permit must be caught by exact-key attribution');
+        self::assertTrue($caught, 'DETECTOR (F302-R3-02): scoring wrong lane K4 instead of K4P must be caught');
+    }
+
+    public function testDetectorCatchesMissingBucketRefundOnUSuccess(): void
+    {
+        $bucket = 'maatify:rate-limiter:v1:{ns}:adm:a1:b:' . str_repeat('5', 64);
+        $before = [$bucket => ['type' => 'hash', 'value' => ['credit' => '5400', 'last' => '1767225600'], 'hasTtl' => true]];
+
+        $caught = false;
+        try {
+            $this->assertExactBucketRefunded($before, $before, $bucket);
+        } catch (\PHPUnit\Framework\AssertionFailedError) {
+            $caught = true;
+        }
+        self::assertTrue($caught, 'DETECTOR (F302-R3-02): unrefunded bucket on U success must be caught');
     }
 
     /**
-     * Captures exact physical keys created/updated by a single pre-check for exact-key attribution.
+     * Captures exact physical keys created/updated by a single pre-check and verifies cryptographic binding.
      *
      * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $before
      * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $after
-     * @return array{permitKey: string, memberId: string, counterKeys: list<string>, bucketKey: ?string}
+     * @return array{permitKey: string, memberId: string, namedCounterKeys: array<string, string>, bucketKey: ?string}
      */
-    private function capturePreCheckArtifacts(array $before, array $after, RateLimitContextDTO $context): array
-    {
-        $deriver = new \Maatify\RateLimiter\Service\AdmissionKeyDeriver(self::ENV, self::TRUST_DOMAIN, self::STATE_SECRET);
+    private function capturePreCheckArtifacts(
+        array $before,
+        array $after,
+        RateLimitContextDTO $context,
+        string $outerSecret,
+        ?string $jti = null,
+    ): array {
+        $deriver = new AdmissionKeyDeriver(self::ENV, self::TRUST_DOMAIN, self::STATE_SECRET);
         $expectedSubject = $deriver->permitContextCommitment('login', 'login_protection', $context);
 
         $permitKey = null;
@@ -470,11 +514,28 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
 
         self::assertNotNull($permitKey, 'Missing permit key for context');
         self::assertNotNull($memberId, 'Missing counter/pending member id for context');
+        self::assertSame($this->derivePermitKey($memberId), $permitKey, 'Permit key hash must match derived preimage of counter memberId');
+
+        $namedCounterKeys = [];
+        if ($jti !== null) {
+            $account = (string) $context->accountId;
+            $proof = substr(hash('sha256', $jti), 0, 32);
+            $namedCounterKeys = [
+                AdmissionScopePurpose::PACCT => $this->deriveAdmCounterKey(AdmissionScopePurpose::PACCT, $account, $outerSecret),
+                AdmissionScopePurpose::PACCTD => $this->deriveAdmCounterKey(AdmissionScopePurpose::PACCTD, $account, $outerSecret),
+                AdmissionScopePurpose::PPROOF => $this->deriveAdmCounterKey(AdmissionScopePurpose::PPROOF, $proof, $outerSecret),
+                AdmissionScopePurpose::PPROOFD => $this->deriveAdmCounterKey(AdmissionScopePurpose::PPROOFD, $proof, $outerSecret),
+                AdmissionScopePurpose::PPEND => $this->deriveAdmCounterKey(AdmissionScopePurpose::PPEND, $context->ip, $outerSecret),
+            ];
+            foreach ($namedCounterKeys as $purpose => $expectedKey) {
+                self::assertContains($expectedKey, $counterKeys, "Missing expected {$purpose} counter key {$expectedKey}");
+            }
+        }
 
         return [
             'permitKey' => $permitKey,
             'memberId' => $memberId,
-            'counterKeys' => $counterKeys,
+            'namedCounterKeys' => $namedCounterKeys,
             'bucketKey' => $bucketKey,
         ];
     }
@@ -493,12 +554,108 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
         self::assertSame('CLAIMED', $after[$expectedPermitKey]['value']['state'] ?? null);
         self::assertSame($expectedOutcome, $after[$expectedPermitKey]['value']['outcome'] ?? null);
 
-        foreach ($after as $key => $entry) {
+        $allKeys = array_unique(array_merge(array_keys($before), array_keys($after)));
+        foreach ($allKeys as $key) {
             $keyStr = (string) $key;
             if (str_contains($keyStr, ':adm:a1:permit:') && $keyStr !== $expectedPermitKey) {
-                self::assertSame($before[$keyStr] ?? null, $entry, "Settlement must not mutate unrelated permit {$keyStr}");
+                self::assertSame($before[$keyStr] ?? null, $after[$keyStr] ?? null, "Settlement must not mutate or delete unrelated permit {$keyStr}");
             }
         }
+    }
+
+    /**
+     * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $before
+     * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $after
+     */
+    private function assertExactFailureAttribution(
+        array $before,
+        array $after,
+        string $expectedFailSetKey,
+        string $expectedFailMember,
+        string $expectedScoreKey,
+        string $wrongLaneScoreKey,
+    ): void {
+        self::assertArrayNotHasKey($expectedFailMember, $this->zsetMembers($before, $expectedFailSetKey));
+        self::assertArrayHasKey($expectedFailMember, $this->zsetMembers($after, $expectedFailSetKey), "Failure must add {$expectedFailMember} to {$expectedFailSetKey}");
+
+        self::assertSame($this->admSetSizes($before)[$expectedFailSetKey] ?? 0, count($this->zsetMembers($before, $expectedFailSetKey)));
+        foreach ($this->admSetSizes($after) as $setKey => $size) {
+            if ($setKey !== $expectedFailSetKey) {
+                self::assertSame($this->admSetSizes($before)[$setKey] ?? 0, $size, "Unrelated failure set {$setKey} must not change");
+            }
+        }
+
+        $beforeRaw = is_array($before[$expectedScoreKey]['value'] ?? null) ? ($before[$expectedScoreKey]['value']['value'] ?? 0) : 0;
+        $afterRaw = is_array($after[$expectedScoreKey]['value'] ?? null) ? ($after[$expectedScoreKey]['value']['value'] ?? 0) : 0;
+        $beforeScore = is_numeric($beforeRaw) ? (int) $beforeRaw : 0;
+        $afterScore = is_numeric($afterRaw) ? (int) $afterRaw : 0;
+        self::assertGreaterThan($beforeScore, $afterScore, "Expected lane score key {$expectedScoreKey} must increase on failure");
+        self::assertSame($before[$wrongLaneScoreKey] ?? null, $after[$wrongLaneScoreKey] ?? null, "Wrong-lane score key {$wrongLaneScoreKey} must remain untouched");
+    }
+
+    /**
+     * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $before
+     * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $after
+     */
+    private function assertExactBucketRefunded(array $before, array $after, string $expectedBucketKey): void
+    {
+        self::assertArrayHasKey($expectedBucketKey, $before);
+        self::assertArrayNotHasKey($expectedBucketKey, $after, "U success must refund exact bucket {$expectedBucketKey} back to full (absent)");
+    }
+
+    private function deriveAdmCounterKey(string $purpose, string $value, string $outerSecret): string
+    {
+        $deriver = new AdmissionKeyDeriver(self::ENV, self::TRUST_DOMAIN, self::STATE_SECRET);
+        $logical = $deriver->scopeKey('login', $purpose, $value, '', $outerSecret);
+        $preimage = "maatify.rate-limiter.redis.adm.a1.scope.c\0"
+            . pack('N', 2)
+            . pack('N', strlen('login')) . 'login'
+            . pack('N', strlen($logical)) . $logical;
+
+        return 'maatify:rate-limiter:v1:{' . hash('sha256', self::NAMESPACE) . '}:adm:a1:c:' . hash('sha256', $preimage);
+    }
+
+    private function deriveAdmSetKey(string $purpose, string $value, string $outerSecret): string
+    {
+        $deriver = new AdmissionKeyDeriver(self::ENV, self::TRUST_DOMAIN, self::STATE_SECRET);
+        $logical = $deriver->scopeKey('login', $purpose, $value, '', $outerSecret);
+        $preimage = "maatify.rate-limiter.redis.adm.a1.scope.s\0"
+            . pack('N', 2)
+            . pack('N', strlen('login')) . 'login'
+            . pack('N', strlen($logical)) . $logical;
+
+        return 'maatify:rate-limiter:v1:{' . hash('sha256', self::NAMESPACE) . '}:adm:a1:s:' . hash('sha256', $preimage);
+    }
+
+    private function deriveAdmBucketKey(string $account, string $outerSecret): string
+    {
+        $deriver = new AdmissionKeyDeriver(self::ENV, self::TRUST_DOMAIN, self::STATE_SECRET);
+        $logical = $deriver->scopeKey('login', AdmissionScopePurpose::ACCT, $account, '', $outerSecret);
+        $preimage = "maatify.rate-limiter.redis.adm.a1.scope.b\0"
+            . pack('N', 2)
+            . pack('N', strlen('login')) . 'login'
+            . pack('N', strlen($logical)) . $logical;
+
+        return 'maatify:rate-limiter:v1:{' . hash('sha256', self::NAMESPACE) . '}:adm:a1:b:' . hash('sha256', $preimage);
+    }
+
+    private function deriveAdmMember(string $account, string $outerSecret): string
+    {
+        $deriver = new AdmissionKeyDeriver(self::ENV, self::TRUST_DOMAIN, self::STATE_SECRET);
+
+        return $deriver->scopeKey('login', AdmissionScopePurpose::MEMBER, $account, '', $outerSecret);
+    }
+
+    private function derivePermitKey(string $memberId): string
+    {
+        return 'maatify:rate-limiter:v1:{' . hash('sha256', self::NAMESPACE) . '}:adm:a1:permit:' . hash('sha256', $memberId);
+    }
+
+    private function deriveE1ScoreKey(string $purpose, string $account, string $outerSecret): string
+    {
+        $logical = (new E1AccountScopeKeyDeriver(self::ENV))->derive($purpose, 'login_protection', $account, $outerSecret);
+
+        return 'maatify:rate-limiter:e1:' . hash('sha256', self::NAMESPACE) . ':score:' . hash('sha256', $logical);
     }
 
     /**

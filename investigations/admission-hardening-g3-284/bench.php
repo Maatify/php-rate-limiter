@@ -15,6 +15,7 @@ use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\AdmissionCredentialDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
+use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Service\AdmissionBindingControlInterface;
@@ -92,6 +93,30 @@ $gitOut = static function (string $cmd) use ($srcRoot): string {
 $sourceSha = $gitOut('rev-parse HEAD');
 $sourceTree = $gitOut('rev-parse HEAD^{tree}');
 $sourceDirty = $gitOut('status --porcelain') !== '';
+
+$srcFiles = [];
+$it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($srcRoot . '/src', FilesystemIterator::SKIP_DOTS));
+foreach ($it as $file) {
+    if ($file instanceof SplFileInfo && $file->isFile()) {
+        $rel = substr($file->getPathname(), strlen($srcRoot) + 1);
+        $srcFiles[$rel] = hash_file('sha256', $file->getPathname());
+    }
+}
+ksort($srcFiles);
+$srcTreeDiskSha256 = hash('sha256', json_encode($srcFiles, JSON_THROW_ON_ERROR));
+
+$assertPermitLane = static function (string $permit, string $expectedLane): void {
+    $parts = explode('.', $permit);
+    $json = base64_decode(strtr($parts[0], '-_', '+/'), true);
+    if (! is_string($json)) {
+        throw new RuntimeException('Invalid permit payload encoding.');
+    }
+    $decoded = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+    if (! is_array($decoded) || ($decoded['lane'] ?? null) !== $expectedLane) {
+        $actual = is_array($decoded) ? ($decoded['lane'] ?? 'null') : 'non-array';
+        throw new RuntimeException("Expected permit lane {$expectedLane}, got {$actual}.");
+    }
+};
 
 $makeConfig = static function (string $outer, ?string $prevOuter = null, ?string $binding = null, ?string $prevBinding = null) use ($arm): RateLimiterConfig {
     if ($arm === 'g3' && $binding !== null) {
@@ -246,7 +271,7 @@ $results[] = $measure(
         $ctx = new RateLimitContextDTO('198.18.0.' . (($i % 250) + 1), 'Mozilla/5.0 Chrome/126', 'nonopt-' . $i, ['device' => 'd-' . $i]);
         $check = $rt->limit($ctx, RateLimitCommand::checkOnly('login_protection'));
         $fail = $rt->limit($ctx, RateLimitCommand::recordFailure('login_protection'));
-        if (! $check->isAllowed() || $fail->metadata?->permit !== null) {
+        if (! $check->isAllowed() || $fail->decision !== RateLimitResultDTO::DECISION_ALLOW || $fail->metadata?->permit !== null) {
             throw new RuntimeException("Unexpected non_opted_login result at iter {$i}");
         }
     },
@@ -266,12 +291,15 @@ $results[] = $measure(
 
         return $rt;
     },
-    static function ($rt, int $i): void {
+    static function ($rt, int $i) use ($assertPermitLane): void {
         $ctx = new RateLimitContextDTO('198.18.' . intdiv($i, 20) . '.' . (($i % 20) + 1), 'Mozilla/5.0 Chrome/126', 'acct-u-' . $i, ['device' => 'd-' . $i]);
         $check = $rt->limit($ctx, RateLimitCommand::checkOnly('login_protection'));
         $permit = $check->metadata?->permit;
         if (! $check->isAllowed() || $permit === null) {
             throw new RuntimeException("Expected Lane U permit at iter {$i}");
+        }
+        if ($i === 0) {
+            $assertPermitLane($permit, 'U');
         }
         $settle = $rt->limit($ctx, new RateLimitCommand('login_protection', 1, false, false, true, $permit));
         if (! $settle->isAllowed() || $settle->metadata?->cause !== null) {
@@ -300,12 +328,15 @@ $results[] = $measure(
 
         return ['rt' => $rt, 'creds' => $creds];
     },
-    static function (array $s, int $i): void {
+    static function (array $s, int $i) use ($assertPermitLane): void {
         $ctx = new RateLimitContextDTO('198.18.1.' . (($i % 200) + 1), 'Mozilla/5.0 Chrome/126', 'acct-p-' . $i, ['device' => 'd-' . $i], clientInstanceId: 'inst-' . $i, admissionCredential: $s['creds'][$i]);
         $check = $s['rt']->limit($ctx, RateLimitCommand::checkOnly('login_protection'));
         $permit = $check->metadata?->permit;
         if (! $check->isAllowed() || $permit === null) {
             throw new RuntimeException("Expected Lane P permit at iter {$i}");
+        }
+        if ($i === 0) {
+            $assertPermitLane($permit, 'P');
         }
         $settle = $s['rt']->limit($ctx, new RateLimitCommand('login_protection', 1, false, false, true, $permit));
         if (! $settle->isAllowed() || $settle->metadata?->cause !== null) {
@@ -334,12 +365,15 @@ $results[] = $measure(
 
         return ['rt' => $rt, 'creds' => $creds];
     },
-    static function (array $s, int $i): void {
+    static function (array $s, int $i) use ($assertPermitLane): void {
         $ctx = new RateLimitContextDTO('198.18.2.' . (($i % 200) + 1), 'Mozilla/5.0 Chrome/126', 'acct-r-' . $i, ['device' => 'd-' . $i], clientInstanceId: 'inst-' . $i, admissionCredential: $s['creds'][$i]);
         $check = $s['rt']->limit($ctx, RateLimitCommand::checkOnly('login_protection'));
         $permit = $check->metadata?->permit;
         if (! $check->isAllowed() || $permit === null) {
             throw new RuntimeException("Expected Lane P (previous-configured) permit at iter {$i}");
+        }
+        if ($i === 0) {
+            $assertPermitLane($permit, 'P');
         }
         $settle = $s['rt']->limit($ctx, new RateLimitCommand('login_protection', 1, false, false, true, $permit));
         if (! $settle->isAllowed() || $settle->metadata?->cause !== null) {
@@ -374,6 +408,7 @@ echo json_encode([
     'source_sha' => $sourceSha,
     'source_tree' => $sourceTree,
     'source_dirty' => $sourceDirty,
+    'src_tree_disk_sha256' => $srcTreeDiskSha256,
     'php_version' => PHP_VERSION,
     'php_int_size' => PHP_INT_SIZE,
     'redis_host' => $host,
