@@ -223,7 +223,7 @@ final class AdmissionCredentialCodecTest extends TestCase
         }
         self::assertTrue($legacy4096Rejected, 'encode() must reject 4096-char ASCII account instead of issuing an unusable 5699-char token');
 
-        // Independent oracle detector: a validly signed v2 JSON credential at the closest length over 4096 (4098 bytes)
+        // Signed v2 credential built independent of encode() at the closest length over 4096 (4098 bytes)
         // must be rejected as MALFORMED by verify(), isolating the MAX_LENGTH guard from JSON/format errors.
         $keys = new \Maatify\RateLimiter\Service\AdmissionKeyDeriver(self::ENV, self::DOMAIN, self::STATE_SECRET);
         $kid = $keys->bindingKeyId('binding-key');
@@ -246,6 +246,24 @@ final class AdmissionCredentialCodecTest extends TestCase
             AdmissionCredentialVerdictEnum::MALFORMED,
             $codec->verify($oversizeSignedToken, $closestOversizeAccount, 'acct-1', 'login', 'inst-1', self::NOW, 4)->verdict,
         );
+    }
+
+    public function testEncodeThrowsJsonExceptionOnNonUtf8Claims(): void
+    {
+        $codec = $this->codec();
+        $nonUtf8Claims = new AdmissionCredentialDTO(
+            "\xFF",
+            'acct-1',
+            ['login'],
+            'inst-1',
+            'jti-1',
+            self::NOW + 100,
+            self::NOW - 10,
+            4,
+        );
+
+        $this->expectException(\JsonException::class);
+        $codec->encode($nonUtf8Claims);
     }
 
     public function testSignedPayloadWithUnexpectedShapeIsMalformed(): void

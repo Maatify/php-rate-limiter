@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Service;
 
+use JsonException;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\AdmissionCredentialDTO;
 use Maatify\RateLimiter\DTO\AdmissionCredentialVerificationDTO;
@@ -96,7 +97,10 @@ final class AdmissionCredentialCodec
      * Sign the v2 claims with the current binding key under this trust context's framed credential MAC domain
      * (DEC-048 D5), enforcing the 4096-character maximum encoded token length.
      *
-     * @throws RateLimiterException when the encoded signed credential exceeds 4096 characters.
+     * Precondition: all claim strings must be valid UTF-8 so JSON serialization succeeds.
+     *
+     * @throws JsonException when JSON serialization of the claims fails (for example, malformed UTF-8).
+     * @throws RateLimiterException when the encoded signed credential exceeds 4096 characters (fixed message without claims or secrets).
      */
     public function encode(AdmissionCredentialDTO $claims): string
     {
