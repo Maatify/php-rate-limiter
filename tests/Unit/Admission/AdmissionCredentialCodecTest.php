@@ -168,6 +168,55 @@ final class AdmissionCredentialCodecTest extends TestCase
         );
     }
 
+    public function testEncodeAcceptsExactMaxLengthAndRejectsClosestOversizeAnd4096AsciiAccount(): void
+    {
+        $codec = $this->codec();
+
+        // Find the largest ASCII account length whose encoded token fits within MAX_LENGTH (4096).
+        // JSON overhead with acct-1 / ['login', 'reauth'] / inst-1 / jti-1 / exp=1000100 / bat=999990 / epo=4 / 16-hex kid
+        // leaves exact 4096-byte token at account length 2894 (payload 4052 + '.' + 43-char MAC = 4096).
+        $baseClaims = static fn(string $account): AdmissionCredentialDTO => new AdmissionCredentialDTO(
+            $account,
+            'acct-1',
+            ['login', 'reauth'],
+            'inst-1',
+            'jti-1',
+            self::NOW + 100,
+            self::NOW - 10,
+            4,
+        );
+
+        $maxAccountLen = 2894;
+        $exactToken = $codec->encode($baseClaims(str_repeat('a', $maxAccountLen)));
+        self::assertSame(AdmissionCredentialCodec::MAX_LENGTH, strlen($exactToken));
+        self::assertSame(
+            AdmissionCredentialVerdictEnum::VALID,
+            $codec->verify($exactToken, str_repeat('a', $maxAccountLen), 'acct-1', 'login', 'inst-1', self::NOW, 4)->verdict,
+        );
+
+        // Closest possible length above the 4096 boundary (+1 byte on account) must be rejected at encode().
+        $closestOversizeAccount = str_repeat('a', $maxAccountLen + 1);
+        $oversizeRejected = false;
+        try {
+            $codec->encode($baseClaims($closestOversizeAccount));
+        } catch (RateLimiterException $e) {
+            $oversizeRejected = true;
+            self::assertStringContainsString((string) AdmissionCredentialCodec::MAX_LENGTH, $e->getMessage());
+            self::assertStringNotContainsString($closestOversizeAccount, $e->getMessage());
+            self::assertStringNotContainsString('key-1', $e->getMessage());
+        }
+        self::assertTrue($oversizeRejected, 'encode() must reject closest length over MAX_LENGTH');
+
+        // F-G4-01 regression: 4096-char ASCII account previously produced a 5699-char token that verify() rejected as MALFORMED.
+        $legacy4096Rejected = false;
+        try {
+            $codec->encode($baseClaims(str_repeat('a', 4096)));
+        } catch (RateLimiterException) {
+            $legacy4096Rejected = true;
+        }
+        self::assertTrue($legacy4096Rejected, 'encode() must reject 4096-char ASCII account instead of issuing an unusable 5699-char token');
+    }
+
     public function testSignedPayloadWithUnexpectedShapeIsMalformed(): void
     {
         $codec = $this->codec();

@@ -413,7 +413,7 @@ Inputs (all optional on `RateLimitContextDTO`; ignored by every policy that did 
 
 * `clientInstanceId`: an untrusted continuity hint, separate from `sessionDeviceId` (trust) and
   `clientFingerprint`. It never selects the proven lane by itself.
-* `admissionCredential`: the opaque **v2** credential the Host minted with `AdmissionCredentialCodec::fromConfig($config)` (embedding both explicit `account` and effective `subject`).
+* `admissionCredential`: the opaque **v2** credential the Host minted with `AdmissionCredentialCodec::fromConfig($config)` (embedding both explicit `account` and effective `subject`; `encode()` enforces the `4096`-character `MAX_LENGTH` ceiling on the full signed token and throws `RateLimiterException` without exposing claims or secrets if exceeded).
   The library verifies format (`v = 2`), cohort/trust-domain-scoped signature, account, subject, budget group, instance, expiry and the account's
   durable binding epoch. Legacy v1 credentials are unconditionally rejected. **Any failed check is the unproven lane**, never an error or a refusal by itself.
   Nothing else selects the proven lane: not `isDevicePreviouslyVerifiedForAccount`, not a trusted

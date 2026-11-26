@@ -122,7 +122,9 @@ final class AdmissionEngineReserveTest extends TestCase
     public function testThePermitTokenStaysBoundedWhateverTheHostPutsInTheCredentialId(): void
     {
         $lab = new EngineLab();
-        $credential = $lab->mint('acct-1', 'inst-1', jti: str_repeat('j', 3000));
+        $credential = $lab->mint('acct-1', 'inst-1', jti: str_repeat('j', 2800));
+        self::assertGreaterThan(3500, strlen($credential));
+        self::assertLessThanOrEqual(\Maatify\RateLimiter\Service\AdmissionCredentialCodec::MAX_LENGTH, strlen($credential));
         $permit = (string) EngineLab::permit($lab->check($lab->context('acct-1', self::IP, 'inst-1', $credential)));
 
         self::assertLessThanOrEqual(512, strlen($permit));
