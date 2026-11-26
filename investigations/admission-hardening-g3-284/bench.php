@@ -15,6 +15,7 @@ use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\AdmissionCredentialDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
+use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Service\AdmissionBindingControlInterface;
 use Maatify\RateLimiter\Service\AdmissionBindingEpochInterface;
@@ -24,11 +25,22 @@ use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 
+if ($argc < 4) {
+    throw new RuntimeException('Usage: php bench.php <repoRoot> <baseline|g3> <srcRoot>');
+}
 $repoRoot = $argv[1];
 $arm = $argv[2]; // 'baseline' or 'g3'
 $srcRoot = $argv[3];
-$host = getenv('REDIS_INTEGRATION_HOST') ?: '127.0.0.1';
-$port = (int) (getenv('REDIS_INTEGRATION_PORT') ?: '6379');
+
+$host = getenv('REDIS_INTEGRATION_HOST');
+$portRaw = getenv('REDIS_INTEGRATION_PORT');
+if (! is_string($host) || $host === '' || ! is_string($portRaw) || ! ctype_digit($portRaw)) {
+    throw new RuntimeException('Refusing to run without explicit isolated REDIS_INTEGRATION_HOST and REDIS_INTEGRATION_PORT.');
+}
+if (getenv('BENCH_ALLOW_FLUSHDB') !== '1') {
+    throw new RuntimeException('Refusing destructive FLUSHDB without BENCH_ALLOW_FLUSHDB=1 on an isolated disposable Redis.');
+}
+$port = (int) $portRaw;
 
 $loader = require $repoRoot . '/vendor/autoload.php';
 if ($srcRoot !== $repoRoot) {
@@ -52,10 +64,34 @@ if ($loaded !== $expected) {
 }
 
 $resp = new RespRedisCommandExecutor($host, $port, 'eval');
+$timedExecutor = new class ($resp) implements RedisCommandExecutorInterface {
+    public int $waitNs = 0;
+
+    public function __construct(private readonly RespRedisCommandExecutor $inner) {}
+
+    public function execute(array $command): mixed
+    {
+        $t0 = hrtime(true);
+        try {
+            return $this->inner->execute($command);
+        } finally {
+            $this->waitNs += hrtime(true) - $t0;
+        }
+    }
+};
 $now = 1_767_225_600;
 $clock = new FixedClock('@' . $now);
 $warmup = 15;
 $iters = 150;
+
+$gitOut = static function (string $cmd) use ($srcRoot): string {
+    $res = shell_exec('git -C ' . escapeshellarg($srcRoot) . ' ' . $cmd . ' 2>/dev/null');
+
+    return is_string($res) ? trim($res) : 'unknown';
+};
+$sourceSha = $gitOut('rev-parse HEAD');
+$sourceTree = $gitOut('rev-parse HEAD^{tree}');
+$sourceDirty = $gitOut('status --porcelain') !== '';
 
 $makeConfig = static function (string $outer, ?string $prevOuter = null, ?string $binding = null, ?string $prevBinding = null) use ($arm): RateLimiterConfig {
     if ($arm === 'g3' && $binding !== null) {
@@ -136,7 +172,7 @@ $inspectRedis = static function () use ($resp): array {
     ];
 };
 
-$measure = static function (string $name, Closure $setup, Closure $step) use ($resp, $warmup, $iters, $inspectRedis): array {
+$measure = static function (string $name, Closure $setup, Closure $step) use ($resp, $timedExecutor, $warmup, $iters, $inspectRedis): array {
     $resp->execute(['FLUSHDB']);
     $state = $setup();
     for ($i = 0; $i < $warmup; $i++) {
@@ -145,14 +181,18 @@ $measure = static function (string $name, Closure $setup, Closure $step) use ($r
     $c0 = $resp->commands;
     $bSent0 = $resp->bytesSent;
     $bRecv0 = $resp->bytesReceived;
+    $wait0 = $timedExecutor->waitNs;
     $ru0 = getrusage();
     memory_reset_peak_usage();
     $times = [];
+    $wall0 = hrtime(true);
     for ($i = $warmup; $i < $warmup + $iters; $i++) {
         $t0 = hrtime(true);
         $step($state, $i);
         $times[] = round((hrtime(true) - $t0) / 1000.0, 1);
     }
+    $wallNs = hrtime(true) - $wall0;
+    $waitNs = $timedExecutor->waitNs - $wait0;
     $ru1 = getrusage();
     $peakKb = round(memory_get_peak_usage(false) / 1024.0, 2);
     $sorted = $times;
@@ -160,6 +200,8 @@ $measure = static function (string $name, Closure $setup, Closure $step) use ($r
     $pct = static fn(float $p): float => round($sorted[min(count($sorted) - 1, (int) floor($p * (count($sorted) - 1)))], 1);
     $userMs = round(($ru1['ru_utime.tv_sec'] - $ru0['ru_utime.tv_sec']) * 1000.0 + ($ru1['ru_utime.tv_usec'] - $ru0['ru_utime.tv_usec']) / 1000.0, 2);
     $sysMs = round(($ru1['ru_stime.tv_sec'] - $ru0['ru_stime.tv_sec']) * 1000.0 + ($ru1['ru_stime.tv_usec'] - $ru0['ru_stime.tv_usec']) / 1000.0, 2);
+    $wallMs = round($wallNs / 1_000_000.0, 2);
+    $redisWaitMs = round($waitNs / 1_000_000.0, 2);
 
     return [
         'scenario' => $name,
@@ -171,6 +213,9 @@ $measure = static function (string $name, Closure $setup, Closure $step) use ($r
         'p99_us' => $pct(0.99),
         'max_us' => $sorted[count($sorted) - 1],
         'mean_us' => round(array_sum($sorted) / count($sorted), 1),
+        'wall_total_ms' => $wallMs,
+        'redis_wait_ms' => $redisWaitMs,
+        'php_work_ms' => round(max(0.0, $wallMs - $redisWaitMs), 2),
         'cpu_user_ms' => $userMs,
         'cpu_sys_ms' => $sysMs,
         'cpu_total_ms' => round($userMs + $sysMs, 2),
@@ -189,8 +234,8 @@ $results = [];
 // 1. Non-opted login (checkOnly + recordFailure)
 $results[] = $measure(
     'non_opted_login',
-    static function () use ($makeConfig, $resp, $clock) {
-        $store = new RedisFullCapabilityStore($resp, 'bench-non-opted');
+    static function () use ($makeConfig, $timedExecutor, $clock) {
+        $store = new RedisFullCapabilityStore($timedExecutor, 'bench-non-opted');
 
         return RateLimiterBuilder::fromFullCapabilityStore($makeConfig('outer-1'), $store, new RecordingFailureSignalEmitter())
             ->withPolicy(new LoginProtectionPolicy())
@@ -199,16 +244,19 @@ $results[] = $measure(
     },
     static function ($rt, int $i): void {
         $ctx = new RateLimitContextDTO('198.18.0.' . (($i % 250) + 1), 'Mozilla/5.0 Chrome/126', 'nonopt-' . $i, ['device' => 'd-' . $i]);
-        $rt->limit($ctx, RateLimitCommand::checkOnly('login_protection'));
-        $rt->limit($ctx, RateLimitCommand::recordFailure('login_protection'));
+        $check = $rt->limit($ctx, RateLimitCommand::checkOnly('login_protection'));
+        $fail = $rt->limit($ctx, RateLimitCommand::recordFailure('login_protection'));
+        if (! $check->isAllowed() || $fail->metadata?->permit !== null) {
+            throw new RuntimeException("Unexpected non_opted_login result at iter {$i}");
+        }
     },
 );
 
 // 2. Opted Lane U (checkOnly + recordSuccess with permit)
 $results[] = $measure(
     'opted_lane_u',
-    static function () use ($makeConfig, $resp, $clock) {
-        $store = new RedisFullCapabilityStore($resp, 'bench-u');
+    static function () use ($makeConfig, $timedExecutor, $clock) {
+        $store = new RedisFullCapabilityStore($timedExecutor, 'bench-u');
         $rt = RateLimiterBuilder::fromFullCapabilityStore($makeConfig('outer-1', null, 'bind-1'), $store, new RecordingFailureSignalEmitter())
             ->withPolicy(new LoginProtectionAdmissionPolicy())
             ->withClock($clock)
@@ -221,16 +269,23 @@ $results[] = $measure(
     static function ($rt, int $i): void {
         $ctx = new RateLimitContextDTO('198.18.' . intdiv($i, 20) . '.' . (($i % 20) + 1), 'Mozilla/5.0 Chrome/126', 'acct-u-' . $i, ['device' => 'd-' . $i]);
         $check = $rt->limit($ctx, RateLimitCommand::checkOnly('login_protection'));
-        $rt->limit($ctx, new RateLimitCommand('login_protection', 1, false, false, true, $check->metadata?->permit));
+        $permit = $check->metadata?->permit;
+        if (! $check->isAllowed() || $permit === null) {
+            throw new RuntimeException("Expected Lane U permit at iter {$i}");
+        }
+        $settle = $rt->limit($ctx, new RateLimitCommand('login_protection', 1, false, false, true, $permit));
+        if (! $settle->isAllowed() || $settle->metadata?->cause !== null) {
+            throw new RuntimeException("Unexpected Lane U settle failure at iter {$i}");
+        }
     },
 );
 
 // 3. Opted Lane P (checkOnly + recordSuccess with credential + permit)
 $results[] = $measure(
     'opted_lane_p',
-    static function () use ($makeConfig, $makeCodec, $makeCred, $resp, $clock, $warmup, $iters) {
+    static function () use ($makeConfig, $makeCodec, $makeCred, $timedExecutor, $clock, $warmup, $iters) {
         $cfg = $makeConfig('outer-1', null, 'bind-1');
-        $store = new RedisFullCapabilityStore($resp, 'bench-p');
+        $store = new RedisFullCapabilityStore($timedExecutor, 'bench-p');
         $rt = RateLimiterBuilder::fromFullCapabilityStore($cfg, $store, new RecordingFailureSignalEmitter())
             ->withPolicy(new LoginProtectionAdmissionPolicy())
             ->withClock($clock)
@@ -248,16 +303,23 @@ $results[] = $measure(
     static function (array $s, int $i): void {
         $ctx = new RateLimitContextDTO('198.18.1.' . (($i % 200) + 1), 'Mozilla/5.0 Chrome/126', 'acct-p-' . $i, ['device' => 'd-' . $i], clientInstanceId: 'inst-' . $i, admissionCredential: $s['creds'][$i]);
         $check = $s['rt']->limit($ctx, RateLimitCommand::checkOnly('login_protection'));
-        $s['rt']->limit($ctx, new RateLimitCommand('login_protection', 1, false, false, true, $check->metadata?->permit));
+        $permit = $check->metadata?->permit;
+        if (! $check->isAllowed() || $permit === null) {
+            throw new RuntimeException("Expected Lane P permit at iter {$i}");
+        }
+        $settle = $s['rt']->limit($ctx, new RateLimitCommand('login_protection', 1, false, false, true, $permit));
+        if (! $settle->isAllowed() || $settle->metadata?->cause !== null) {
+            throw new RuntimeException("Unexpected Lane P settle failure at iter {$i}");
+        }
     },
 );
 
-// 4. Opted Lane P under active outer rotation (previousKeySecret set)
+// 4. Opted Lane P with previousKeySecret configured on fresh store (previous-configured)
 $results[] = $measure(
-    'opted_lane_p_outer_rotation',
-    static function () use ($makeConfig, $makeCodec, $makeCred, $resp, $clock, $warmup, $iters) {
+    'opted_lane_p_previous_configured',
+    static function () use ($makeConfig, $makeCodec, $makeCred, $timedExecutor, $clock, $warmup, $iters) {
         $cfg = $makeConfig('outer-2', 'outer-1', 'bind-1');
-        $store = new RedisFullCapabilityStore($resp, 'bench-rot');
+        $store = new RedisFullCapabilityStore($timedExecutor, 'bench-rot');
         $rt = RateLimiterBuilder::fromFullCapabilityStore($cfg, $store, new RecordingFailureSignalEmitter())
             ->withPolicy(new LoginProtectionAdmissionPolicy())
             ->withClock($clock)
@@ -275,15 +337,22 @@ $results[] = $measure(
     static function (array $s, int $i): void {
         $ctx = new RateLimitContextDTO('198.18.2.' . (($i % 200) + 1), 'Mozilla/5.0 Chrome/126', 'acct-r-' . $i, ['device' => 'd-' . $i], clientInstanceId: 'inst-' . $i, admissionCredential: $s['creds'][$i]);
         $check = $s['rt']->limit($ctx, RateLimitCommand::checkOnly('login_protection'));
-        $s['rt']->limit($ctx, new RateLimitCommand('login_protection', 1, false, false, true, $check->metadata?->permit));
+        $permit = $check->metadata?->permit;
+        if (! $check->isAllowed() || $permit === null) {
+            throw new RuntimeException("Expected Lane P (previous-configured) permit at iter {$i}");
+        }
+        $settle = $s['rt']->limit($ctx, new RateLimitCommand('login_protection', 1, false, false, true, $permit));
+        if (! $settle->isAllowed() || $settle->metadata?->cause !== null) {
+            throw new RuntimeException("Unexpected Lane P (previous-configured) settle failure at iter {$i}");
+        }
     },
 );
 
 // 5. Account revocation + bindingEpoch read
 $results[] = $measure(
     'account_revocation_and_epoch',
-    static function () use ($makeConfig, $resp, $clock) {
-        $store = new RedisFullCapabilityStore($resp, 'bench-rev');
+    static function () use ($makeConfig, $timedExecutor, $clock) {
+        $store = new RedisFullCapabilityStore($timedExecutor, 'bench-rev');
 
         return RateLimiterBuilder::fromFullCapabilityStore($makeConfig('outer-2', 'outer-1', 'bind-1'), $store, new RecordingFailureSignalEmitter())
             ->withPolicy(new LoginProtectionAdmissionPolicy())
@@ -293,13 +362,18 @@ $results[] = $measure(
     static function ($rt, int $i): void {
         assert($rt instanceof AdmissionBindingControlInterface && $rt instanceof AdmissionBindingEpochInterface);
         $rt->revokeAccountBinding('acct-rev-' . $i);
-        $rt->bindingEpoch('acct-rev-' . $i);
+        if ($rt->bindingEpoch('acct-rev-' . $i) !== 1) {
+            throw new RuntimeException("Expected bindingEpoch === 1 after revoke at iter {$i}");
+        }
     },
 );
 
 echo json_encode([
     'arm' => $arm,
     'source_root' => $srcRoot,
+    'source_sha' => $sourceSha,
+    'source_tree' => $sourceTree,
+    'source_dirty' => $sourceDirty,
     'php_version' => PHP_VERSION,
     'php_int_size' => PHP_INT_SIZE,
     'redis_host' => $host,

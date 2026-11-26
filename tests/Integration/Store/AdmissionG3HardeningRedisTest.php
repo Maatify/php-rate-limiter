@@ -192,11 +192,25 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
         $ctxUFail = $this->context('acct-u-fail', '198.51.100.73');
         $ctxPLate = $this->context('acct-p-late', '198.51.100.74', 'inst-p4', $codec->encode(new AdmissionCredentialDTO('acct-p-late', 'acct-p-late', ['login'], 'inst-p4', 'jti-p4', self::NOW + 3600, self::NOW, 0)));
 
+        $beforePSuccCheck = $this->dump();
         $pSuccCheck = $runtime->limit($ctxPSucc, RateLimitCommand::checkOnly('login_protection'));
+        $pSuccArtifacts = $this->capturePreCheckArtifacts($beforePSuccCheck, $this->dump(), $ctxPSucc);
+
+        $beforePFailCheck = $this->dump();
         $pFailCheck = $runtime->limit($ctxPFail, RateLimitCommand::checkOnly('login_protection'));
+        $pFailArtifacts = $this->capturePreCheckArtifacts($beforePFailCheck, $this->dump(), $ctxPFail);
+
+        $beforeUSuccCheck = $this->dump();
         $uSuccCheck = $runtime->limit($ctxUSucc, RateLimitCommand::checkOnly('login_protection'));
+        $uSuccArtifacts = $this->capturePreCheckArtifacts($beforeUSuccCheck, $this->dump(), $ctxUSucc);
+
+        $beforeUFailCheck = $this->dump();
         $uFailCheck = $runtime->limit($ctxUFail, RateLimitCommand::checkOnly('login_protection'));
+        $uFailArtifacts = $this->capturePreCheckArtifacts($beforeUFailCheck, $this->dump(), $ctxUFail);
+
+        $beforePLateCheck = $this->dump();
         $pLateCheck = $runtime->limit($ctxPLate, RateLimitCommand::checkOnly('login_protection'));
+        $pLateArtifacts = $this->capturePreCheckArtifacts($beforePLateCheck, $this->dump(), $ctxPLate);
 
         foreach ([$pSuccCheck, $pFailCheck, $uSuccCheck, $uFailCheck, $pLateCheck] as $c) {
             self::assertTrue($c->isAllowed());
@@ -212,6 +226,9 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
         self::assertIsString($uSuccPermit);
         self::assertIsString($uFailPermit);
         self::assertIsString($pLatePermit);
+        self::assertNotNull($uSuccArtifacts['bucketKey']);
+        self::assertNotNull($uFailArtifacts['bucketKey']);
+        self::assertNotSame($uSuccArtifacts['bucketKey'], $uFailArtifacts['bucketKey']);
 
         // Pending limit = 1 is active on 198.51.100.70 before closing fence.
         $refusedPending = $runtime->limit($this->context('acct-p-extra', '198.51.100.70', 'inst-p3', $credExtra), RateLimitCommand::checkOnly('login_protection'));
@@ -239,16 +256,19 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
         self::assertSame('permit_unknown', $unknownRes->metadata?->cause);
         self::assertSame($beforeUnknown, $this->dump(), 'Invalid permit under closed fence must not score in S0');
 
-        // P SUCCESS under closed fence: claims permit once, refunds proof counters (1 -> 0), releases ppend slot (1 -> 0), no pfail entry, no S0 score.
-        $pSuccBucketsBefore = $this->admKeysSummary();
-        self::assertGreaterThanOrEqual(5, $pSuccBucketsBefore['counterMembers'], 'pacct/pacctd/pproof/pproofd/ppend hold members before P success');
+        // P SUCCESS under closed fence: claims exact permit, refunds all 4 proof counters + ppend slot, no pfail/score/control mutation.
+        $beforePSuccSettle = $this->dump();
         $pSuccSettle = $runtime->limit($ctxPSucc, new RateLimitCommand('login_protection', 1, false, false, true, $pSuccPermit));
         self::assertNull($pSuccSettle->metadata?->cause);
         $pSuccAfter = $this->dump();
-        // Verify permit record is CLAIMED/success and pending + proof counters for P success are released.
-        $pSuccPermitHash = $this->findPermitBySubject($pSuccAfter, 'acct-p-succ');
-        self::assertSame('CLAIMED', $pSuccPermitHash['state'] ?? null);
-        self::assertSame('success', $pSuccPermitHash['outcome'] ?? null);
+        $this->assertExactPermitClaimed($beforePSuccSettle, $pSuccAfter, $pSuccArtifacts['permitKey'], 'success');
+        self::assertCount(5, $pSuccArtifacts['counterKeys'], 'P admission must touch pacct/pacctd/pproof/pproofd/ppend');
+        foreach ($pSuccArtifacts['counterKeys'] as $counterKey) {
+            self::assertArrayHasKey($pSuccArtifacts['memberId'], $this->zsetMembers($beforePSuccSettle, $counterKey));
+            self::assertArrayNotHasKey($pSuccArtifacts['memberId'], $this->zsetMembers($pSuccAfter, $counterKey), "P success must remove member from {$counterKey}");
+        }
+        self::assertSame($this->admSetSizes($beforePSuccSettle), $this->admSetSizes($pSuccAfter), 'P success must not mutate failure sets');
+        self::assertSame($this->e1ScoreValues($beforePSuccSettle), $this->e1ScoreValues($pSuccAfter), 'P success must not write E1 scores');
 
         // Duplicate & Conflict on settled P permit => zero Redis mutation.
         $dupP = $runtime->limit($ctxPSucc, new RateLimitCommand('login_protection', 1, false, false, true, $pSuccPermit));
@@ -258,45 +278,59 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
         self::assertSame('permit_conflict', $confP->metadata?->cause);
         self::assertSame($pSuccAfter, $this->dump());
 
-        // P FAILURE under closed fence: claims permit, releases ppend slot, adds member to pfail (set_size), writes K4P/K5p score!
-        $scoresBeforePFail = $this->e1ScoreKeys($this->dump());
-        $setsBeforePFail = $this->admSetSizes($this->dump());
+        // P FAILURE under closed fence: claims exact permit, releases only 1 ppend slot (4 proof counters stay), adds to pfail set, scores K4P/K5p!
         $pFailSettle = $runtime->limit($ctxPFail, new RateLimitCommand('login_protection', 1, false, true, false, $pFailPermit));
         self::assertNull($pFailSettle->metadata?->cause);
         $afterPFail = $this->dump();
-        $scoresAfterPFail = $this->e1ScoreKeys($afterPFail);
-        $setsAfterPFail = $this->admSetSizes($afterPFail);
-        self::assertGreaterThan(count($scoresBeforePFail), count($scoresAfterPFail), 'P failure must score K4P/K5p in e1:score:');
-        self::assertGreaterThan(array_sum($setsBeforePFail), array_sum($setsAfterPFail), 'P failure must add member to pfail set');
+        $this->assertExactPermitClaimed($pSuccAfter, $afterPFail, $pFailArtifacts['permitKey'], 'failure');
+        $releasedCounters = 0;
+        $retainedCounters = 0;
+        foreach ($pFailArtifacts['counterKeys'] as $counterKey) {
+            if (! array_key_exists($pFailArtifacts['memberId'], $this->zsetMembers($afterPFail, $counterKey))) {
+                $releasedCounters++;
+            } else {
+                $retainedCounters++;
+            }
+        }
+        self::assertSame(1, $releasedCounters, 'P failure must release only the ppend slot');
+        self::assertSame(4, $retainedCounters, 'P failure must NOT refund the 4 proof counters');
+        self::assertSame(1, array_sum($this->admSetSizes($afterPFail)) - array_sum($this->admSetSizes($pSuccAfter)), 'P failure must add 1 member to pfail');
+        self::assertGreaterThan(count($this->e1ScoreValues($pSuccAfter)), count($this->e1ScoreValues($afterPFail)), 'P failure must score K4P/K5p in e1:score:');
 
-        // U SUCCESS under closed fence: claims permit, refunds U account_bucket credit back to full (key deleted: absent => full), zero ufail entry!
-        $uSuccBucketsBefore = $this->bucketCredits($this->dump());
-        $setsBeforeUSucc = $this->admSetSizes($this->dump());
+        // U SUCCESS under closed fence: claims exact permit, deletes exact acct-u-succ bucket (absent => full), leaves acct-u-fail bucket intact, zero ufail/score!
         $uSuccSettle = $runtime->limit($ctxUSucc, new RateLimitCommand('login_protection', 1, false, false, true, $uSuccPermit));
         self::assertNull($uSuccSettle->metadata?->cause);
         $afterUSucc = $this->dump();
-        self::assertCount(count($uSuccBucketsBefore) - 1, $this->bucketCredits($afterUSucc), 'U success must refund account_bucket back to full (absent)');
-        self::assertSame($setsBeforeUSucc, $this->admSetSizes($afterUSucc), 'U success must not add to ufail');
+        $this->assertExactPermitClaimed($afterPFail, $afterUSucc, $uSuccArtifacts['permitKey'], 'success');
+        self::assertArrayHasKey($uSuccArtifacts['bucketKey'], $afterPFail);
+        self::assertArrayNotHasKey($uSuccArtifacts['bucketKey'], $afterUSucc, 'U success must refund exact acct-u-succ bucket back to full (absent)');
+        self::assertSame($afterPFail[$uFailArtifacts['bucketKey']], $afterUSucc[$uFailArtifacts['bucketKey']], 'U success must not touch acct-u-fail bucket');
+        self::assertSame($this->admSetSizes($afterPFail), $this->admSetSizes($afterUSucc), 'U success must not add to ufail');
+        self::assertSame($this->e1ScoreValues($afterPFail), $this->e1ScoreValues($afterUSucc), 'U success must not write E1 scores');
 
-        // U FAILURE under closed fence: claims permit, adds member to ufail (set_size), writes K4 score!
-        $scoresBeforeUFail = $this->e1ScoreKeys($afterUSucc);
+        // U FAILURE under closed fence: claims exact permit, keeps exact acct-u-fail bucket, adds to ufail set, scores K4!
         $uFailSettle = $runtime->limit($ctxUFail, new RateLimitCommand('login_protection', 1, false, true, false, $uFailPermit));
         self::assertNull($uFailSettle->metadata?->cause);
         $afterUFail = $this->dump();
-        self::assertGreaterThan(count($scoresBeforeUFail), count($this->e1ScoreKeys($afterUFail)), 'U failure must score K4 in e1:score:');
-        self::assertGreaterThan(array_sum($setsBeforeUSucc), array_sum($this->admSetSizes($afterUFail)), 'U failure must add member to ufail set');
+        $this->assertExactPermitClaimed($afterUSucc, $afterUFail, $uFailArtifacts['permitKey'], 'failure');
+        self::assertSame($afterUSucc[$uFailArtifacts['bucketKey']], $afterUFail[$uFailArtifacts['bucketKey']], 'U failure must not refund acct-u-fail bucket');
+        self::assertSame(1, array_sum($this->admSetSizes($afterUFail)) - array_sum($this->admSetSizes($afterUSucc)), 'U failure must add 1 member to ufail');
+        self::assertGreaterThan(count($this->e1ScoreValues($afterUSucc)), count($this->e1ScoreValues($afterUFail)), 'U failure must score K4 in e1:score:');
 
         // Re-open fence briefly to confirm P pending slot on 198.51.100.70 was genuinely released in Redis!
         $runtime->openAdmissionFence('login');
         self::assertTrue($runtime->limit($this->context('acct-p-extra', '198.51.100.70', 'inst-p3', $credExtra), RateLimitCommand::checkOnly('login_protection'))->isAllowed(), 'Pending slot on 198.51.100.70 must be free after closed-fence settlement');
         $this->closeTestFenceKeys();
 
-        // LATE permit under closed fence (at NOW + 30, within G = 600): returns permit_late, zero score/set mutation!
+        // LATE permit under closed fence (at NOW + 30, within G = 600): returns permit_late, zero score/set/permit mutation!
         $this->clock->setNow(new \DateTimeImmutable('@' . (self::NOW + 30)));
         $beforeLate = $this->dump();
         $lateRes = $runtime->limit($ctxPLate, new RateLimitCommand('login_protection', 1, false, true, false, $pLatePermit));
         self::assertSame('permit_late', $lateRes->metadata?->cause);
         self::assertSame($beforeLate, $this->dump(), 'Late permit under closed fence must not mutate Redis');
+        $latePermitValue = $beforeLate[$pLateArtifacts['permitKey']]['value'] ?? null;
+        self::assertIsArray($latePermitValue);
+        self::assertSame('ISSUED', $latePermitValue['state'] ?? null);
 
         // Privacy check: raw account/IP never appears in any Redis key or permit hash field.
         foreach ($this->dump() as $key => $entry) {
@@ -321,7 +355,9 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
         $codec1 = AdmissionCredentialCodec::fromConfig($cfg1);
         $cred1 = $codec1->encode(new AdmissionCredentialDTO('acct-rot1', 'acct-rot1', ['login'], 'inst-1', 'jti-1', self::NOW + 3600, self::NOW, 0));
         $ctx1 = $this->context('acct-rot1', self::SOURCE, 'inst-1', $cred1);
+        $beforeS1Check = $this->dump();
         $check1 = $r1->limit($ctx1, RateLimitCommand::checkOnly('login_protection'));
+        $s1Artifacts = $this->capturePreCheckArtifacts($beforeS1Check, $this->dump(), $ctx1);
         self::assertTrue($check1->isAllowed());
         $permit1 = $check1->metadata?->permit;
         self::assertNotNull($permit1);
@@ -331,11 +367,27 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
         $r2 = $this->buildRuntime($cfg2, pendingLimit: 1);
         $this->closeTestFenceKeys();
 
-        // Settle S1 permit under S2/S1 with closed fence: ppend slot under S1 (previousKeySecret) IS released!
+        // Settle S1 permit under S2/S1 with closed fence: exact S1 permit claimed, all 5 S1 counter/ppend keys release member!
+        $beforeRotSettle = $this->dump();
         $settled = $r2->limit($ctx1, new RateLimitCommand('login_protection', 1, false, false, true, $permit1));
         self::assertNull($settled->metadata?->cause);
+        $afterRotSettle = $this->dump();
+        $this->assertExactPermitClaimed($beforeRotSettle, $afterRotSettle, $s1Artifacts['permitKey'], 'success');
+        $releasedRot = 0;
+        $retainedRot = 0;
+        foreach ($s1Artifacts['counterKeys'] as $s1CounterKey) {
+            if (! array_key_exists($s1Artifacts['memberId'], $this->zsetMembers($afterRotSettle, $s1CounterKey))) {
+                $releasedRot++;
+            } else {
+                $retainedRot++;
+                self::assertSame($beforeRotSettle[$s1CounterKey], $afterRotSettle[$s1CounterKey], "Previous proof key {$s1CounterKey} value/TTL must remain untouched across outer rotation");
+            }
+        }
+        self::assertSame(1, $releasedRot, 'Exactly 1 S1 ppend slot must be released across S1->S2/S1');
+        self::assertSame(4, $retainedRot, 'All 4 S1 proof counter keys must remain untouched across S1->S2/S1');
         $dup = $r2->limit($ctx1, new RateLimitCommand('login_protection', 1, false, false, true, $permit1));
         self::assertSame('permit_duplicate', $dup->metadata?->cause);
+        self::assertSame($afterRotSettle, $this->dump());
 
         // Re-open fence under S2/S1 and verify a new P reservation on the same source succeeds (S1 ppend slot was freed!).
         self::assertInstanceOf(AdmissionFenceControlInterface::class, $r2);
@@ -353,6 +405,119 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
         }
     }
 
+    public function testDetectorCatchesWrongPermitAttributionOrUnrelatedPermitMutation(): void
+    {
+        $permitA = 'maatify:rate-limiter:v1:{ns}:adm:a1:permit:' . str_repeat('a', 64);
+        $permitB = 'maatify:rate-limiter:v1:{ns}:adm:a1:permit:' . str_repeat('b', 64);
+        $before = [
+            $permitA => ['type' => 'hash', 'value' => ['state' => 'ISSUED'], 'hasTtl' => true],
+            $permitB => ['type' => 'hash', 'value' => ['state' => 'ISSUED'], 'hasTtl' => true],
+        ];
+        $wrongAfter = [
+            $permitA => ['type' => 'hash', 'value' => ['state' => 'ISSUED'], 'hasTtl' => true],
+            $permitB => ['type' => 'hash', 'value' => ['state' => 'CLAIMED', 'outcome' => 'success'], 'hasTtl' => true],
+        ];
+
+        $caught = false;
+        try {
+            $this->assertExactPermitClaimed($before, $wrongAfter, $permitA, 'success');
+        } catch (\PHPUnit\Framework\AssertionFailedError) {
+            $caught = true;
+        }
+        self::assertTrue($caught, 'DETECTOR (F302-R2-03): claiming wrong permit must be caught by exact-key attribution');
+    }
+
+    /**
+     * Captures exact physical keys created/updated by a single pre-check for exact-key attribution.
+     *
+     * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $before
+     * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $after
+     * @return array{permitKey: string, memberId: string, counterKeys: list<string>, bucketKey: ?string}
+     */
+    private function capturePreCheckArtifacts(array $before, array $after, RateLimitContextDTO $context): array
+    {
+        $deriver = new \Maatify\RateLimiter\Service\AdmissionKeyDeriver(self::ENV, self::TRUST_DOMAIN, self::STATE_SECRET);
+        $expectedSubject = $deriver->permitContextCommitment('login', 'login_protection', $context);
+
+        $permitKey = null;
+        $counterKeys = [];
+        $memberId = null;
+        $bucketKey = null;
+
+        foreach ($after as $key => $entry) {
+            $keyStr = (string) $key;
+            if (str_contains($keyStr, ':adm:a1:permit:') && ! array_key_exists($keyStr, $before)) {
+                self::assertNull($permitKey, 'Each pre-check must create exactly one permit key');
+                self::assertIsArray($entry['value']);
+                self::assertSame('ISSUED', $entry['value']['state'] ?? null);
+                self::assertSame($expectedSubject, $entry['value']['subject'] ?? null, 'Permit subject commitment must match context');
+                $permitKey = $keyStr;
+            }
+            if (str_contains($keyStr, ':adm:a1:c:') && $entry['type'] === 'zset' && is_array($entry['value'])) {
+                $prevMembers = $this->zsetMembers($before, $keyStr);
+                $diff = array_diff(array_keys($entry['value']), array_keys($prevMembers));
+                if ($diff !== []) {
+                    $counterKeys[] = $keyStr;
+                    $first = (string) reset($diff);
+                    $memberId ??= $first;
+                    self::assertSame($memberId, $first, 'All counter keys for one pre-check must share the same permit member id');
+                }
+            }
+            if (str_contains($keyStr, ':adm:a1:b:') && (! array_key_exists($keyStr, $before) || $before[$keyStr] !== $entry)) {
+                $bucketKey = $keyStr;
+            }
+        }
+
+        self::assertNotNull($permitKey, 'Missing permit key for context');
+        self::assertNotNull($memberId, 'Missing counter/pending member id for context');
+
+        return [
+            'permitKey' => $permitKey,
+            'memberId' => $memberId,
+            'counterKeys' => $counterKeys,
+            'bucketKey' => $bucketKey,
+        ];
+    }
+
+    /**
+     * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $before
+     * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $after
+     */
+    private function assertExactPermitClaimed(array $before, array $after, string $expectedPermitKey, string $expectedOutcome): void
+    {
+        self::assertArrayHasKey($expectedPermitKey, $before);
+        self::assertArrayHasKey($expectedPermitKey, $after);
+        self::assertIsArray($before[$expectedPermitKey]['value']);
+        self::assertIsArray($after[$expectedPermitKey]['value']);
+        self::assertSame('ISSUED', $before[$expectedPermitKey]['value']['state'] ?? null);
+        self::assertSame('CLAIMED', $after[$expectedPermitKey]['value']['state'] ?? null);
+        self::assertSame($expectedOutcome, $after[$expectedPermitKey]['value']['outcome'] ?? null);
+
+        foreach ($after as $key => $entry) {
+            $keyStr = (string) $key;
+            if (str_contains($keyStr, ':adm:a1:permit:') && $keyStr !== $expectedPermitKey) {
+                self::assertSame($before[$keyStr] ?? null, $entry, "Settlement must not mutate unrelated permit {$keyStr}");
+            }
+        }
+    }
+
+    /**
+     * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $dump
+     * @return array<string, mixed>
+     */
+    private function zsetMembers(array $dump, string $key): array
+    {
+        if (! array_key_exists($key, $dump) || $dump[$key]['type'] !== 'zset' || ! is_array($dump[$key]['value'])) {
+            return [];
+        }
+        $out = [];
+        foreach ($dump[$key]['value'] as $member => $score) {
+            $out[(string) $member] = $score;
+        }
+
+        return $out;
+    }
+
     /**
      * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $dump
      * @return array<string, array{type: string, value: mixed, hasTtl: bool}>
@@ -368,49 +533,19 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
 
     /**
      * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $dump
-     * @return array<string, string>
+     * @return array<string, mixed>
      */
-    private function findPermitBySubject(array $dump, string $account): array
+    private function e1ScoreValues(array $dump): array
     {
+        $out = [];
         foreach ($dump as $key => $entry) {
-            if (str_contains((string) $key, ':adm:a1:permit:') && $entry['type'] === 'hash' && is_array($entry['value']) && ($entry['value']['state'] ?? '') === 'CLAIMED') {
-                $out = [];
-                foreach ($entry['value'] as $fk => $fv) {
-                    if (is_string($fk) && is_scalar($fv)) {
-                        $out[$fk] = (string) $fv;
-                    }
-                }
-
-                return $out;
-            }
-        }
-        unset($account);
-
-        return [];
-    }
-
-    /**
-     * @return array{counterMembers: int}
-     */
-    private function admKeysSummary(): array
-    {
-        $members = 0;
-        foreach ($this->dump() as $key => $entry) {
-            if (str_contains((string) $key, ':adm:a1:c:') && is_array($entry['value'])) {
-                $members += count($entry['value']);
+            $keyStr = (string) $key;
+            if (str_contains($keyStr, ':e1:') && str_contains($keyStr, ':score:')) {
+                $out[$keyStr] = $entry['value'];
             }
         }
 
-        return ['counterMembers' => $members];
-    }
-
-    /**
-     * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $dump
-     * @return list<string>
-     */
-    private function e1ScoreKeys(array $dump): array
-    {
-        return array_values(array_filter(array_keys($dump), static fn(string $k): bool => str_contains($k, ':e1:') && str_contains($k, ':score:')));
+        return $out;
     }
 
     /**
@@ -423,23 +558,6 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
         foreach ($dump as $key => $entry) {
             if (str_contains((string) $key, ':adm:a1:s:') && is_array($entry['value'])) {
                 $out[(string) $key] = count($entry['value']);
-            }
-        }
-
-        return $out;
-    }
-
-    /**
-     * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $dump
-     * @return array<string, int>
-     */
-    private function bucketCredits(array $dump): array
-    {
-        $out = [];
-        foreach ($dump as $key => $entry) {
-            if (str_contains((string) $key, ':adm:a1:b:') && is_array($entry['value'])) {
-                $credit = $entry['value']['credit'] ?? 0;
-                $out[(string) $key] = is_numeric($credit) ? (int) $credit : 0;
             }
         }
 

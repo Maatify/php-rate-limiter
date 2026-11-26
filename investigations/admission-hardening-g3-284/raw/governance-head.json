@@ -340,7 +340,7 @@
             "decision_id": "[DEC-050](DEC-050_RETAINED_CORRELATION_POSTURE_AND_CLOSED_FENCE_PERMIT_SETTLEMENT.md)",
             "decision_record": "docs/decisions/DEC-050_RETAINED_CORRELATION_POSTURE_AND_CLOSED_FENCE_PERMIT_SETTLEMENT.md",
             "record_exists": true,
-            "scope_concern": "Carries DEC-019 and DEC-027 verbatim for non-opted policies and permit-less closed-fence requests, with the narrow G3 D7 boundary: healthy opted policies always route explicit permit-bearing outcomes to the admission claim/settlement path even when the fleet fence is closed (valid outstanding permits settle once within D/G; invalid/old/foreign permits return `permit_*` with no S0 scoring; closed fence creates no new reservations; non-opted/degraded/fail-open untouched)",
+            "scope_concern": "Carries DEC-019 and DEC-027 verbatim for non-opted policies and permit-less closed-fence requests, with the narrow G3 D7 boundary: healthy opted policies always route explicit permit-bearing outcomes to the admission claim/settlement path even when the fleet fence is closed (valid outstanding permits settle once before D = 30 s, while G = 600 s retains the record for late/duplicate/conflict classification; invalid/old/foreign permits return `permit_*` with no S0 scoring; closed fence creates no new reservations; non-opted/degraded/fail-open untouched)",
             "status": "ACTIVE",
             "title": "Retained Correlation Posture and Closed-Fence Permit Settlement Boundary (successor of DEC-027)"
         }

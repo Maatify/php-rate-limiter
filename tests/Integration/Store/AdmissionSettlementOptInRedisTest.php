@@ -85,10 +85,15 @@ final class AdmissionSettlementOptInRedisTest extends AdmissionRedisGateTestCase
     private static function canonicalDump(array $dump, string $layout, bool $downgradeSliding): array
     {
         $bijection = self::logicalKeyBijection($layout);
+        $expectedPermitPrefix = 'maatify:rate-limiter:v1:{' . hash('sha256', self::NAMESPACE) . '}:adm:'
+            . ($layout === 'new' ? 'a1:' : '')
+            . 'permit:';
         $normalized = [];
         foreach ($dump as $key => $entry) {
-            if (preg_match('/^maatify:rate-limiter:v1:\{[0-9a-f]{64}\}:adm:(?:a1:)?permit:([0-9a-f]{64})$/', $key, $pm) === 1) {
-                $logical = 'permit:' . $pm[1];
+            if (str_starts_with($key, $expectedPermitPrefix)) {
+                $permitHash = substr($key, strlen($expectedPermitPrefix));
+                self::assertMatchesRegularExpression('/\A[0-9a-f]{64}\z/D', $permitHash, "Malformed permit key in {$layout} dump: {$key}");
+                $logical = 'permit:' . $permitHash;
                 self::assertArrayNotHasKey($logical, $normalized, "Duplicate permit logical key {$logical}");
                 $normalized[$logical] = $entry;
                 continue;
@@ -375,6 +380,30 @@ final class AdmissionSettlementOptInRedisTest extends AdmissionRedisGateTestCase
             self::canonicalDump($swapped, 'new', false),
             'DETECTOR (F302-01): swapping values between two keys of the same family must fail canonical comparison',
         );
+    }
+
+    public function testDetectorRejectsWrongNamespaceOrWrongLayoutPermitKey(): void
+    {
+        $permitHash = str_repeat('a', 64);
+        $ownNs = hash('sha256', self::NAMESPACE);
+        $wrongNs = hash('sha256', self::NAMESPACE . '-wrong');
+        $dummy = ['type' => 'hash', 'value' => ['state' => 'CLAIMED'], 'hasTtl' => true];
+
+        $invalidCases = [
+            ['new', "maatify:rate-limiter:v1:{{$wrongNs}}:adm:a1:permit:{$permitHash}"],
+            ['new', "maatify:rate-limiter:v1:{{$ownNs}}:adm:permit:{$permitHash}"],
+            ['old', "maatify:rate-limiter:v1:{{$ownNs}}:adm:a1:permit:{$permitHash}"],
+        ];
+
+        foreach ($invalidCases as [$layout, $badKey]) {
+            $rejected = false;
+            try {
+                self::canonicalDump([$badKey => $dummy], $layout, false);
+            } catch (\PHPUnit\Framework\AssertionFailedError) {
+                $rejected = true;
+            }
+            self::assertTrue($rejected, "DETECTOR (F302-R2-01): {$layout} canonicalDump must reject {$badKey}");
+        }
     }
 
     public function testDetectorAStoreWithoutTheWindowBreaksTheSeededOffParity(): void

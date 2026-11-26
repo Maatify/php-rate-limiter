@@ -99,12 +99,12 @@ $verifiedAfterBindingRotation = $codecRotated->verify($credEpoch0, $accountId, $
 $rejectedWrongAccount = $codecRotated->verify($credEpoch0, 'acct-stranger', $accountId, 'login', $deviceInstance, $now, 0)->verdict;
 
 // 5. Loss of persistence continuity (distinct from routine rotation):
-//    Never reuse the prior `admissionStateSecret`. Establish a fresh isolated trust domain and new random secret.
+//    Keep the same outer/binding keys to isolate trust-domain + state-secret loss: never reuse `admissionStateSecret`.
 $freshRecoveryConfig = new RateLimiterConfig(
-    keySecret: $outerKeyV2,
+    keySecret: $outerKeyV1,
     fingerprintSecret: $fingerprintSecret,
     environmentScope: 'production',
-    bindingKeySecret: $bindingKeyV2,
+    bindingKeySecret: $bindingKeyV1,
     admissionTrustDomain: 'auth-edge-recovery.example.test',
     admissionStateSecret: random_bytes(RateLimiterConfig::MIN_ADMISSION_STATE_SECRET_BYTES),
 );
@@ -119,10 +119,16 @@ $output = [
     'legacyVerdictInFreshIsolatedScope' => $legacyVerdictInFreshScope->value,
 ];
 
-// 6. Live official Redis composition when Redis connection env vars are provided.
+// 6. Explicit live official Redis composition when Redis connection env vars are provided (fail-closed if incomplete).
 $redisHost = getenv('REDIS_INTEGRATION_HOST');
 $redisPort = getenv('REDIS_INTEGRATION_PORT');
-if (is_string($redisHost) && is_string($redisPort) && ctype_digit($redisPort) && extension_loaded('redis')) {
+if ($redisHost !== false || $redisPort !== false) {
+    if (! is_string($redisHost) || $redisHost === '' || ! is_string($redisPort) || ! ctype_digit($redisPort)) {
+        throw new RuntimeException('Live mode requires both REDIS_INTEGRATION_HOST and numeric REDIS_INTEGRATION_PORT.');
+    }
+    if (! extension_loaded('redis')) {
+        throw new RuntimeException('Live mode requires the PHP redis extension.');
+    }
     $redis = new Redis();
     if (! $redis->connect($redisHost, (int) $redisPort, 2.0)) {
         throw new RuntimeException('Failed to connect to Redis.');
@@ -132,7 +138,8 @@ if (is_string($redisHost) && is_string($redisPort) && ctype_digit($redisPort) &&
         $cmd = (string) $command[0];
         return $redis->rawCommand($cmd, ...array_slice($command, 1));
     });
-    $store = new RedisFullCapabilityStore($executor, 'example-admission-hardening');
+    // Per-run isolated namespace matching the per-run random admissionStateSecret.
+    $store = new RedisFullCapabilityStore($executor, 'example-admission-hardening-' . bin2hex(random_bytes(8)));
     $signals = new class implements FailureSignalEmitterInterface {
         public function emit(FailureSignalDTO $signal): void {}
     };
@@ -146,6 +153,12 @@ if (is_string($redisHost) && is_string($redisPort) && ctype_digit($redisPort) &&
         throw new RateLimiterException('Expected admission control interfaces on composite runtime.');
     }
     $fence = $runtimeV1->openAdmissionFence('login');
+    if ($fence < 1) {
+        throw new RuntimeException('Expected open admission fence >= 1.');
+    }
+    if ($runtimeV1->bindingEpoch($accountId) !== 0) {
+        throw new RuntimeException('Expected initial binding epoch 0.');
+    }
 
     $ip = '198.51.100.55';
     $initialCtx = new RateLimitContextDTO($ip, 'Mozilla/5.0 Chrome/126', $accountId, clientInstanceId: $deviceInstance);
@@ -154,11 +167,17 @@ if (is_string($redisHost) && is_string($redisPort) && ctype_digit($redisPort) &&
     if ($check->decision !== RateLimitResultDTO::DECISION_ALLOW || $permit === null) {
         throw new RateLimiterException('Expected initial unproven admission.');
     }
-    $runtimeV1->limit($initialCtx, new RateLimitCommand('login_protection', 1, false, false, true, $permit));
+    $initialSettle = $runtimeV1->limit($initialCtx, new RateLimitCommand('login_protection', 1, false, false, true, $permit));
+    if (! $initialSettle->isAllowed() || $initialSettle->metadata?->cause !== null) {
+        throw new RuntimeException('Expected clean initial settlement.');
+    }
 
     // Revoke account binding (epoch 0 -> 1) and re-issue to eligible device.
     $runtimeV1->revokeAccountBinding($accountId);
     $epoch1 = $runtimeV1->bindingEpoch($accountId);
+    if ($epoch1 !== 1) {
+        throw new RuntimeException('Expected binding epoch 1 after revoke.');
+    }
     $credEpoch1 = $codecV1->encode(new AdmissionCredentialDTO($accountId, $accountId, ['login'], $deviceInstance, bin2hex(random_bytes(8)), $now + 86400, $now, $epoch1));
 
     // Supported outer rotation (V1 -> V2/V1): reopen fence under V2; revocation survives without intermediate traffic.
@@ -178,33 +197,53 @@ if (is_string($redisHost) && is_string($redisPort) && ctype_digit($redisPort) &&
     if (! $runtimeV2 instanceof AdmissionFenceControlInterface || ! $runtimeV2 instanceof AdmissionBindingEpochInterface) {
         throw new RateLimiterException('Expected admission controls after outer rotation.');
     }
-    $runtimeV2->openAdmissionFence('login');
+    if ($runtimeV2->openAdmissionFence('login') < 1) {
+        throw new RuntimeException('Expected open fence after outer rotation.');
+    }
+    $epochAfterOuterRotation = $runtimeV2->bindingEpoch($accountId);
+    if ($epochAfterOuterRotation !== 1) {
+        throw new RuntimeException('Expected revoked epoch 1 to survive outer rotation.');
+    }
 
-    // Verify revoked epoch-0 credential is rejected to Lane U while re-issued epoch-1 credential is Lane P.
-    for ($i = 0; $i < 24; $i++) {
+    // Spend the remaining 23 source slots on Lane U (initialCtx already consumed 1 of 24), verifying every filler succeeds.
+    for ($i = 0; $i < 23; $i++) {
         $filler = new RateLimitContextDTO($ip, 'Mozilla/5.0 Chrome/126', 'filler-' . $i);
         $r = $runtimeV2->limit($filler, RateLimitCommand::checkOnly('login_protection'));
-        if ($r->isAllowed() && $r->metadata?->permit !== null) {
-            $runtimeV2->limit($filler, new RateLimitCommand('login_protection', 1, false, false, true, $r->metadata->permit));
+        if (! $r->isAllowed() || $r->metadata?->permit === null) {
+            throw new RuntimeException("Expected filler #{$i} admission to be allowed.");
+        }
+        $fillerSettle = $runtimeV2->limit($filler, new RateLimitCommand('login_protection', 1, false, false, true, $r->metadata->permit));
+        if (! $fillerSettle->isAllowed() || $fillerSettle->metadata?->cause !== null) {
+            throw new RuntimeException("Expected filler #{$i} settlement to succeed.");
         }
     }
+
+    // Verify revoked epoch-0 credential is rejected to Lane U (`source_capacity`), while re-issued epoch-1 is Lane P (`ALLOW`).
     $revokedAttempt = $runtimeV2->limit(
         new RateLimitContextDTO($ip, 'Mozilla/5.0 Chrome/126', $accountId, clientInstanceId: $deviceInstance, admissionCredential: $credEpoch0),
         RateLimitCommand::checkOnly('login_protection'),
     );
+    if ($revokedAttempt->isAllowed() || $revokedAttempt->metadata?->cause !== 'source_capacity') {
+        throw new RuntimeException('Expected revoked epoch-0 credential to be refused by exhausted Lane U source_capacity.');
+    }
     $reissuedCtx = new RateLimitContextDTO($ip, 'Mozilla/5.0 Chrome/126', $accountId, clientInstanceId: $deviceInstance, admissionCredential: $credEpoch1);
     $reissuedAttempt = $runtimeV2->limit($reissuedCtx, RateLimitCommand::checkOnly('login_protection'));
-    if ($reissuedAttempt->isAllowed() && $reissuedAttempt->metadata?->permit !== null) {
-        $runtimeV2->limit($reissuedCtx, new RateLimitCommand('login_protection', 1, false, false, true, $reissuedAttempt->metadata->permit));
+    if ($reissuedAttempt->decision !== RateLimitResultDTO::DECISION_ALLOW || $reissuedAttempt->metadata?->permit === null) {
+        throw new RuntimeException('Expected re-issued epoch-1 credential to be allowed on Lane P.');
+    }
+    $reissuedSettle = $runtimeV2->limit($reissuedCtx, new RateLimitCommand('login_protection', 1, false, false, true, $reissuedAttempt->metadata->permit));
+    if (! $reissuedSettle->isAllowed() || $reissuedSettle->metadata?->cause !== null) {
+        throw new RuntimeException('Expected re-issued epoch-1 settlement to succeed.');
     }
 
     $output = array_merge($output, [
         'mode' => 'live-redis-official-composition',
         'fenceOpened' => $fence,
         'epochAfterRevoke' => $epoch1,
-        'epochAfterOuterRotation' => $runtimeV2->bindingEpoch($accountId),
-        'revokedEpoch0CauseOnExhaustedSource' => $revokedAttempt->metadata?->cause,
+        'epochAfterOuterRotation' => $epochAfterOuterRotation,
+        'revokedEpoch0CauseOnExhaustedSource' => $revokedAttempt->metadata->cause,
         'reissuedEpoch1DecisionOnExhaustedSource' => $reissuedAttempt->decision,
+        'liveAssertionsPassed' => true,
     ]);
 }
 

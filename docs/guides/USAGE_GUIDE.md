@@ -514,7 +514,7 @@ Outputs and duties:
 
 The fleet fence (contract M2; `KEY_STRATEGY.md` §4.6; `DEC-048` D3–D4; `DEC-050`) keeps new admission reservations off for a budget group
 until every worker can reserve. While it is closed, `checkOnly` and permit-less outcomes of an opted policy run the exact path of a policy
-that did not opt in (no admission reservation, no lane, no permit issued). However, under **`DEC-050` (D7)**, an explicit **permit-bearing outcome** of a healthy opted policy is always routed through permit verification and atomic claim even after the fence closes: a valid outstanding permit settles once within `D`/`G` on its recorded lane, while an old, invalid, or foreign-context permit returns `permit_unknown` / `permit_late` / `permit_rejected` and **never** scores in S0.
+that did not opt in (no admission reservation, no lane, no permit issued). However, under **`DEC-050` (D7)**, an explicit **permit-bearing outcome** of a healthy opted policy is always routed through permit verification and atomic claim even after the fence closes: a valid outstanding permit settles once before its deadline `D` (`30 s`) on its recorded lane (while `G = 600 s` retains the record to classify late, duplicate, or conflicting claims), whereas an old, invalid, or foreign-context permit returns `permit_unknown` / `permit_late` / `permit_rejected` and **never** scores in S0.
 
 1. **Roll the whole fleet** to a version that contains the admission runtime. While old and new
    workers serve the same budget group, the old workers reserve nothing, so the bound is the
