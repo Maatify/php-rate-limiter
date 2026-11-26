@@ -17,10 +17,10 @@ final readonly class AdmissionOutcomeDTO
         public array $scopes,
         public ?string $permitId = null,
     ) {
-        if (trim($verifierClass) === '') {
+        if (trim($verifierClass, " \t\n\r\v\f") === '') {
             throw new RateLimiterException('Admission verifier class must not be empty.');
         }
-        if ($permitId !== null && trim($permitId) === '') {
+        if ($permitId !== null && trim($permitId, " \t\n\r\v\f") === '') {
             throw new RateLimiterException('Admission permit id must not be blank.');
         }
     }

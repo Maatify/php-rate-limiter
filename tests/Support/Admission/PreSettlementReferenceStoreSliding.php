@@ -186,16 +186,26 @@ final class PreSettlementReferenceStoreSliding extends FullCapabilityInMemorySto
         }
     }
 
-    public function readBindingEpoch(string $key, ?string $previousKey): int
+    public function readAdmissionFence(string $key, ?string $previousKey): int
     {
         return $this->epochs[$key] ?? ($previousKey === null || $previousKey === $key ? 0 : ($this->epochs[$previousKey] ?? 0));
     }
 
-    public function bumpBindingEpoch(string $key, ?string $previousKey): int
+    public function bumpAdmissionFence(string $key, ?string $previousKey): int
     {
         $previous = $previousKey === null || $previousKey === $key ? 0 : ($this->epochs[$previousKey] ?? 0);
 
         return $this->epochs[$key] = max($this->epochs[$key] ?? 0, $previous) + 1;
+    }
+
+    public function readBindingEpoch(string $key): int
+    {
+        return $this->epochs[$key] ?? 0;
+    }
+
+    public function bumpBindingEpoch(string $key): int
+    {
+        return $this->epochs[$key] = ($this->epochs[$key] ?? 0) + 1;
     }
 
     public function claimAdmissionPermit(

@@ -212,7 +212,7 @@ final class RequestAtomicityBoundariesRedisTest extends TestCase
         $changed = array_keys(array_diff_assoc($this->state(), $before));
         self::assertNotEmpty($changed);
         foreach ($changed as $key) {
-            self::assertSame(1, preg_match('/:(permit|adm:[a-z]+):/', $key), 'Only the claimed permit and its admission state changed: ' . $key);
+            self::assertSame(1, preg_match('/:(permit|adm:(?:a1:)?[a-z]+):/', $key), 'Only the claimed permit and its admission state changed: ' . $key);
         }
     }
 

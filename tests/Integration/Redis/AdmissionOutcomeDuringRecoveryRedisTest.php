@@ -71,7 +71,7 @@ final class AdmissionOutcomeDuringRecoveryRedisTest extends TestCase
 
     private static function family(string $key): string
     {
-        if (preg_match('/\}:adm:([a-z]+):/', $key, $m) === 1) {
+        if (preg_match('/\}:adm:(?:a1:)?([a-z]+):/', $key, $m) === 1) {
             return 'adm:' . $m[1];
         }
 
@@ -128,7 +128,14 @@ final class AdmissionOutcomeDuringRecoveryRedisTest extends TestCase
     private function runtime(CallableRedisCommandExecutor|RespRedisCommandExecutor $executor, int $now): CompositeRateLimiterRuntimeInterface
     {
         return RateLimiterBuilder::fromFullCapabilityStore(
-            new RateLimiterConfig('redis-gate-key', 'redis-gate-fingerprint', 'test', bindingKeySecret: PublicRedisAdmissionFixture::BINDING_SECRET),
+            new RateLimiterConfig(
+                'redis-gate-key',
+                'redis-gate-fingerprint',
+                'test',
+                bindingKeySecret: PublicRedisAdmissionFixture::BINDING_SECRET,
+                admissionTrustDomain: PublicRedisAdmissionFixture::TRUST_DOMAIN,
+                admissionStateSecret: PublicRedisAdmissionFixture::STATE_SECRET,
+            ),
             new RedisFullCapabilityStore($executor, self::NS),
             $this->signals,
         )->withClock(new FixedClock('@' . $now))->withPolicy(new LoginProtectionAdmissionPolicy())->build();
@@ -201,6 +208,8 @@ final class AdmissionOutcomeDuringRecoveryRedisTest extends TestCase
         return 'ABSENT';
     }
 
+    private ?string $acctPermitKey = null;
+
     /** @return string the permit of an allowed `checkOnly` of the account `acct`, issued at T0 while the circuit is closed */
     private function issuePermit(): string
     {
@@ -208,8 +217,15 @@ final class AdmissionOutcomeDuringRecoveryRedisTest extends TestCase
         self::assertInstanceOf(AdmissionFenceControlInterface::class, $runtime);
         $runtime->openAdmissionFence('login');
         $runtime->limit($this->context('seed'), RateLimitCommand::checkOnly('login_protection'));
+        $before = array_keys($this->snapshot());
         $permit = $runtime->limit($this->context('acct'), RateLimitCommand::checkOnly('login_protection'))->metadata?->permit;
         self::assertNotNull($permit);
+        $created = array_values(array_filter(
+            array_diff(array_keys($this->snapshot()), $before),
+            static fn(string $key): bool => self::family($key) === 'adm:permit',
+        ));
+        self::assertCount(1, $created, 'Issuing the acct permit creates exactly one permit record.');
+        $this->acctPermitKey = $created[0];
 
         return $permit;
     }
@@ -227,26 +243,19 @@ final class AdmissionOutcomeDuringRecoveryRedisTest extends TestCase
     /** @return array<string, string> the permit record of `acct` as stored (state and outcome) */
     private function permitRecord(): array
     {
-        $record = [];
-        foreach (array_keys($this->snapshot()) as $key) {
-            if (self::family($key) !== 'adm:permit') {
-                continue;
-            }
-            $fields = $this->raw->execute(['HGETALL', $key]);
-            self::assertIsArray($fields);
-            $map = [];
-            for ($i = 0; $i < count($fields); $i += 2) {
-                $name = $fields[$i];
-                $value = $fields[$i + 1] ?? null;
-                self::assertTrue(is_string($name) && is_string($value));
-                $map[$name] = $value;
-            }
-            if (($map['subject'] ?? '') === 'acct') {
-                $record = $map;
-            }
+        self::assertNotNull($this->acctPermitKey);
+        $fields = $this->raw->execute(['HGETALL', $this->acctPermitKey]);
+        self::assertIsArray($fields);
+        $map = [];
+        for ($i = 0; $i < count($fields); $i += 2) {
+            $name = $fields[$i];
+            $value = $fields[$i + 1] ?? null;
+            self::assertTrue(is_string($name) && is_string($value));
+            $map[$name] = $value;
         }
+        self::assertNotSame('acct', $map['subject'] ?? '', 'DEC-048 D6: raw account identifier must not be stored in the permit hash.');
 
-        return $record;
+        return $map;
     }
 
     /** @return CallableRedisCommandExecutor an executor that counts claims and saves and can reject the evaluation after the claim */

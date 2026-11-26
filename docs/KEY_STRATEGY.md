@@ -788,7 +788,7 @@ E1AccountScopeKeyDeriver tuple (N = 5):
 
 ### 4.6 Account/Policy Auxiliary State Keys (Locked)
 
-Account-derived auxiliary state in the E1 evaluation pipeline (including the proven-lane `_p` purposes when an opted-in policy runs on the proven lane, separate from the deferred Admission-runtime keys `binding_epoch` and `admission_fence` below) uses `E1AccountScopeKeyDeriver` (`DEC-046`, [`docs/KEY_SCOPE_ENCODING_E1.md`](KEY_SCOPE_ENCODING_E1.md) §3.2–§3.6, physical `maatify:rate-limiter:e1:…` layout):
+Account-derived auxiliary state in the E1 evaluation pipeline (including the proven-lane `_p` purposes when an opted-in policy runs on the proven lane, separate from the Admission-runtime keys `binding_epoch` and `admission_fence` below per `DEC-048`) uses `E1AccountScopeKeyDeriver` (`DEC-046`, [`docs/KEY_SCOPE_ENCODING_E1.md`](KEY_SCOPE_ENCODING_E1.md) §3.2–§3.6, physical `maatify:rate-limiter:e1:…` layout):
 
 ```text
 E1AccountScopeKeyDeriver tuple (N = 4):
@@ -808,20 +808,8 @@ The removed historical colon-joined preimages (`{policy}:rate_limiter:aux:{purpo
 The admission layer adds the following purposes (LOCKED amendment under DEC-026, active since
 2026-10-20). They are derived only for a policy that opts into the admission reservation.
 
-* `binding_epoch` — one integer per account, the per-account epoch of the admission binding
-  credential. Historically specified with `{budget group}` in the preimage (`DEC-034` 6.1), whereas current source (`AdmissionRuntime::epochKey()`) hashes `env ‖ 0x00 ‖ "binding_epoch" ‖ 0x00 ‖ accountId` without budget group (`KEY_SCOPE_ENCODING_E1.md` §5.4). All three Admission-layer blockers — NUL-delimited Admission framing (`A1`), fence/epoch domain collision in the shared physical epoch namespace including cross-purpose alias (`A2`), and this unresolved `binding_epoch` contract-vs-source discrepancy (`A3`) — remain **open release blockers queued for G3** under `#281`/`#284` (alongside token cohort and trust-domain semantics). It is **not** a §10.1
-  generation-bound namespace. Current key is written; the previous-generation key is read-only
-  and read only when the current key is absent. The derivation is in `AdmissionRuntime` (stage 5-b3b), keyed by `accountId` and the active key
-  secret (with the previous-generation key read-only); the store operations (`readBindingEpoch`,
-  `bumpBindingEpoch`) receive opaque, already-derived keys; see §4.8.
-* `admission_fence` — the fleet fence of the admission runtime (contract §6, M2): one integer per
-  budget group in the epoch namespace, currently `HMAC-SHA256({env}\0admission_fence\0{budget group}, key secret)` (**both NUL-delimited Admission framing `A1` and fence/epoch domain collision in the physical epoch namespace `A2` remain open release blockers queued for G3** under `#281`/`#284`). It is read under the active key secret and, when a previous key secret is configured,
-  under the previous one (current, else previous), so a key-secret rotation does not close it. The new
-  path is enabled for a budget group only when the value read is at least 1; below 1 the request is
-  processed as if no admission runtime existed. It is opened through
-  `AdmissionFenceControlInterface::openAdmissionFence()`, which writes the current key as the larger of
-  the current and previous values plus one. No package operation closes it; the operator procedure is
-  in `docs/guides/USAGE_GUIDE.md` ("Operating the admission fence").
+* `binding_epoch` — one account-wide non-negative integer per account across all budget groups within `(cohort, env, admissionTrustDomain)` (`DEC-048` D2–D4). Derived via `AdmissionKeyDeriver::epochKey($accountId)` using checked `u32be` framing (`KeyPreimageFraming::encodeTuple()`), magic `maatify.rate-limiter.admission.epoch.a1\x00`, and HMAC subkey domain `maatify.rate-limiter.key-domain.admission.epoch.a1` keyed solely by the durable `admissionStateSecret` (logical form `a1.epoch.<64hex>`). Because it does not depend on the rotating outer `keySecret`, revocations survive arbitrary outer key-secret rotations without lazy seeding or revival. It is **not** a §10.1 generation-bound namespace; `AdmissionReservationStoreInterface::readBindingEpoch(string $key)` and `bumpBindingEpoch(string $key)` operate on a single opaque key with no previous key and no TTL; see §4.8.
+* `admission_fence` — the operator-controlled fleet fence of the admission runtime (contract §6, M2; `DEC-048` D2–D4): one integer per budget group, derived via `AdmissionKeyDeriver::fenceKey($budgetGroup, $outerSecret)` using checked `u32be` framing, magic `maatify.rate-limiter.admission.fence.a1\x00`, and HMAC subkey domain `maatify.rate-limiter.key-domain.admission.fence.a1` (logical form `a1.fence.<64hex>`). Stored in its own dedicated physical `:adm:a1:fence:` family via `AdmissionReservationStoreInterface::readAdmissionFence(string $key, ?string $previousKey)` and `bumpAdmissionFence(string $key, ?string $previousKey)` (strictly separate from `:adm:a1:epoch:`). Read under the active outer `keySecret` and, when configured, `previousKeySecret` (current, else previous), so one outer rotation does not close it. Opened through `AdmissionFenceControlInterface::openAdmissionFence()`, which writes `max(current, previous) + 1` to the current key (checking native integer and Lua exact bounds before writing). While the fence is closed (`< 1`), `checkOnly` and permit-less outcomes follow the non-opted S0 path; explicit permit-bearing outcomes of a healthy opted policy continue to settle through permit verification/claim (`DEC-050`). See `docs/guides/USAGE_GUIDE.md` ("Operating the admission fence").
 * The `_p` purposes of the proven (P) lane: `aux.known_device_allowance_p`, `aux.anti_equilibrium_device_p`,
   `aux.anti_equilibrium_p` and `budget_cooldown_p`, each registered in `E1AccountScopeKeyDeriver` (`KEY_SCOPE_ENCODING_E1.md` §3.4) with the same E1 framing and rotation rules, alongside `k4p` and `k5p` of §3.4 / §3.5.
   They are distinct names so the P family cannot collide with the unsuffixed family. The evaluation
@@ -946,32 +934,32 @@ hash-based scope keys per Budget Group and hands them to the store; the store ne
 account identifier, IP address or fingerprint, and a request that carries one is the caller's error,
 not something the store can detect.
 
-The official Redis adapter stores them under one namespace-level hash tag so that every admission key
-of a namespace (hence of every verifier class) sits in one hash slot on the single, non-clustered
-Redis it supports:
+The official Redis adapter stores them under one namespace-level hash tag in the explicit `adm:a1` layout (`DEC-048` D3, `DEC-049`) so that every admission key of a namespace (hence of every verifier class) sits in one hash slot on the single, non-clustered Redis it supports. Legacy `:adm:` keys are never read. Two-field physical keys frame `(verifierClass, key)` via `KeyPreimageFraming::encodeTuple()` with a family-specific magic header:
 
 ```
-{prefix}:{sha256(namespace)}:adm:{family}:{sha256(verifierClass \0 key)}      scope keys
-{prefix}:{sha256(namespace)}:adm:p:{sha256(verifierClass \0 key)}              pending members of a failure set
-{prefix}:{sha256(namespace)}:adm:permit:{sha256(permitId)}                     permit records
-{prefix}:{sha256(namespace)}:adm:epoch:{sha256(key)}                           binding epochs
-{prefix}:{sha256(namespace)}:adm:cfg:{sha256(verifierClass \0 key)}               shared admission configuration (DEC-038)
+{prefix}:{sha256(namespace)}:adm:a1:{family}:{sha256(encodeTuple(scopeMagic(family), [verifierClass, key]))}   scope keys (c, d, s, b)
+{prefix}:{sha256(namespace)}:adm:a1:p:{sha256(encodeTuple(pendingMagic, [verifierClass, key]))}                pending members of a failure set
+{prefix}:{sha256(namespace)}:adm:a1:permit:{sha256(permitRecordId)}                                            permit records
+{prefix}:{sha256(namespace)}:adm:a1:fence:{sha256(key)}                                                        fleet fences (outer-keyed)
+{prefix}:{sha256(namespace)}:adm:a1:epoch:{sha256(key)}                                                        durable binding epochs (state-secret-keyed)
+{prefix}:{sha256(namespace)}:adm:a1:cfg:{sha256(encodeTuple(configMagic, [verifierClass, key]))}               durable shared admission config (DEC-049)
 ```
 
 (the braces around the namespace hash are literal Redis hash-tag braces; `{prefix}` is
-`maatify:rate-limiter:v1`). The families are `c` (counter), `d` (device-member set), `s` (set-size
-set) and `b` (bucket); one logical key never changes family.
+`maatify:rate-limiter:v1`). The scope families are `c` (counter), `d` (device-member set), `s` (set-size
+set) and `b` (bucket); one logical key never changes family. All 12 logical scope/member purposes are closed in `AdmissionScopePurpose` (`src`, `acct`, `ufail`, `pacct`, `pacctd`, `pproof`, `pproofd`, `pfail`, `ppend`, `pdev` with label `'set'`, `member`, `dev`) and derived by `AdmissionKeyDeriver` using checked `u32be` framing (`DEC-048` D2).
 
 | Family | Redis type | Content and lifetime |
 | --- | --- | --- |
-| `c` counter | sorted set | windowed counter elements (member = permit ID, DEC-033) scored by member expiration timestamp (`now + ttl`); active count is `ZCOUNT (now +inf)`; a refusal writes nothing and never prunes; an admitted write prunes expired entries (`score <= now`), adds the permit ID with score `now + ttl`, and refreshes `EXPIRE` to `ttl`; a refund (`ZREM permitId`) removes the member if present and leaves TTL untouched. The key carries no window tag (`:w` / `:d`), enforcing a continuous sliding window. |
+| `c` counter | sorted set | windowed counter elements (member = derived opaque `permitRecordId` `a1.permit.<64hex>`, `DEC-033`/`DEC-048`) scored by member expiration timestamp (`now + ttl`); active count is `ZCOUNT (now +inf)`; a refusal writes nothing and never prunes; an admitted write prunes expired entries (`score <= now`), adds the permit record ID with score `now + ttl`, and refreshes `EXPIRE` to `ttl`; a refund (`ZREM permitRecordId`) removes the member if present and leaves TTL untouched. The key carries no window tag (`:w` / `:d`), enforcing a continuous sliding window. |
 | `d` device members | sorted set | member scored by its expiry (caller time + member lifetime); a member is live when its score is above the caller's `now`; the key is pruned only by an admitted write to the current set, and `EXPIRE` is refreshed only by that write |
-| `s` set | sorted set | accounts of the net-failure set (U, `ufail`) or the cross-account proven failure set (P, `pfail`, DEC-033), member = failing subject scored by expiry (`now + W`, where W = 600 s); active count is `ZCOUNT (now +inf)`; a refusal writes nothing and never prunes; a failure outcome prunes expired entries, adds the subject with score `now + W`, and refreshes `EXPIRE` to `W`; on success the member is removed (`ZREM`). Enforces a continuous sliding window with no window tag (`:w`). |
-| `b` bucket | hash `credit`, `last` | credit-seconds, refilled 1 per second of caller time up to `C x T`; absent means full; `EXPIRE` is the time to full, so an expired bucket and an absent bucket are the same state. This is the only admission family that retains a window/tag origin. |
+| `s` set | sorted set | accounts of the net-failure set (U, `ufail`) or the cross-account proven failure set (P, `pfail`, DEC-033), member = opaque keyed failing-subject member scored by expiry (`now + W`, where W = 600 s); active count is `ZCOUNT (now +inf)`; a refusal writes nothing and never prunes; a failure outcome prunes expired entries, adds the member with score `now + W`, and refreshes `EXPIRE` to `W`; on success the member is removed (`ZREM`). Enforces a continuous sliding window with no window tag (`:w`). |
+| `b` bucket | hash `credit`, `last` | credit-seconds, refilled 1 per second of caller time up to `C x T`; absent means full; `EXPIRE` is the time to full, so an expired bucket and an absent bucket are the same state. |
 | `p` pending (5-b2.1; **written only when a scope settles on expiry, 5-b2.2; the admission runtime builds no settling scope, so nothing writes or reads it**) | sorted set | pending members of the failure set with the same logical key: member scored by its permit `deadline` (an earlier deadline wins on a second reservation). A member counts toward the set only when its score is `<= now` and it is not already in the set; a success removes a pending member only while its score is `> now`. `EXPIRE` equals the scope `ttlSeconds`, set when the key is created and never renewed; a reservation without a permit never writes it; a refusal never writes it |
-| permit | hash `state`, `lane`, `subject`, `operation`, `deadline`, `grace`, `outcome` | created by the admitting reservation in the same script, lifetime `deadline + grace - now`; `ISSUED` then `CLAIMED`; the runtime claims and applies the admission outcome in the same store operation |
-| cfg (DEC-038) | string | the registered effective pending-permit limit of a budget group: `off` or a positive integer, **no TTL**, written by the first accepted reservation (read under the current key, else the previous one) and by an explicit rebind; every reservation compares its worker's value with it before any gate or write |
-| epoch | string | a canonical non-negative integer **with no TTL**: the interface carries no lifetime and a lapsed epoch would revive voided credentials; retention of the key is the Host operator's concern until a decision fixes a lifetime |
+| permit | hash `state`, `lane`, `subject`, `operation`, `deadline`, `grace`, `outcome` | created by the admitting reservation in the same script under `:adm:a1:permit:{sha256(permitRecordId)}`, lifetime `deadline + grace - now`; `subject` stores the 64-hex keyed `permitContextCommitment` (`ctx`, `DEC-048` D6 — never raw account/subject/IP/credential); `ISSUED` then `CLAIMED`; the runtime verifies the v2 permit and `ctx` before claiming and applying the admission outcome atomically |
+| cfg (`DEC-049`, superseding `DEC-038`) | string | the registered effective pending-permit limit of a budget group (`off` or a positive integer), keyed solely by `admissionStateSecret` under one durable key with **no `previousKey`** and **no TTL**, written by the first accepted reservation and by explicit `rebindAdmissionSharedConfig()`; survives arbitrary outer key-secret rotations without intermediate reservations; every reservation compares its worker's value with it before any gate or write |
+| fence (`DEC-048` D3–D4) | string | canonical non-negative integer **with no TTL** under `:adm:a1:fence:{sha256(key)}` (outer-keyed, current else previous; overflow checked before write) |
+| epoch (`DEC-048` D3–D4) | string | canonical non-negative integer **with no TTL** under `:adm:a1:epoch:{sha256(key)}` (keyed solely by `admissionStateSecret`, single durable key, account-wide across budget groups; overflow checked before write); survives arbitrary outer key-secret rotations |
 
 Rotation. A counter or a device-member scope may name one previous-generation key. Counters sum the
 current and previous values; the device-member gate counts the live members of both sets and treats a
@@ -991,7 +979,7 @@ reserved before a rotation holds its member in the previous-generation key; that
 neither removed nor changed, its key's expiry is untouched, and it continues to consume account/proof counter capacity
 until its own score lapses, as for every counter member (the counter contract). The public test shows the refusal
 that follows a success after the rotation; it does not wait out the expiry. This capacity is independent of the
-pending-permit slot of DEC-038, which is a separate counter released by either outcome and is not affected by this rule.
+pending-permit slot of `DEC-049` (superseding `DEC-038`), which is a separate counter released by either outcome and is not affected by this rule.
 Verified on a real Redis by `AdmissionProofCounterRotationRedisTest`.
 
 For device-member recognition, the runtime supplies the current member and, when a previous
@@ -1169,7 +1157,8 @@ Rules:
 
 * Key definitions are part of the public contract
 * E1 alone derives account keys (DEC-046); its bytes are unchanged, and the former opt-in/default selection is removed. A security review covering E1 (injectivity of the encoding, key-domain separation, layout carriage, closed carrier creation, ACL prefix, no V2 read) is recorded in the activation PR for #284.
-* Canonical non-account framing `f1` derives K1–K3, correlation, and adaptive IPv6 keys (DEC-047, #281, #284), while retaining E1 and simple fixed-window bytes and checked `u32be` bounds. Admission framing and epoch/cohort semantics remain queued for G3 (#281, #284).
+* Canonical non-account framing `f1` derives K1–K3, correlation, and adaptive IPv6 keys (DEC-047, #281, #284), while retaining E1 and simple fixed-window bytes and checked `u32be` bounds.
+* Canonical Admission framing `a1` (`DEC-048`, `DEC-049`, `DEC-050`, #281, #284) derives all Admission scope, member, fence, durable binding epoch, durable `pcfg`, permit context commitment, permit record ID, and v2 credential/permit MAC keys with checked `u32be` bounds under explicit `:adm:a1:*` physical layout (separate `:fence:` and `:epoch:` families) while retaining E1, `f1`, and simple fixed-window bytes unchanged.
 * Any change requires:
 
   * version bump

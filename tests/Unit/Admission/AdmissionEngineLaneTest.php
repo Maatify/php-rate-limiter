@@ -73,7 +73,7 @@ final class AdmissionEngineLaneTest extends TestCase
             'expired' => $lab->mint('acct-1', 'inst-1', lifetime: 1),
             'stale-epoch' => $lab->mint('acct-1', 'inst-1', epoch: 0),
             'tampered' => substr($lab->mint('acct-1', 'inst-1'), 0, -2) . 'xx',
-            'foreign-key' => $lab->mint('acct-1', 'inst-1', codec: new AdmissionCredentialCodec('another-binding-key')),
+            'foreign-key' => $lab->mint('acct-1', 'inst-1', codec: new AdmissionCredentialCodec('another-binding-key', EngineLab::ENV, EngineLab::TRUST_DOMAIN, EngineLab::STATE_SECRET)),
             default => null,
         };
         if ($case === 'expired') {

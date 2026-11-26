@@ -33,12 +33,22 @@ final class AdmissionStubStore extends FullCapabilityInMemoryStore implements
         throw new \LogicException('No admission store operation exists in 5-b1.');
     }
 
-    public function readBindingEpoch(string $key, ?string $previousKey): int
+    public function readAdmissionFence(string $key, ?string $previousKey): int
     {
         throw new \LogicException('No admission store operation exists in 5-b1.');
     }
 
-    public function bumpBindingEpoch(string $key, ?string $previousKey): int
+    public function bumpAdmissionFence(string $key, ?string $previousKey): int
+    {
+        throw new \LogicException('No admission store operation exists in 5-b1.');
+    }
+
+    public function readBindingEpoch(string $key): int
+    {
+        throw new \LogicException('No admission store operation exists in 5-b1.');
+    }
+
+    public function bumpBindingEpoch(string $key): int
     {
         throw new \LogicException('No admission store operation exists in 5-b1.');
     }

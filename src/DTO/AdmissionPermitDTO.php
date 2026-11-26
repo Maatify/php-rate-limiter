@@ -23,7 +23,7 @@ final readonly class AdmissionPermitDTO
         public int $deadlineAt,
         public int $graceSeconds,
     ) {
-        if (trim($id) === '' || trim($lane) === '' || trim($subject) === '' || trim($operation) === '') {
+        if (trim($id, " \t\n\r\v\f") === '' || trim($lane, " \t\n\r\v\f") === '' || trim($subject, " \t\n\r\v\f") === '' || trim($operation, " \t\n\r\v\f") === '') {
             throw new RateLimiterException('Admission permit id, lane, subject and operation must not be empty.');
         }
         if ($deadlineAt < 0 || $graceSeconds < 0) {

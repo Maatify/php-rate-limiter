@@ -19,62 +19,74 @@ use PHPUnit\Framework\TestCase;
 final class AdmissionCredentialCodecTest extends TestCase
 {
     private const NOW = 1_000_000;
+    private const ENV = 'prod';
+    private const DOMAIN = 'auth-authority';
+    private const STATE_SECRET = 'codec-test-state-secret-32-bytes';
+
+    private function codec(string $bindingKey = 'binding-key', ?string $previousBindingKey = null): AdmissionCredentialCodec
+    {
+        return new AdmissionCredentialCodec($bindingKey, self::ENV, self::DOMAIN, self::STATE_SECRET, $previousBindingKey);
+    }
 
     public function testUntouchedCredentialIsValidAndCarriesItsClaims(): void
     {
-        $codec = new AdmissionCredentialCodec('binding-key');
-        $result = $codec->verify($codec->encode($this->claims()), 'acct-1', 'login', 'inst-1', self::NOW, 4);
+        $codec = $this->codec();
+        $result = $codec->verify($codec->encode($this->claims()), 'acct-1', 'acct-1', 'login', 'inst-1', self::NOW, 4);
 
         self::assertSame(AdmissionCredentialVerdictEnum::VALID, $result->verdict);
         self::assertTrue($result->isValid());
         self::assertNotNull($result->claims);
+        self::assertSame('acct-1', $result->claims->account);
+        self::assertSame('acct-1', $result->claims->subject);
         self::assertSame('jti-1', $result->claims->jti);
         self::assertSame(['login', 'reauth'], $result->claims->budgetGroups);
         self::assertSame(self::NOW - 10, $result->claims->boundAt);
         self::assertNotNull($result->claims->keyId);
     }
 
-    /** @return iterable<string, array{AdmissionCredentialVerdictEnum, string, string, string, int, int}> */
+    /** @return iterable<string, array{AdmissionCredentialVerdictEnum, string, string, string, string, int, int}> */
     public static function mismatchProvider(): iterable
     {
-        yield 'wrong subject' => [AdmissionCredentialVerdictEnum::WRONG_SUBJECT, 'acct-2', 'login', 'inst-1', self::NOW, 4];
-        yield 'wrong budget group' => [AdmissionCredentialVerdictEnum::WRONG_BUDGET_GROUP, 'acct-1', 'otp', 'inst-1', self::NOW, 4];
-        yield 'wrong instance' => [AdmissionCredentialVerdictEnum::WRONG_INSTANCE, 'acct-1', 'login', 'inst-2', self::NOW, 4];
-        yield 'expired at exp' => [AdmissionCredentialVerdictEnum::EXPIRED, 'acct-1', 'login', 'inst-1', self::NOW + 100, 4];
-        yield 'expired after exp' => [AdmissionCredentialVerdictEnum::EXPIRED, 'acct-1', 'login', 'inst-1', self::NOW + 101, 4];
-        yield 'old epoch (the account epoch moved on)' => [AdmissionCredentialVerdictEnum::STALE_EPOCH, 'acct-1', 'login', 'inst-1', self::NOW, 5];
-        yield 'epoch behind the credential' => [AdmissionCredentialVerdictEnum::STALE_EPOCH, 'acct-1', 'login', 'inst-1', self::NOW, 3];
+        yield 'wrong account' => [AdmissionCredentialVerdictEnum::WRONG_ACCOUNT, 'acct-2', 'acct-1', 'login', 'inst-1', self::NOW, 4];
+        yield 'wrong subject' => [AdmissionCredentialVerdictEnum::WRONG_SUBJECT, 'acct-1', 'acct-2', 'login', 'inst-1', self::NOW, 4];
+        yield 'wrong budget group' => [AdmissionCredentialVerdictEnum::WRONG_BUDGET_GROUP, 'acct-1', 'acct-1', 'otp', 'inst-1', self::NOW, 4];
+        yield 'wrong instance' => [AdmissionCredentialVerdictEnum::WRONG_INSTANCE, 'acct-1', 'acct-1', 'login', 'inst-2', self::NOW, 4];
+        yield 'expired at exp' => [AdmissionCredentialVerdictEnum::EXPIRED, 'acct-1', 'acct-1', 'login', 'inst-1', self::NOW + 100, 4];
+        yield 'expired after exp' => [AdmissionCredentialVerdictEnum::EXPIRED, 'acct-1', 'acct-1', 'login', 'inst-1', self::NOW + 101, 4];
+        yield 'old epoch (the account epoch moved on)' => [AdmissionCredentialVerdictEnum::STALE_EPOCH, 'acct-1', 'acct-1', 'login', 'inst-1', self::NOW, 5];
+        yield 'epoch behind the credential' => [AdmissionCredentialVerdictEnum::STALE_EPOCH, 'acct-1', 'acct-1', 'login', 'inst-1', self::NOW, 3];
     }
 
     #[DataProvider('mismatchProvider')]
     public function testEveryMismatchIsRejectedWithItsOwnVerdict(
         AdmissionCredentialVerdictEnum $expected,
+        string $account,
         string $subject,
         string $group,
         string $instance,
         int $now,
         int $epoch,
     ): void {
-        $codec = new AdmissionCredentialCodec('binding-key');
+        $codec = $this->codec();
         $token = $codec->encode($this->claims());
 
-        self::assertSame($expected, $codec->verify($token, $subject, $group, $instance, $now, $epoch)->verdict);
-        self::assertNull($codec->verify($token, $subject, $group, $instance, $now, $epoch)->claims);
+        self::assertSame($expected, $codec->verify($token, $account, $subject, $group, $instance, $now, $epoch)->verdict);
+        self::assertNull($codec->verify($token, $account, $subject, $group, $instance, $now, $epoch)->claims);
         // detector: the same token with the matching arguments is valid
-        self::assertTrue($codec->verify($token, 'acct-1', 'login', 'inst-1', self::NOW, 4)->isValid());
+        self::assertTrue($codec->verify($token, 'acct-1', 'acct-1', 'login', 'inst-1', self::NOW, 4)->isValid());
     }
 
     public function testLastValidSecondIsAccepted(): void
     {
-        $codec = new AdmissionCredentialCodec('binding-key');
+        $codec = $this->codec();
 
-        self::assertTrue($codec->verify($codec->encode($this->claims()), 'acct-1', 'login', 'inst-1', self::NOW + 99, 4)->isValid());
+        self::assertTrue($codec->verify($codec->encode($this->claims()), 'acct-1', 'acct-1', 'login', 'inst-1', self::NOW + 99, 4)->isValid());
     }
 
     public function testTamperedPayloadIsRejectedAsInvalidSignature(): void
     {
-        $codec = new AdmissionCredentialCodec('binding-key');
-        $other = $codec->encode($this->claims(subject: 'acct-9'));
+        $codec = $this->codec();
+        $other = $codec->encode($this->claims(account: 'acct-9', subject: 'acct-9'));
         [$otherPayload] = explode('.', $other);
         [, $mac] = explode('.', $codec->encode($this->claims()));
 
@@ -82,55 +94,55 @@ final class AdmissionCredentialCodecTest extends TestCase
 
         self::assertSame(
             AdmissionCredentialVerdictEnum::INVALID_SIGNATURE,
-            $codec->verify($forged, 'acct-9', 'login', 'inst-1', self::NOW, 4)->verdict,
+            $codec->verify($forged, 'acct-9', 'acct-9', 'login', 'inst-1', self::NOW, 4)->verdict,
         );
     }
 
     public function testTamperedSignatureIsRejected(): void
     {
-        $codec = new AdmissionCredentialCodec('binding-key');
+        $codec = $this->codec();
         $token = $codec->encode($this->claims());
         $flipped = substr($token, 0, -1) . (str_ends_with($token, 'A') ? 'B' : 'A');
 
         self::assertSame(
             AdmissionCredentialVerdictEnum::INVALID_SIGNATURE,
-            $codec->verify($flipped, 'acct-1', 'login', 'inst-1', self::NOW, 4)->verdict,
+            $codec->verify($flipped, 'acct-1', 'acct-1', 'login', 'inst-1', self::NOW, 4)->verdict,
         );
     }
 
     public function testCredentialSignedWithAnotherKeyIsRejected(): void
     {
-        $token = (new AdmissionCredentialCodec('someone-elses-key'))->encode($this->claims());
+        $token = $this->codec('someone-elses-key')->encode($this->claims());
 
         self::assertSame(
             AdmissionCredentialVerdictEnum::INVALID_SIGNATURE,
-            (new AdmissionCredentialCodec('binding-key'))->verify($token, 'acct-1', 'login', 'inst-1', self::NOW, 4)->verdict,
+            $this->codec('binding-key')->verify($token, 'acct-1', 'acct-1', 'login', 'inst-1', self::NOW, 4)->verdict,
         );
     }
 
     public function testPreviousBindingKeyStillVerifiesAndTheOneBeforeItDoesNot(): void
     {
-        $oldToken = (new AdmissionCredentialCodec('key-1'))->encode($this->claims());
+        $oldToken = $this->codec('key-1')->encode($this->claims());
 
-        $afterOneRotation = new AdmissionCredentialCodec('key-2', 'key-1');
-        $afterTwoRotations = new AdmissionCredentialCodec('key-3', 'key-2');
+        $afterOneRotation = $this->codec('key-2', 'key-1');
+        $afterTwoRotations = $this->codec('key-3', 'key-2');
 
-        self::assertTrue($afterOneRotation->verify($oldToken, 'acct-1', 'login', 'inst-1', self::NOW, 4)->isValid());
+        self::assertTrue($afterOneRotation->verify($oldToken, 'acct-1', 'acct-1', 'login', 'inst-1', self::NOW, 4)->isValid());
         self::assertSame(
             AdmissionCredentialVerdictEnum::INVALID_SIGNATURE,
-            $afterTwoRotations->verify($oldToken, 'acct-1', 'login', 'inst-1', self::NOW, 4)->verdict,
+            $afterTwoRotations->verify($oldToken, 'acct-1', 'acct-1', 'login', 'inst-1', self::NOW, 4)->verdict,
         );
     }
 
     public function testEncodingAlwaysUsesTheCurrentKeyAndStampsItsKeyId(): void
     {
-        $rotated = new AdmissionCredentialCodec('key-2', 'key-1');
+        $rotated = $this->codec('key-2', 'key-1');
         $token = $rotated->encode($this->claims());
 
-        self::assertTrue((new AdmissionCredentialCodec('key-2'))->verify($token, 'acct-1', 'login', 'inst-1', self::NOW, 4)->isValid());
+        self::assertTrue($this->codec('key-2')->verify($token, 'acct-1', 'acct-1', 'login', 'inst-1', self::NOW, 4)->isValid());
         self::assertSame(
             AdmissionCredentialVerdictEnum::INVALID_SIGNATURE,
-            (new AdmissionCredentialCodec('key-1'))->verify($token, 'acct-1', 'login', 'inst-1', self::NOW, 4)->verdict,
+            $this->codec('key-1')->verify($token, 'acct-1', 'acct-1', 'login', 'inst-1', self::NOW, 4)->verdict,
         );
     }
 
@@ -148,17 +160,17 @@ final class AdmissionCredentialCodecTest extends TestCase
     #[DataProvider('malformedProvider')]
     public function testMalformedInputIsAVerdictNeverAnException(string $token): void
     {
-        $codec = new AdmissionCredentialCodec('binding-key');
+        $codec = $this->codec();
 
         self::assertSame(
             AdmissionCredentialVerdictEnum::MALFORMED,
-            $codec->verify($token, 'acct-1', 'login', 'inst-1', self::NOW, 4)->verdict,
+            $codec->verify($token, 'acct-1', 'acct-1', 'login', 'inst-1', self::NOW, 4)->verdict,
         );
     }
 
     public function testSignedPayloadWithUnexpectedShapeIsMalformed(): void
     {
-        $codec = new AdmissionCredentialCodec('binding-key');
+        $codec = $this->codec();
         $token = $codec->encode($this->claims());
         $payload = json_decode((string) base64_decode(strtr(explode('.', $token)[0], '-_', '+/'), true), true, 512, JSON_THROW_ON_ERROR);
         self::assertIsArray($payload);
@@ -167,7 +179,7 @@ final class AdmissionCredentialCodecTest extends TestCase
 
         // Re-signed through the codec's own primitive is impossible from outside: an unsigned or foreign-signed
         // payload with an unexpected key never reaches claims.
-        $result = $codec->verify($encoded . '.' . explode('.', $token)[1], 'acct-1', 'login', 'inst-1', self::NOW, 4);
+        $result = $codec->verify($encoded . '.' . explode('.', $token)[1], 'acct-1', 'acct-1', 'login', 'inst-1', self::NOW, 4);
 
         self::assertFalse($result->isValid());
         self::assertNull($result->claims);
@@ -177,32 +189,32 @@ final class AdmissionCredentialCodecTest extends TestCase
     {
         $this->expectException(RateLimiterException::class);
 
-        new AdmissionCredentialDTO('', ['login'], 'inst-1', 'jti-1', self::NOW + 100, self::NOW, 1);
+        new AdmissionCredentialDTO('', 'acct-1', ['login'], 'inst-1', 'jti-1', self::NOW + 100, self::NOW, 1);
     }
 
     public function testClaimsRejectAnEmptyBudgetGroupList(): void
     {
         $this->expectException(RateLimiterException::class);
 
-        new AdmissionCredentialDTO('acct-1', [], 'inst-1', 'jti-1', self::NOW + 100, self::NOW, 1);
+        new AdmissionCredentialDTO('acct-1', 'acct-1', [], 'inst-1', 'jti-1', self::NOW + 100, self::NOW, 1);
     }
 
     public function testCodecRejectsABlankKey(): void
     {
         $this->expectException(RateLimiterException::class);
 
-        new AdmissionCredentialCodec('   ');
+        $this->codec('   ');
     }
 
     public function testCodecRejectsABlankPreviousKey(): void
     {
         $this->expectException(RateLimiterException::class);
 
-        new AdmissionCredentialCodec('key', ' ');
+        $this->codec('key', ' ');
     }
 
-    private function claims(string $subject = 'acct-1'): AdmissionCredentialDTO
+    private function claims(string $account = 'acct-1', string $subject = 'acct-1'): AdmissionCredentialDTO
     {
-        return new AdmissionCredentialDTO($subject, ['login', 'reauth'], 'inst-1', 'jti-1', self::NOW + 100, self::NOW - 10, 4);
+        return new AdmissionCredentialDTO($account, $subject, ['login', 'reauth'], 'inst-1', 'jti-1', self::NOW + 100, self::NOW - 10, 4);
     }
 }

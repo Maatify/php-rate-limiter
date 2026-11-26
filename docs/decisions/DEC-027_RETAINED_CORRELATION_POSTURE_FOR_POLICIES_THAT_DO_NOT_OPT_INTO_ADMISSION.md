@@ -10,7 +10,7 @@ decision.
 
 ## Status
 
-`ACTIVE` — on the Owner's decisions of 2026-10-20 (OD-6 (a) and OD-9 (a)), delivered atomically in PR #150 with DEC-022 becoming
+`SUPERSEDED` by [DEC-050](DEC-050_RETAINED_CORRELATION_POSTURE_AND_CLOSED_FENCE_PERMIT_SETTLEMENT.md) on 2026-11-26 (G3 `D7`, [#284 comment 7185799202](https://github.com/Maatify/php-rate-limiter/issues/284#issuecomment-7185799202)). Historically `ACTIVE` — on the Owner's decisions of 2026-10-20 (OD-6 (a) and OD-9 (a)), delivered atomically in PR #150 with DEC-022 becoming
 `ACTIVE` and DEC-026.
 
 ## Date
@@ -211,4 +211,4 @@ scope (as DEC-019 names them); the interim-posture notes of `DECISION_MATRIX.md`
 
 ## Superseded By
 
-None
+`DEC-050`

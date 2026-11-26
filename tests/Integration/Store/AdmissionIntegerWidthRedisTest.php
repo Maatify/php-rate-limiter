@@ -79,13 +79,13 @@ final class AdmissionIntegerWidthRedisTest extends AdmissionRedisGateTestCase
     public function testTheSharedConfigurationHoldsTheDecimalMaximumOnEveryWidth(): void
     {
         $now = S::NOW;
-        $config = new AdmissionSharedConfigDTO('cfg-width', null, self::MAX_DECIMAL);
+        $config = new AdmissionSharedConfigDTO('cfg-width', self::MAX_DECIMAL);
         $request = new \Maatify\RateLimiter\DTO\AdmissionReservationRequestDTO(S::CLASS_NAME, [S::counter('source_capacity', 'cfg-src', 5, 1200, null, 'm1')], null, $config);
         self::assertTrue($this->store->reserveAdmission($request, $now)->admitted);
         $cfgKey = $this->keys->configKey(S::CLASS_NAME, 'cfg-width');
         self::assertSame(self::MAX_DECIMAL, ReplyValue::text($this->raw('GET', $cfgKey)));
 
-        $other = new \Maatify\RateLimiter\DTO\AdmissionReservationRequestDTO(S::CLASS_NAME, [S::counter('source_capacity', 'cfg-src', 5, 1200, null, 'm2')], null, new AdmissionSharedConfigDTO('cfg-width', null, '9007199254740990'));
+        $other = new \Maatify\RateLimiter\DTO\AdmissionReservationRequestDTO(S::CLASS_NAME, [S::counter('source_capacity', 'cfg-src', 5, 1200, null, 'm2')], null, new AdmissionSharedConfigDTO('cfg-width', '9007199254740990'));
         $this->expectException(AdmissionConfigurationException::class);
         $this->store->reserveAdmission($other, $now);
     }

@@ -126,6 +126,7 @@ final class StudyHost
     {
         return $this->lab->codec->encode(new AdmissionCredentialDTO(
             $token['account'],
+            $token['account'],
             [EngineLab::GROUP],
             $token['instance'],
             $token['jti'],

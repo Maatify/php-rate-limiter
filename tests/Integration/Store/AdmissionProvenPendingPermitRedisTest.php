@@ -213,7 +213,15 @@ final class AdmissionProvenPendingPermitRedisTest extends AdmissionRedisGateTest
 
     private function rotatedRuntime(int $limit): CompositeRateLimiterRuntimeInterface
     {
-        $config = new RateLimiterConfig('redis-gate-key-2', 'redis-gate-fingerprint', 'test', 'redis-gate-key', bindingKeySecret: PublicRedisAdmissionFixture::BINDING_SECRET);
+        $config = new RateLimiterConfig(
+            'redis-gate-key-2',
+            'redis-gate-fingerprint',
+            PublicRedisAdmissionFixture::ENV,
+            'redis-gate-key',
+            bindingKeySecret: PublicRedisAdmissionFixture::BINDING_SECRET,
+            admissionTrustDomain: PublicRedisAdmissionFixture::TRUST_DOMAIN,
+            admissionStateSecret: PublicRedisAdmissionFixture::STATE_SECRET,
+        );
 
         return PublicRedisAdmissionFixture::build($this->executor, self::NAMESPACE, self::NOW, 500, $limit, $this->clock, $config);
     }
@@ -227,8 +235,8 @@ final class AdmissionProvenPendingPermitRedisTest extends AdmissionRedisGateTest
     private function context(string $account, string $ip): RateLimitContextDTO
     {
         $now = self::NOW;
-        $credential = (new AdmissionCredentialCodec(PublicRedisAdmissionFixture::BINDING_SECRET))->encode(
-            new AdmissionCredentialDTO($account, ['login'], 'inst-' . $account, 'jti-' . $account, $now + 3600, $now, 0),
+        $credential = PublicRedisAdmissionFixture::codec()->encode(
+            new AdmissionCredentialDTO($account, $account, ['login'], 'inst-' . $account, 'jti-' . $account, $now + 3600, $now, 0),
         );
 
         return new RateLimitContextDTO(ip: $ip, ua: 'redis-gate', accountId: $account, clientInstanceId: 'inst-' . $account, admissionCredential: $credential);
@@ -263,7 +271,7 @@ final class AdmissionProvenPendingPermitRedisTest extends AdmissionRedisGateTest
             }
             $ids = array_values($members);
             for ($i = 0; $i < count($ids); $i += 2) {
-                if (is_string($ids[$i]) && preg_match('/^[0-9a-f]{32}$/', $ids[$i]) === 1 && ReplyValue::integer($ids[$i + 1]) > $this->clock->now()->getTimestamp()) {
+                if (is_string($ids[$i]) && preg_match('/^a1\.permit\.[0-9a-f]{64}$/', $ids[$i]) === 1 && ReplyValue::integer($ids[$i + 1]) > $this->clock->now()->getTimestamp()) {
                     $live++;
                 }
             }

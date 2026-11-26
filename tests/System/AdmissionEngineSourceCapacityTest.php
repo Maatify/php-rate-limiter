@@ -190,7 +190,7 @@ final class AdmissionEngineSourceCapacityTest extends TestCase
     {
         $runtime = ServiceMutant::load('AdmissionRuntime', [], [[
             "        \$scopes = [\n            \$this->counter('proof_account_window'",
-            "        \$scopes = [\n            \$this->counter('source_capacity', \$group, 'src', SourcePrefix::of(\$context->ip), \$b->sourceCapacity, \$b->windowSeconds, \$permitId),\n            \$this->counter('proof_account_window'",
+            "        \$scopes = [\n            \$this->counter('source_capacity', \$group, 'src', SourcePrefix::of(\$context->ip), \$b->sourceCapacity, \$b->windowSeconds, \$recordId),\n            \$this->counter('proof_account_window'",
         ]]);
 
         self::assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, self::laneScope($runtime)['p'], 'DETECTOR');
@@ -231,8 +231,8 @@ final class AdmissionEngineSourceCapacityTest extends TestCase
     public function testDetectorSc5AUaKeyedSourceScope(): void
     {
         $runtime = ServiceMutant::load('AdmissionRuntime', [], [[
-            "\$scopes = [\$this->counter('source_capacity', \$group, 'src', \$source,",
-            "\$scopes = [\$this->counter('source_capacity', \$group, 'src', \$source . \$context->ua,",
+            "\$scopes = [\$this->counter('source_capacity', \$group, AdmissionScopePurpose::SRC, \$source,",
+            "\$scopes = [\$this->counter('source_capacity', \$group, AdmissionScopePurpose::SRC, \$source . \$context->ua,",
         ]]);
 
         self::assertGreaterThan(24, self::rotating($runtime), 'DETECTOR');

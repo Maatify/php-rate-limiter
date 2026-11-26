@@ -297,19 +297,34 @@ abstract class AdmissionStoreContractTestCase extends TestCase
         $store->reserveAdmission(S::request(S::counter('src', 'c:no-member', 5)), self::NOW);
     }
 
-    public function testBindingEpochReadsCurrentElsePreviousElseZeroAndBumpWritesCurrentOnly(): void
+    public function testAdmissionFenceReadsCurrentElsePreviousElseZeroAndBumpWritesCurrentOnly(): void
     {
         $store = $this->newStore();
-        self::assertSame(0, $store->readBindingEpoch('e:acct', null));
-        self::assertSame(1, $store->bumpBindingEpoch('e:acct', null));
-        self::assertSame(1, $store->readBindingEpoch('e:acct', null));
-        self::assertSame(2, $store->bumpBindingEpoch('e:acct', null));
+        self::assertSame(0, $store->readAdmissionFence('f:group', null));
+        self::assertSame(1, $store->bumpAdmissionFence('f:group', null));
+        self::assertSame(1, $store->readAdmissionFence('f:group', null));
+        self::assertSame(2, $store->bumpAdmissionFence('f:group', null));
 
-        // After a rotation the new current key is absent: the read falls back to the previous one.
-        self::assertSame(2, $store->readBindingEpoch('e:new', 'e:acct'));
-        self::assertSame(3, $store->bumpBindingEpoch('e:new', 'e:acct'));
-        self::assertSame(3, $store->readBindingEpoch('e:new', 'e:acct'));
+        // After an outer rotation the new current fence key is absent: the read falls back to the previous one.
+        self::assertSame(2, $store->readAdmissionFence('f:new', 'f:group'));
+        self::assertSame(3, $store->bumpAdmissionFence('f:new', 'f:group'));
+        self::assertSame(3, $store->readAdmissionFence('f:new', 'f:group'));
         // The previous key is never written.
-        self::assertSame(2, $store->readBindingEpoch('e:acct', null));
+        self::assertSame(2, $store->readAdmissionFence('f:group', null));
+    }
+
+    public function testBindingEpochIsSingleDurableCounterSeparateFromFenceNamespace(): void
+    {
+        $store = $this->newStore();
+        self::assertSame(0, $store->readBindingEpoch('same-key'));
+        self::assertSame(1, $store->bumpBindingEpoch('same-key'));
+        self::assertSame(1, $store->readBindingEpoch('same-key'));
+        self::assertSame(2, $store->bumpBindingEpoch('same-key'));
+        self::assertSame(2, $store->readBindingEpoch('same-key'));
+
+        // A2 separation: bumping the epoch at 'same-key' does not affect the fence at 'same-key' and vice versa.
+        self::assertSame(0, $store->readAdmissionFence('same-key', null));
+        self::assertSame(1, $store->bumpAdmissionFence('same-key', null));
+        self::assertSame(2, $store->readBindingEpoch('same-key'));
     }
 }

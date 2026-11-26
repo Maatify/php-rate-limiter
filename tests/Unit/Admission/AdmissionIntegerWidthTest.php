@@ -122,7 +122,16 @@ final class AdmissionIntegerWidthTest extends TestCase
     {
         // A deadline equal to a native integer maximum: `now + D` cannot be a native integer on either width.
         $budgets = new AdmissionBudgetsDTO(PHP_INT_MAX, 24, 4, 4, 1800, 10, 60, 6, 30, 10, 4, PHP_INT_MAX, 600);
-        $runtime = new AdmissionRuntime(new AdmissionStubStore(new FixedClock()), new AdmissionCredentialCodec('binding-secret'), $budgets, new FixedClock('@1767269700'), 'key-secret', 'prod');
+        $runtime = new AdmissionRuntime(
+            new AdmissionStubStore(new FixedClock()),
+            new AdmissionCredentialCodec('binding-secret', 'prod', 'width-authority', 'width-test-state-secret-32-bytes'),
+            $budgets,
+            new FixedClock('@1767269700'),
+            'key-secret',
+            'prod',
+            'width-authority',
+            'width-test-state-secret-32-bytes',
+        );
         $context = new RateLimitContextDTO('198.51.100.7', 'ua', 'acct');
         $allowed = new RateLimitResultDTO(RateLimitResultDTO::DECISION_ALLOW, 0, 0, 'NORMAL');
 

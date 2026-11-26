@@ -35,14 +35,24 @@ final class MergedOperationsStore implements AdmissionPermitStoreInterface, Atom
         $this->ops->applyOutcome($outcome, $now);
     }
 
-    public function readBindingEpoch(string $key, ?string $previousKey): int
+    public function readAdmissionFence(string $key, ?string $previousKey): int
     {
         return $this->ops->readEpoch($key, $previousKey);
     }
 
-    public function bumpBindingEpoch(string $key, ?string $previousKey): int
+    public function bumpAdmissionFence(string $key, ?string $previousKey): int
     {
         return $this->ops->bumpEpoch($key, $previousKey);
+    }
+
+    public function readBindingEpoch(string $key): int
+    {
+        return $this->ops->readEpoch($key, null);
+    }
+
+    public function bumpBindingEpoch(string $key): int
+    {
+        return $this->ops->bumpEpoch($key, null);
     }
 
     public function claimAdmissionPermit(

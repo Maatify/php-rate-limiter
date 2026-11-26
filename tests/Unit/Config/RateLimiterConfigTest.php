@@ -72,12 +72,62 @@ final class RateLimiterConfigTest extends TestCase
 
         $parameters = $reflection->getConstructor()?->getParameters();
         self::assertNotNull($parameters);
-        self::assertCount(7, $parameters);
+        self::assertCount(9, $parameters);
         self::assertNotEmpty($parameters[0]->getAttributes(\SensitiveParameter::class));
         self::assertNotEmpty($parameters[1]->getAttributes(\SensitiveParameter::class));
         self::assertNotEmpty($parameters[3]->getAttributes(\SensitiveParameter::class));
         self::assertNotEmpty($parameters[4]->getAttributes(\SensitiveParameter::class));
         self::assertNotEmpty($parameters[5]->getAttributes(\SensitiveParameter::class));
         self::assertNotEmpty($parameters[6]->getAttributes(\SensitiveParameter::class));
+        self::assertSame([], $parameters[7]->getAttributes(\SensitiveParameter::class));
+        self::assertNotEmpty($parameters[8]->getAttributes(\SensitiveParameter::class));
+    }
+
+    #[DataProvider('invalidAdmissionConfigurationProvider')]
+    public function testInvalidAdmissionConfigurationIsRejected(
+        ?string $trustDomain,
+        ?string $stateSecret,
+    ): void {
+        $this->expectException(RateLimiterException::class);
+
+        new RateLimiterConfig(
+            'key-secret',
+            'fingerprint-secret',
+            'prod',
+            admissionTrustDomain: $trustDomain,
+            admissionStateSecret: $stateSecret,
+        );
+    }
+
+    /**
+     * @return iterable<string, array{?string, ?string}>
+     */
+    public static function invalidAdmissionConfigurationProvider(): iterable
+    {
+        $validSecret = str_repeat('s', RateLimiterConfig::MIN_ADMISSION_STATE_SECRET_BYTES);
+        yield 'trust domain without state secret' => ['auth.example.test', null];
+        yield 'state secret without trust domain' => [null, $validSecret];
+        yield 'empty trust domain' => ['', $validSecret];
+        yield 'whitespace trust domain' => [" \t\n ", $validSecret];
+        yield 'empty state secret' => ['auth.example.test', ''];
+        yield 'whitespace state secret' => ['auth.example.test', str_repeat(' ', 32)];
+        yield 'short state secret (31 bytes)' => ['auth.example.test', str_repeat('a', 31)];
+        yield 'multibyte 31 bytes rejected' => ['auth.example.test', str_repeat('a', 29) . "\xC3\xA9"];
+    }
+
+    public function testAdmissionTrustDomainAndStateSecretArePreservedWhenValid(): void
+    {
+        $stateSecret = str_repeat("\x00x", 16); // 32 bytes including NUL
+        $config = new RateLimiterConfig(
+            'key-secret',
+            'fingerprint-secret',
+            'prod',
+            bindingKeySecret: 'binding-secret',
+            admissionTrustDomain: 'auth.example.test',
+            admissionStateSecret: $stateSecret,
+        );
+
+        self::assertSame('auth.example.test', $config->admissionTrustDomain());
+        self::assertSame($stateSecret, $config->admissionStateSecret());
     }
 }

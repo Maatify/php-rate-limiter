@@ -16,7 +16,7 @@ final readonly class AdmissionReservationRequestDTO
         public ?AdmissionPermitDTO $permit = null,
         public ?AdmissionSharedConfigDTO $sharedConfig = null,
     ) {
-        if (trim($verifierClass) === '') {
+        if (trim($verifierClass, " \t\n\r\v\f") === '') {
             throw new RateLimiterException('Admission verifier class must not be empty.');
         }
         if ($scopes === []) {

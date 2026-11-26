@@ -3077,14 +3077,24 @@ LUA;
         $this->admission()->rebindConfig($budgetGroup, $config);
     }
 
-    public function readBindingEpoch(string $key, ?string $previousKey): int
+    public function readAdmissionFence(string $key, ?string $previousKey): int
     {
-        return $this->admission()->readEpoch($key, $previousKey);
+        return $this->admission()->readFence($key, $previousKey);
     }
 
-    public function bumpBindingEpoch(string $key, ?string $previousKey): int
+    public function bumpAdmissionFence(string $key, ?string $previousKey): int
     {
-        return $this->admission()->bumpEpoch($key, $previousKey);
+        return $this->admission()->bumpFence($key, $previousKey);
+    }
+
+    public function readBindingEpoch(string $key): int
+    {
+        return $this->admission()->readEpoch($key);
+    }
+
+    public function bumpBindingEpoch(string $key): int
+    {
+        return $this->admission()->bumpEpoch($key);
     }
 
     public function claimAdmissionPermit(

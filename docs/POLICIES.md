@@ -482,13 +482,13 @@ Correlation rules are mandatory and enforced per `DECISION_MATRIX.md`, including
 * Near-threshold WATCH flags (anti N-1 gaming)
 * Confidence constraints for DeviceFP dilution blocks
 
-For every policy that does not opt into the admission reservation (§7.2), and for an opted policy
-while its fleet fence is closed, these rules remain the shipped behavior under the Owner-approved
-interim Security-first posture, recorded in
-[DEC-027](decisions/DEC-027_RETAINED_CORRELATION_POSTURE_FOR_POLICIES_THAT_DO_NOT_OPT_INTO_ADMISSION.md) (the successor of DEC-019).
+For every policy that does not opt into the admission reservation (§7.2), and for `checkOnly` and
+permit-less outcomes of an opted policy while its fleet fence is closed, these rules remain the shipped
+behavior under the Owner-approved interim Security-first posture, recorded in
+[DEC-050](decisions/DEC-050_RETAINED_CORRELATION_POSTURE_AND_CLOSED_FENCE_PERMIT_SETTLEMENT.md) (superseding DEC-027, while explicit permit-bearing outcomes of a healthy opted policy still settle through permit verification/claim).
 That posture is not a fix: issues #97, #100, and #106 remain OPEN for those policies, and
 shared-NAT false positives are unresolved. No rule or threshold changes. A policy that opts in
-follows `DECISION_MATRIX.md` §12 and DEC-022.
+follows `DECISION_MATRIX.md` §12, DEC-022, and DEC-048.
 
 ---
 
@@ -598,7 +598,8 @@ input sets a budget. No default preset declares it: `login_protection`, `otp_pro
 * **Custom policies.** Validation rejects, with a typed exception at registration: the capability
   without the interface (and the interface without the capability), an empty budget group,
   `API_OVERUSE` combined, `FAIL_OPEN`, a missing `BudgetConfig`, missing `ACCOUNT` / `IP_PREFIX`
-  fallback dimensions, a store without the admission capability, a missing binding key, and an
+  fallback dimensions, a store without the admission capability, a missing `bindingKeySecret`,
+  missing `admissionTrustDomain` or `admissionStateSecret` (≥ 32 bytes, `DEC-048`), and an
   engine with no admission runtime.
 * **Owner safety (replaces the unproven-owner caveat of §1 for opted policies).** A request is
   proven only through a verified account-bound credential; every other request, including an

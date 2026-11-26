@@ -67,18 +67,32 @@ final class FaultInjectingAdmissionStore implements AtomicAdmissionPermitStoreIn
         $this->outcomes[] = $outcome;
     }
 
-    public function readBindingEpoch(string $key, ?string $previousKey): int
+    public function readAdmissionFence(string $key, ?string $previousKey): int
+    {
+        $this->enter('readFence');
+
+        return $this->inner->readAdmissionFence($key, $previousKey);
+    }
+
+    public function bumpAdmissionFence(string $key, ?string $previousKey): int
+    {
+        $this->enter('bumpFence');
+
+        return $this->inner->bumpAdmissionFence($key, $previousKey);
+    }
+
+    public function readBindingEpoch(string $key): int
     {
         $this->enter('readEpoch');
 
-        return $this->inner->readBindingEpoch($key, $previousKey);
+        return $this->inner->readBindingEpoch($key);
     }
 
-    public function bumpBindingEpoch(string $key, ?string $previousKey): int
+    public function bumpBindingEpoch(string $key): int
     {
         $this->enter('bumpEpoch');
 
-        return $this->inner->bumpBindingEpoch($key, $previousKey);
+        return $this->inner->bumpBindingEpoch($key);
     }
 
     public function claimAdmissionPermit(string $permitId, string $lane, string $subject, string $operation, AdmissionOutcomeKindEnum $outcome, int $now): AdmissionPermitClaimEnum

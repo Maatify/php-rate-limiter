@@ -13,6 +13,7 @@ enum AdmissionCredentialVerdictEnum: string
     case VALID = 'valid';
     case MALFORMED = 'malformed';
     case INVALID_SIGNATURE = 'invalid_signature';
+    case WRONG_ACCOUNT = 'wrong_account';
     case WRONG_SUBJECT = 'wrong_subject';
     case WRONG_BUDGET_GROUP = 'wrong_budget_group';
     case WRONG_INSTANCE = 'wrong_instance';

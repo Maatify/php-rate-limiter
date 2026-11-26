@@ -20,10 +20,12 @@ use Maatify\RateLimiter\DTO\AdmissionReservationResultDTO;
  *   `RateLimiterException`; a Host executor whose client throws on an error reply (phpredis: `RedisException`)
  *   propagates that exception unchanged, as `RedisCommandExecutorInterface` requires. It is never a
  *   `BackendFailureException` and never a fallback.
- * - `readBindingEpoch` reads the current key, else the previous key, else 0; `bumpBindingEpoch` writes the
- *   current key only and returns the new epoch.
+ * - `readAdmissionFence` reads the current fence key, else the previous fence key, else 0; `bumpAdmissionFence`
+ *   writes the current fence key only and returns the new fence value (DEC-048 D3/D4).
+ * - `readBindingEpoch` reads a single durable account binding-epoch key, else 0; `bumpBindingEpoch` atomically
+ *   increments that single key and returns the new epoch (no previous-key dependency; DEC-048 D3/D4).
  *
- * Used by the admission runtime the builder constructs for a policy that opts in (DEC-026).
+ * Used by the admission runtime the builder constructs for a policy that opts in (DEC-026, DEC-048).
  */
 interface AdmissionReservationStoreInterface extends RateLimitStoreInterface
 {
@@ -57,23 +59,41 @@ interface AdmissionReservationStoreInterface extends RateLimitStoreInterface
     public function applyAdmissionOutcome(AdmissionOutcomeDTO $outcome, int $now): void;
 
     /**
-     * The binding epoch stored for `$key`: the current key's value, else the previous key's, else 0.
+     * The fleet fence stored for `$key`: the current fence key's value, else the previous fence key's, else 0 (DEC-048 D3).
      *
-     * The epoch is a non-negative counter that only `bumpBindingEpoch()` raises. The runtime keeps the account binding
-     * epoch a credential carries, and the fleet fence of a budget group, in it. `$previousKey` is read only and is
-     * ignored when it equals `$key`. Nothing is written.
+     * Stored in a physical family completely separate from binding epochs. `$previousKey` is read only and is ignored
+     * when it equals `$key`. Nothing is written.
      *
-     * @throws \Maatify\RateLimiter\Exception\RateLimiterException when a key is blank or the stored value is malformed
+     * @throws \Maatify\RateLimiter\Exception\RateLimiterException when a key is blank, stored state is malformed, or the stored value exceeds the caller's native integer range
      */
-    public function readBindingEpoch(string $key, ?string $previousKey): int;
+    public function readAdmissionFence(string $key, ?string $previousKey): int;
 
     /**
-     * Raise the binding epoch of `$key` by one and return the new value.
+     * Raise the fleet fence of `$key` by one and return the new value (DEC-048 D3).
      *
-     * Only the current key is written. The new value is one more than the larger of the current and the previous
-     * key's epoch, so a key rotation does not restart the count and the epoch never falls back.
+     * Only the current fence key is written. The new value is one more than the larger of the current and previous
+     * fence values. Overflow of the caller's native integer range or Lua's exact range fails before any write.
      *
-     * @throws \Maatify\RateLimiter\Exception\RateLimiterException when a key is blank or the stored value is malformed
+     * @throws \Maatify\RateLimiter\Exception\RateLimiterException when a key is blank, stored state is malformed, or bumping would overflow
      */
-    public function bumpBindingEpoch(string $key, ?string $previousKey): int;
+    public function bumpAdmissionFence(string $key, ?string $previousKey): int;
+
+    /**
+     * The durable account binding epoch stored at single stable `$key`, else 0 (DEC-048 D3/D4).
+     *
+     * Stored in a physical family completely separate from fleet fences, with no previous-key fallback and no TTL.
+     * Nothing is written.
+     *
+     * @throws \Maatify\RateLimiter\Exception\RateLimiterException when `$key` is blank, stored state is malformed, or the stored value exceeds the caller's native integer range
+     */
+    public function readBindingEpoch(string $key): int;
+
+    /**
+     * Atomically raise the durable account binding epoch at `$key` by one and return the new value (DEC-048 D3/D4).
+     *
+     * Overflow of the caller's native integer range or Lua's exact range fails before any write.
+     *
+     * @throws \Maatify\RateLimiter\Exception\RateLimiterException when `$key` is blank, stored state is malformed, or bumping would overflow
+     */
+    public function bumpBindingEpoch(string $key): int;
 }

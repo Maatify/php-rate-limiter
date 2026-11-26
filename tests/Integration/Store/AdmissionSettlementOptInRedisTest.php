@@ -72,27 +72,111 @@ final class AdmissionSettlementOptInRedisTest extends AdmissionRedisGateTestCase
     }
 
     /**
-     * #185 DEC-033: the production failure set is a sorted set scored by each failure's expiry, where
-     * d6aea4d stored a set. OFF-PARITY compares it by its members (the d6aea4d content); every other key, every result and
-     * every TTL presence is compared as it is.
+     * #185 DEC-033 + #284 DEC-048: independent key-identity bijection oracle for OFF-PARITY.
+     *
+     * Maps every physical key of the frozen `d6aea4d` (`:adm:{family}:{oldSha256}`) and production `a1`
+     * (`:adm:a1:{family}:{framedSha256}`) layouts back to its immutable logical identity `(kind, verifierClass, family, opaqueKey)`
+     * using an independent preimage oracle (never calling `RedisAdmissionOperations` or `KeyPreimageFraming`).
+     * Unknown keys, duplicate logical mappings, and value swaps between keys of the same family are rejected.
      *
      * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $dump
      * @return array<string, array{type: string, value: mixed, hasTtl: bool}>
      */
-    private static function membersOfFailureSets(array $dump): array
+    private static function canonicalDump(array $dump, string $layout, bool $downgradeSliding): array
     {
+        $bijection = self::logicalKeyBijection($layout);
+        $expectedPermitPrefix = 'maatify:rate-limiter:v1:{' . hash('sha256', self::NAMESPACE) . '}:adm:'
+            . ($layout === 'new' ? 'a1:' : '')
+            . 'permit:';
+        $normalized = [];
         foreach ($dump as $key => $entry) {
-            if ($entry['type'] === 'zset' && str_contains($key, ':adm:s:') && is_array($entry['value'])) {
-                $members = array_map('strval', array_keys($entry['value']));
-                sort($members);
-                $dump[$key] = ['type' => 'set', 'value' => $members, 'hasTtl' => $entry['hasTtl']];
+            if (str_starts_with($key, $expectedPermitPrefix)) {
+                $permitHash = substr($key, strlen($expectedPermitPrefix));
+                self::assertMatchesRegularExpression('/\A[0-9a-f]{64}\z/D', $permitHash, "Malformed permit key in {$layout} dump: {$key}");
+                $logical = 'permit:' . $permitHash;
+                self::assertArrayNotHasKey($logical, $normalized, "Duplicate permit logical key {$logical}");
+                $normalized[$logical] = $entry;
+                continue;
             }
-            if ($entry['type'] === 'zset' && str_contains($key, ':adm:c:') && is_array($entry['value'])) {
-                $dump[$key] = ['type' => 'string', 'value' => (string) count($entry['value']), 'hasTtl' => $entry['hasTtl']];
+            self::assertArrayHasKey($key, $bijection, "Unexpected physical key in {$layout} dump: {$key}");
+            $logical = $bijection[$key];
+            self::assertArrayNotHasKey($logical, $normalized, "Duplicate logical key mapping {$logical}");
+
+            if ($downgradeSliding) {
+                $isSet = str_starts_with($logical, 'scope:login:s:');
+                $isCounter = str_starts_with($logical, 'scope:login:c:');
+                if ($entry['type'] === 'zset' && $isSet && is_array($entry['value'])) {
+                    $members = array_map('strval', array_keys($entry['value']));
+                    sort($members);
+                    $entry = ['type' => 'set', 'value' => $members, 'hasTtl' => $entry['hasTtl']];
+                }
+                if ($entry['type'] === 'zset' && $isCounter && is_array($entry['value'])) {
+                    $entry = ['type' => 'string', 'value' => (string) count($entry['value']), 'hasTtl' => $entry['hasTtl']];
+                }
+            }
+            $normalized[$logical] = $entry;
+        }
+        ksort($normalized);
+
+        return $normalized;
+    }
+
+    /**
+     * Independent oracle mapping every physical key in the OFF-PARITY fixture universe to its exact logical identity.
+     *
+     * @return array<string, string> physicalKey => logicalIdentity
+     */
+    private static function logicalKeyBijection(string $layout): array
+    {
+        $nsPrefix = 'maatify:rate-limiter:v1:{' . hash('sha256', self::NAMESPACE) . '}:adm:';
+        $verifier = 'login';
+        $universe = [
+            ['c', 'c:s4'],
+            ['c', 'c:parity:1'],
+            ['c', 'c:parity:2'],
+            ['c', 'c:parity:2-prev'],
+            ['d', 'd:parity'],
+            ['s', 's:exact'],
+            ['s', 's:success'],
+            ['s', 's:drop'],
+            ['s', 's:failure'],
+            ['s', 's:net'],
+            ['s', 's:d8-kept'],
+            ['s', 's:d8-cancelled'],
+            ['s', 's:due'],
+            ['s', 's:once'],
+            ['s', 's:s4'],
+            ['s', 's:parity:1'],
+            ['s', 's:parity:2'],
+            ['b', 'b:s4'],
+            ['b', 'b:parity'],
+        ];
+
+        $map = [];
+        foreach ($universe as [$family, $key]) {
+            if ($layout === 'old') {
+                $oldHash = hash('sha256', $verifier . "\0" . $key);
+                $map[$nsPrefix . $family . ':' . $oldHash] = "scope:{$verifier}:{$family}:{$key}";
+                if ($family === 's') {
+                    $map[$nsPrefix . 'p:' . $oldHash] = "pending:{$verifier}:{$key}";
+                }
+                continue;
+            }
+            $scopePreimage = 'maatify.rate-limiter.redis.adm.a1.scope.' . $family . "\0"
+                . pack('N', 2)
+                . pack('N', strlen($verifier)) . $verifier
+                . pack('N', strlen($key)) . $key;
+            $map[$nsPrefix . 'a1:' . $family . ':' . hash('sha256', $scopePreimage)] = "scope:{$verifier}:{$family}:{$key}";
+            if ($family === 's') {
+                $pendingPreimage = "maatify.rate-limiter.redis.adm.a1.pending\0"
+                    . pack('N', 2)
+                    . pack('N', strlen($verifier)) . $verifier
+                    . pack('N', strlen($key)) . $key;
+                $map[$nsPrefix . 'a1:p:' . hash('sha256', $pendingPreimage)] = "pending:{$verifier}:{$key}";
             }
         }
 
-        return $dump;
+        return $map;
     }
 
     private function production(): RedisAdmissionOperations
@@ -145,7 +229,11 @@ final class AdmissionSettlementOptInRedisTest extends AdmissionRedisGateTestCase
         };
         self::assertSame($stripRetry($mergedTrace), $stripRetry($productionTrace));
         self::assertSame($merged['result'], $production['result']);
-        self::assertSame($merged['dumps'], array_map(self::membersOfFailureSets(...), $production['dumps']), "the key dump after every step of $name");
+        self::assertSame(
+            array_map(static fn(array $d): array => self::canonicalDump($d, 'old', false), $merged['dumps']),
+            array_map(static fn(array $d): array => self::canonicalDump($d, 'new', true), $production['dumps']),
+            "the key dump after every step of $name",
+        );
     }
 
     /** @return iterable<string, array{int}> */
@@ -167,7 +255,11 @@ final class AdmissionSettlementOptInRedisTest extends AdmissionRedisGateTestCase
         self::assertCount(300, $a);
         foreach ($a as $i => $step) {
             self::assertSame($step['record'], $b[$i]['record'], "result of step $i");
-            self::assertSame($step['dump'], $b[$i]['dump'], "key dump after step $i");
+            self::assertSame(
+                self::canonicalDump($step['dump'], 'old', false),
+                self::canonicalDump($b[$i]['dump'], 'new', false),
+                "key dump after step $i",
+            );
         }
         // The sequence is not vacuous: it admits, refuses, claims (accepted, late or unknown) and meets the malformed state.
         $records = implode(' ', array_column($a, 'record'));
@@ -259,7 +351,59 @@ final class AdmissionSettlementOptInRedisTest extends AdmissionRedisGateTestCase
         $mutated = $this->recorded($mutant, $run);
 
         // By members, as OFF-PARITY compares: a raw dump differs from d6aea4d in any case (a sorted set against a set).
-        self::assertNotSame($merged['dumps'], array_map(self::membersOfFailureSets(...), $mutated['dumps']), 'DETECTOR: a store that ignores the flag diverges from d6aea4d');
+        self::assertNotSame(
+            array_map(static fn(array $d): array => self::canonicalDump($d, 'old', false), $merged['dumps']),
+            array_map(static fn(array $d): array => self::canonicalDump($d, 'new', true), $mutated['dumps']),
+            'DETECTOR: a store that ignores the flag diverges from d6aea4d',
+        );
+    }
+
+    public function testDetectorSwappingTwoKeysOfTheSameFamilyBreaksOffParity(): void
+    {
+        $bijection = self::logicalKeyBijection('new');
+        $keyA = array_search('scope:login:c:c:parity:1', $bijection, true);
+        $keyB = array_search('scope:login:c:c:parity:2', $bijection, true);
+        self::assertIsString($keyA);
+        self::assertIsString($keyB);
+
+        $original = [
+            $keyA => ['type' => 'zset', 'value' => ['permit-1' => '1767270000'], 'hasTtl' => true],
+            $keyB => ['type' => 'zset', 'value' => ['permit-2' => '1767271000', 'permit-3' => '1767271001'], 'hasTtl' => true],
+        ];
+        $swapped = [
+            $keyA => $original[$keyB],
+            $keyB => $original[$keyA],
+        ];
+
+        self::assertNotSame(
+            self::canonicalDump($original, 'new', false),
+            self::canonicalDump($swapped, 'new', false),
+            'DETECTOR (F302-01): swapping values between two keys of the same family must fail canonical comparison',
+        );
+    }
+
+    public function testDetectorRejectsWrongNamespaceOrWrongLayoutPermitKey(): void
+    {
+        $permitHash = str_repeat('a', 64);
+        $ownNs = hash('sha256', self::NAMESPACE);
+        $wrongNs = hash('sha256', self::NAMESPACE . '-wrong');
+        $dummy = ['type' => 'hash', 'value' => ['state' => 'CLAIMED'], 'hasTtl' => true];
+
+        $invalidCases = [
+            ['new', "maatify:rate-limiter:v1:{{$wrongNs}}:adm:a1:permit:{$permitHash}"],
+            ['new', "maatify:rate-limiter:v1:{{$ownNs}}:adm:permit:{$permitHash}"],
+            ['old', "maatify:rate-limiter:v1:{{$ownNs}}:adm:a1:permit:{$permitHash}"],
+        ];
+
+        foreach ($invalidCases as [$layout, $badKey]) {
+            $rejected = false;
+            try {
+                self::canonicalDump([$badKey => $dummy], $layout, false);
+            } catch (\PHPUnit\Framework\AssertionFailedError) {
+                $rejected = true;
+            }
+            self::assertTrue($rejected, "DETECTOR (F302-R2-01): {$layout} canonicalDump must reject {$badKey}");
+        }
     }
 
     public function testDetectorAStoreWithoutTheWindowBreaksTheSeededOffParity(): void

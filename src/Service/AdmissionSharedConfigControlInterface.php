@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Service;
 
 /**
- * Operator control of the shared admission configuration of a budget group (DEC-038). Every worker on one Redis must hold the
+ * Operator control of the shared admission configuration of a budget group (DEC-049, successor of DEC-038). Every worker on one Redis must hold the
  * same effective configuration, including "no pending-permit limit"; a worker whose value differs raises an
  * `AdmissionConfigurationException` before it reserves, and never changes the shared value itself. This call is the explicit way
  * to change it, after the fleet has been drained or replaced as `docs/guides/USAGE_GUIDE.md` describes.

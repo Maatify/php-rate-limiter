@@ -38,6 +38,8 @@ final class AdmissionSlidingWindowBurstRegressionTest extends AdmissionRedisGate
 {
     private const KEY_SECRET = 'test-burst-key-secret-185';
     private const BINDING_SECRET = 'test-burst-binding-secret-185';
+    private const TRUST_DOMAIN = 'burst-test-authority';
+    private const STATE_SECRET = 'test-burst-state-secret-32-bytes';
     private const ENV_SCOPE = 'burst-test';
     private const GROUP = 'login';
     private const POLICY = 'login_policy';
@@ -50,7 +52,7 @@ final class AdmissionSlidingWindowBurstRegressionTest extends AdmissionRedisGate
     {
         parent::setUp();
         $this->clock = new FixedClock('@1000000');
-        $this->codec = new AdmissionCredentialCodec(self::BINDING_SECRET);
+        $this->codec = new AdmissionCredentialCodec(self::BINDING_SECRET, self::ENV_SCOPE, self::TRUST_DOMAIN, self::STATE_SECRET);
         $this->runtime = new AdmissionRuntime(
             $this->store,
             $this->codec,
@@ -58,6 +60,8 @@ final class AdmissionSlidingWindowBurstRegressionTest extends AdmissionRedisGate
             $this->clock,
             self::KEY_SECRET,
             self::ENV_SCOPE,
+            self::TRUST_DOMAIN,
+            self::STATE_SECRET,
         );
     }
 
@@ -84,6 +88,7 @@ final class AdmissionSlidingWindowBurstRegressionTest extends AdmissionRedisGate
     private function provenLane(string $subject, string $jti, int $now): AdmissionLaneDTO
     {
         $claims = new AdmissionCredentialDTO(
+            account: $subject,
             subject: $subject,
             budgetGroups: [self::GROUP],
             instance: 'inst-burst',

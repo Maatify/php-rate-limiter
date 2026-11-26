@@ -67,7 +67,7 @@ final class AdmissionShapesTest extends TestCase
         self::assertTrue((new \ReflectionClass(AtomicAdmissionPermitStoreInterface::class))->implementsInterface(AdmissionPermitStoreInterface::class));
         self::assertFalse(is_subclass_of(AdmissionReservationStoreInterface::class, FullCapabilityStoreInterface::class));
         self::assertSame(
-            ['applyAdmissionOutcome', 'bumpBindingEpoch', 'readBindingEpoch', 'reserveAdmission'],
+            ['applyAdmissionOutcome', 'bumpAdmissionFence', 'bumpBindingEpoch', 'readAdmissionFence', 'readBindingEpoch', 'reserveAdmission'],
             self::declaredMethodNames(AdmissionReservationStoreInterface::class),
         );
         self::assertSame(['claimAdmissionPermit'], self::declaredMethodNames(AdmissionPermitStoreInterface::class));
@@ -213,21 +213,37 @@ final class AdmissionShapesTest extends TestCase
         self::assertSame('permit-1', $with['permit']);
     }
 
-    public function testConfigGainsTwoTrailingOptionalBindingKeys(): void
+    public function testConfigGainsTrailingOptionalBindingAndAdmissionTrustInputs(): void
     {
         $names = array_map(
             static fn(\ReflectionParameter $p): string => $p->name,
             (new \ReflectionClass(RateLimiterConfig::class))->getConstructor()?->getParameters() ?? [],
         );
-        self::assertSame(['bindingKeySecret', 'previousBindingKeySecret'], array_slice($names, -2));
+        self::assertSame(
+            ['bindingKeySecret', 'previousBindingKeySecret', 'admissionTrustDomain', 'admissionStateSecret'],
+            array_slice($names, -4),
+        );
 
         $plain = new RateLimiterConfig('k', 'f', 'prod');
         self::assertNull($plain->bindingKeySecret());
         self::assertNull($plain->previousBindingKeySecret());
+        self::assertNull($plain->admissionTrustDomain());
+        self::assertNull($plain->admissionStateSecret());
 
-        $with = new RateLimiterConfig('k', 'f', 'prod', bindingKeySecret: 'b', previousBindingKeySecret: 'p');
+        $stateSecret = str_repeat('s', 32);
+        $with = new RateLimiterConfig(
+            'k',
+            'f',
+            'prod',
+            bindingKeySecret: 'b',
+            previousBindingKeySecret: 'p',
+            admissionTrustDomain: 'auth-eu',
+            admissionStateSecret: $stateSecret,
+        );
         self::assertSame('b', $with->bindingKeySecret());
         self::assertSame('p', $with->previousBindingKeySecret());
+        self::assertSame('auth-eu', $with->admissionTrustDomain());
+        self::assertSame($stateSecret, $with->admissionStateSecret());
     }
 
     public function testBlankOrOrphanBindingKeysAreRejected(): void
