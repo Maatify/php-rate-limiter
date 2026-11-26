@@ -890,19 +890,23 @@ final class DistributedAccountAttackTest extends TestCase
     {
         $k4 = $this->key($policy, 'k4', $account, $secret);
 
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:correlation:distributed_account_devices:v1:prod:scope:{$k4}",
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            'correlation.distributed_account_devices.scope',
+            $policy,
+            'prod',
             $secret,
+            $k4,
         );
     }
 
     private function distributedWatch(string $policy, string $account, string $secret): string
     {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:correlation:distributed_account_watch:v1:prod:{$this->distributedDeviceScope($policy, $account, $secret)}",
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            'correlation.distributed_account_watch',
+            $policy,
+            'prod',
             $secret,
+            $this->distributedDeviceScope($policy, $account, $secret),
         );
     }
 
@@ -910,10 +914,12 @@ final class DistributedAccountAttackTest extends TestCase
     {
         $scope = $this->distributedDeviceScope($policy, $account, $secret);
 
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:correlation:distributed_account_devices:v1:prod:bridge:{$scope}",
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            'correlation.distributed_account_devices.bridge',
+            $policy,
+            'prod',
             $secret,
+            $scope,
         );
     }
 
@@ -921,10 +927,12 @@ final class DistributedAccountAttackTest extends TestCase
     {
         $k4 = $this->key($policy, 'k4', $account, $secret);
 
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:correlation:distributed_account_occurrences:v1:prod:scope:{$k4}",
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            'correlation.distributed_account_occurrences.scope',
+            $policy,
+            'prod',
             $secret,
+            $k4,
         );
     }
 
@@ -932,10 +940,12 @@ final class DistributedAccountAttackTest extends TestCase
     {
         $scope = $this->occurrenceScope($policy, $account, $secret);
 
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:correlation:distributed_account_occurrences:v1:prod:bridge:{$scope}",
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            'correlation.distributed_account_occurrences.bridge',
+            $policy,
+            'prod',
             $secret,
+            $scope,
         );
     }
 

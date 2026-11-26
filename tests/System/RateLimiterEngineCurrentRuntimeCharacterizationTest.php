@@ -962,10 +962,13 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $k1 = $this->key($policy, 'k1', '198.51.100.29');
         $k4 = $this->key($policy, 'k4', $accountId);
 
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:correlation:device_cap_account:v1:prod:scope:{$k4}:{$k1}",
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            'correlation.device_cap_account.scope',
+            $policy,
+            'prod',
             'test_secret',
+            $k4,
+            $k1,
         );
     }
 

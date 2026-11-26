@@ -34,6 +34,8 @@ final class SimpleRateLimitOperationalReader implements SimpleRateLimitOperation
     /** @var array<string, SimpleThrottlePolicyInterface> */
     private readonly array $policies;
 
+    private readonly SimpleFixedWindowKeyDeriver $keys;
+
     /**
      * @param SimpleThrottlePolicyInterface[] $policies
      * @param string $keySecret Active, non-blank key-generation secret. Not
@@ -77,6 +79,7 @@ final class SimpleRateLimitOperationalReader implements SimpleRateLimitOperation
             $indexed[$policy->getName()] = $policy;
         }
         $this->policies = $indexed;
+        $this->keys = new SimpleFixedWindowKeyDeriver($this->environmentScope);
         $this->resources = OwnershipRegistry::collect([$this->store], [], [$this->clock]);
         $this->domain = OwnershipRegistry::adopt($this->resources, $this);
     }
@@ -166,8 +169,8 @@ final class SimpleRateLimitOperationalReader implements SimpleRateLimitOperation
     }
 
     /**
-     * Derive the physical storage key using the exact same canonical,
-     * collision-safe, length-prefixed component encoding and HMAC-SHA256
+     * Derive the physical storage key using the exact same shared canonical,
+     * collision-safe, checked length-prefixed component encoding and HMAC-SHA256
      * scheme as FixedWindowSimpleRateLimiter::deriveKey(), so read() resolves
      * the exact same state identity that consume() writes. The raw subject
      * never crosses the store boundary directly.
@@ -180,21 +183,7 @@ final class SimpleRateLimitOperationalReader implements SimpleRateLimitOperation
         #[\SensitiveParameter]
         string $secret,
     ): string {
-        $preimage = self::encodeComponent('rate_limiter')
-            . self::encodeComponent('simple_fixed_window')
-            . self::encodeComponent('v1')
-            . self::encodeComponent($this->environmentScope)
-            . self::encodeComponent($policyName)
-            . self::encodeComponent((string) $limit)
-            . self::encodeComponent((string) $intervalSeconds)
-            . self::encodeComponent($subject);
-
-        return hash_hmac('sha256', $preimage, $secret);
-    }
-
-    private static function encodeComponent(string $component): string
-    {
-        return pack('N', strlen($component)) . $component;
+        return $this->keys->derive($policyName, $limit, $intervalSeconds, $subject, $secret);
     }
 
     private static function resetAt(int $epochStart, int $intervalSeconds): int

@@ -79,6 +79,8 @@ class EvaluationPipeline
 
     private readonly E1AccountScopeKeyDeriver $accountKeys;
 
+    private readonly NonAccountScopeKeyDeriver $nonAccountKeys;
+
     /** The captured E1 view for account-bearing keys. */
     private readonly RateLimitStoreInterface $accountStore;
 
@@ -151,6 +153,7 @@ class EvaluationPipeline
         $this->secret = $keySecret;
         $this->previousSecret = $previousKeySecret;
         $this->accountKeys = new E1AccountScopeKeyDeriver($this->envScope);
+        $this->nonAccountKeys = new NonAccountScopeKeyDeriver($this->envScope);
         $rateBinding = E1StoreBinding::capture($this->store);
         $correlationBinding = $this->correlationStore === $this->store
             ? $rateBinding
@@ -353,12 +356,11 @@ class EvaluationPipeline
                 $this->previousFingerprintHash($device),
             );
             $accountObservation = IdentityPresence::account($context)
-                ? $this->buildCorrelationObservation(
+                ? $this->buildDeviceCapAccountObservation(
                     $this->policyValue('getName', fn() => $policy->getName()),
-                    'device_cap_account',
-                    $this->accountAnchor($realKeysV2),
+                    $realKeysV2,
                     $device->fingerprintHash,
-                    $this->accountAnchor($realKeysV1),
+                    $realKeysV1,
                     $this->previousFingerprintHash($device),
                 )
                 : null;
@@ -915,8 +917,12 @@ class EvaluationPipeline
             throw new RateLimiterException('Distributed account correlation requires real K4 and K5 keys.');
         }
 
-        $prefix = "{$policyName}:rate_limiter:correlation:distributed_account_devices:v1:{$this->envScope}";
-        $currentKey = $this->hashKey("{$prefix}:scope:{$currentK4}", $this->secret);
+        $currentKey = $this->nonAccountKeys->derive(
+            NonAccountScopePurpose::CORRELATION_DISTRIBUTED_DEVICES_SCOPE,
+            $policyName,
+            $this->secret,
+            $currentK4,
+        );
         // K5 is already the canonical opaque enforcement key. Do not HMAC it
         // again: the snapshot must return a key that can be blocked directly.
         $currentMember = $currentK5;
@@ -932,14 +938,24 @@ class EvaluationPipeline
         }
 
         $previousSecret = $this->previousSecret ?? $this->secret;
-        $previousKey = $this->hashKey("{$prefix}:scope:{$previousK4}", $previousSecret);
+        $previousKey = $this->nonAccountKeys->derive(
+            NonAccountScopePurpose::CORRELATION_DISTRIBUTED_DEVICES_SCOPE,
+            $policyName,
+            $previousSecret,
+            $previousK4,
+        );
 
         return new BoundedCorrelationObservationDTO(
             $currentKey,
             $currentMember,
             $previousKey,
             $previousK5,
-            $this->hashKey("{$prefix}:bridge:{$currentKey}", $this->secret),
+            $this->nonAccountKeys->derive(
+                NonAccountScopePurpose::CORRELATION_DISTRIBUTED_DEVICES_BRIDGE,
+                $policyName,
+                $this->secret,
+                $currentKey,
+            ),
         );
     }
 
@@ -962,9 +978,19 @@ class EvaluationPipeline
             throw new RateLimiterException('Distributed occurrence history requires a real K4 key.');
         }
 
-        $prefix = "{$policyName}:rate_limiter:correlation:distributed_account_occurrences:v1:{$this->envScope}";
-        $currentKey = $this->hashKey("{$prefix}:scope:{$currentK4}", $this->secret);
-        $currentMember = $this->hashKey("{$prefix}:window:{$windowExpiresAt}", $this->secret);
+        $windowToken = (string) $windowExpiresAt;
+        $currentKey = $this->nonAccountKeys->derive(
+            NonAccountScopePurpose::CORRELATION_DISTRIBUTED_OCCURRENCES_SCOPE,
+            $policyName,
+            $this->secret,
+            $currentK4,
+        );
+        $currentMember = $this->nonAccountKeys->derive(
+            NonAccountScopePurpose::CORRELATION_DISTRIBUTED_OCCURRENCES_WINDOW,
+            $policyName,
+            $this->secret,
+            $windowToken,
+        );
 
         if ($this->previousSecret === null) {
             return new BoundedCorrelationObservationDTO($currentKey, $currentMember);
@@ -975,15 +1001,30 @@ class EvaluationPipeline
             throw new RateLimiterException('Distributed occurrence rotation requires a previous K4 key.');
         }
 
-        $previousKey = $this->hashKey("{$prefix}:scope:{$previousK4}", $this->previousSecret);
-        $previousMember = $this->hashKey("{$prefix}:window:{$windowExpiresAt}", $this->previousSecret);
+        $previousKey = $this->nonAccountKeys->derive(
+            NonAccountScopePurpose::CORRELATION_DISTRIBUTED_OCCURRENCES_SCOPE,
+            $policyName,
+            $this->previousSecret,
+            $previousK4,
+        );
+        $previousMember = $this->nonAccountKeys->derive(
+            NonAccountScopePurpose::CORRELATION_DISTRIBUTED_OCCURRENCES_WINDOW,
+            $policyName,
+            $this->previousSecret,
+            $windowToken,
+        );
 
         return new BoundedCorrelationObservationDTO(
             $currentKey,
             $currentMember,
             $previousKey,
             $previousMember,
-            $this->hashKey("{$prefix}:bridge:{$currentKey}", $this->secret),
+            $this->nonAccountKeys->derive(
+                NonAccountScopePurpose::CORRELATION_DISTRIBUTED_OCCURRENCES_BRIDGE,
+                $policyName,
+                $this->secret,
+                $currentKey,
+            ),
         );
     }
 
@@ -1196,9 +1237,12 @@ class EvaluationPipeline
 
     private function adaptiveIpv6ScopeKey(string $policyName, int $cidr, string $prefix, string $secret): string
     {
-        return $this->hashKey(
-            "{$policyName}:rate_limiter:ipv6_adaptive:hierarchy:v1:{$cidr}:{$this->envScope}:{$prefix}",
+        return $this->nonAccountKeys->derive(
+            NonAccountScopePurpose::IPV6_ADAPTIVE_HIERARCHY_SCOPE,
+            $policyName,
             $secret,
+            (string) $cidr,
+            $prefix,
         );
     }
 
@@ -1229,9 +1273,12 @@ class EvaluationPipeline
             $currentMember,
             $previousScope,
             $previousMember,
-            $this->hashKey(
-                "{$policyName}:rate_limiter:ipv6_adaptive:hierarchy:v1:{$cidr}:{$this->envScope}:bridge:{$currentScope}",
+            $this->nonAccountKeys->derive(
+                NonAccountScopePurpose::IPV6_ADAPTIVE_HIERARCHY_BRIDGE,
+                $policyName,
                 $this->secret,
+                (string) $cidr,
+                $currentScope,
             ),
         );
     }
@@ -1245,9 +1292,23 @@ class EvaluationPipeline
         ?string $previousAnchor,
         ?string $previousMemberSeed,
     ): BoundedCorrelationObservationDTO {
-        $namespace = "{$policyName}:rate_limiter:ipv6_adaptive:{$purpose}:v1:{$cidr}:{$this->envScope}";
-        $currentKey = $this->hashKey("{$namespace}:scope:{$currentAnchor}", $this->secret);
-        $currentMember = $this->hashKey("{$namespace}:member:{$currentMemberSeed}", $this->secret);
+        [$scopePurpose, $memberPurpose, $bridgePurpose] = match ($purpose) {
+            'churn' => [
+                NonAccountScopePurpose::IPV6_ADAPTIVE_CHURN_SCOPE,
+                NonAccountScopePurpose::IPV6_ADAPTIVE_CHURN_MEMBER,
+                NonAccountScopePurpose::IPV6_ADAPTIVE_CHURN_BRIDGE,
+            ],
+            'spray' => [
+                NonAccountScopePurpose::IPV6_ADAPTIVE_SPRAY_SCOPE,
+                NonAccountScopePurpose::IPV6_ADAPTIVE_SPRAY_MEMBER,
+                NonAccountScopePurpose::IPV6_ADAPTIVE_SPRAY_BRIDGE,
+            ],
+            default => throw new RateLimiterException("Unknown IPv6 adaptive correlation purpose: {$purpose}."),
+        };
+
+        $cidrToken = (string) $cidr;
+        $currentKey = $this->nonAccountKeys->derive($scopePurpose, $policyName, $this->secret, $cidrToken, $currentAnchor);
+        $currentMember = $this->nonAccountKeys->derive($memberPurpose, $policyName, $this->secret, $cidrToken, $currentMemberSeed);
         $hasPrevious = $previousAnchor !== null
             && ($this->previousSecret !== null || $previousMemberSeed !== null);
         if (! $hasPrevious) {
@@ -1256,15 +1317,15 @@ class EvaluationPipeline
 
         $previousSecret = $this->previousSecret ?? $this->secret;
         $previousMemberSeed ??= $currentMemberSeed;
-        $previousKey = $this->hashKey("{$namespace}:scope:{$previousAnchor}", $previousSecret);
-        $previousMember = $this->hashKey("{$namespace}:member:{$previousMemberSeed}", $previousSecret);
+        $previousKey = $this->nonAccountKeys->derive($scopePurpose, $policyName, $previousSecret, $cidrToken, $previousAnchor);
+        $previousMember = $this->nonAccountKeys->derive($memberPurpose, $policyName, $previousSecret, $cidrToken, $previousMemberSeed);
 
         return new BoundedCorrelationObservationDTO(
             $currentKey,
             $currentMember,
             $previousKey,
             $previousMember,
-            $this->hashKey("{$namespace}:bridge:{$currentKey}", $this->secret),
+            $this->nonAccountKeys->derive($bridgePurpose, $policyName, $this->secret, $cidrToken, $currentKey),
         );
     }
 
@@ -1323,9 +1384,13 @@ class EvaluationPipeline
         string $normalizedUa,
         string $secret,
     ): string {
-        return $this->hashKey(
-            "{$policyName}:rate_limiter:ipv6_adaptive:churn_anchor:v1:{$cidr}:{$this->envScope}:{$adaptiveScope}:{$normalizedUa}",
+        return $this->nonAccountKeys->derive(
+            NonAccountScopePurpose::IPV6_ADAPTIVE_CHURN_ANCHOR,
+            $policyName,
             $secret,
+            (string) $cidr,
+            $adaptiveScope,
+            $normalizedUa,
         );
     }
 
@@ -1459,28 +1524,36 @@ class EvaluationPipeline
         $windowId = (int) floor($this->clock->now()->getTimestamp() / 600);
         CallerTimeStore::incrementWatchFlag(
             $this->correlationStore,
-            $this->correlationStateKey($policyName, 'dilution_confirmation', $dilution->currentKey . ':' . $windowId, $this->secret),
+            $this->nonAccountKeys->derive(
+                NonAccountScopePurpose::CORRELATION_DILUTION_CONFIRMATION,
+                $policyName,
+                $this->secret,
+                $dilution->currentKey,
+                (string) $windowId,
+            ),
             1200,
             $this->clock->now(),
         );
         $previousWindowId = $windowId - 1;
         $previousWindowCount = $this->correlationStore->getWatchFlag(
-            $this->correlationStateKey(
+            $this->nonAccountKeys->derive(
+                NonAccountScopePurpose::CORRELATION_DILUTION_CONFIRMATION,
                 $policyName,
-                'dilution_confirmation',
-                $dilution->currentKey . ':' . $previousWindowId,
                 $this->secret,
+                $dilution->currentKey,
+                (string) $previousWindowId,
             ),
         );
         if ($dilution->previousKey !== null) {
             $previousWindowCount = max(
                 $previousWindowCount,
                 $this->correlationStore->getWatchFlag(
-                    $this->correlationStateKey(
+                    $this->nonAccountKeys->derive(
+                        NonAccountScopePurpose::CORRELATION_DILUTION_CONFIRMATION,
                         $policyName,
-                        'dilution_confirmation',
-                        $dilution->previousKey . ':' . $previousWindowId,
                         $this->previousSecret ?? $this->secret,
+                        $dilution->previousKey,
+                        (string) $previousWindowId,
                     ),
                 ),
             );
@@ -1617,9 +1690,27 @@ class EvaluationPipeline
             throw new RateLimiterException("Missing current opaque anchor for {$purpose} correlation state.");
         }
 
-        $prefix = "{$policyName}:rate_limiter:correlation:{$purpose}:v1:{$this->envScope}";
-        $currentKey = $this->hashKey("{$prefix}:scope:{$currentAnchor}", $this->secret);
-        $currentMember = $this->hashKey("{$prefix}:member:{$currentMemberSeed}", $this->secret);
+        [$scopePurpose, $memberPurpose, $bridgePurpose] = match ($purpose) {
+            'device_cap_ip' => [
+                NonAccountScopePurpose::CORRELATION_DEVICE_CAP_IP_SCOPE,
+                NonAccountScopePurpose::CORRELATION_DEVICE_CAP_IP_MEMBER,
+                NonAccountScopePurpose::CORRELATION_DEVICE_CAP_IP_BRIDGE,
+            ],
+            'churn' => [
+                NonAccountScopePurpose::CORRELATION_CHURN_SCOPE,
+                NonAccountScopePurpose::CORRELATION_CHURN_MEMBER,
+                NonAccountScopePurpose::CORRELATION_CHURN_BRIDGE,
+            ],
+            'dilution' => [
+                NonAccountScopePurpose::CORRELATION_DILUTION_SCOPE,
+                NonAccountScopePurpose::CORRELATION_DILUTION_MEMBER,
+                NonAccountScopePurpose::CORRELATION_DILUTION_BRIDGE,
+            ],
+            default => throw new RateLimiterException("Unknown correlation observation purpose: {$purpose}."),
+        };
+
+        $currentKey = $this->nonAccountKeys->derive($scopePurpose, $policyName, $this->secret, $currentAnchor);
+        $currentMember = $this->nonAccountKeys->derive($memberPurpose, $policyName, $this->secret, $currentMemberSeed);
 
         $hasPrevious = $previousAnchor !== null
             && ($this->previousSecret !== null || $previousMemberSeed !== null);
@@ -1629,9 +1720,9 @@ class EvaluationPipeline
 
         $previousSecret = $this->previousSecret ?? $this->secret;
         $previousMemberSeed ??= $currentMemberSeed;
-        $previousKey = $this->hashKey("{$prefix}:scope:{$previousAnchor}", $previousSecret);
-        $previousMember = $this->hashKey("{$prefix}:member:{$previousMemberSeed}", $previousSecret);
-        $bridgeKey = $this->hashKey("{$prefix}:bridge:{$currentKey}", $this->secret);
+        $previousKey = $this->nonAccountKeys->derive($scopePurpose, $policyName, $previousSecret, $previousAnchor);
+        $previousMember = $this->nonAccountKeys->derive($memberPurpose, $policyName, $previousSecret, $previousMemberSeed);
+        $bridgeKey = $this->nonAccountKeys->derive($bridgePurpose, $policyName, $this->secret, $currentKey);
 
         return new BoundedCorrelationObservationDTO(
             $currentKey,
@@ -1643,23 +1734,88 @@ class EvaluationPipeline
     }
 
     /**
-     * @param array<string, string|null> $keys
+     * Build the account device-cap observation with K4 and K1 framed as separate fields (DEC-047).
+     *
+     * @param array<string, string|null> $keysV2
+     * @param array<string, string|null> $keysV1
      */
-    private function accountAnchor(array $keys): ?string
-    {
-        if (($keys['k4'] ?? null) === null || ($keys['k1'] ?? null) === null) {
-            return null;
+    private function buildDeviceCapAccountObservation(
+        string $policyName,
+        array $keysV2,
+        ?string $currentMemberSeed,
+        array $keysV1,
+        ?string $previousMemberSeed,
+    ): BoundedCorrelationObservationDTO {
+        $currentK4 = $keysV2['k4'] ?? null;
+        $currentK1 = $keysV2['k1'] ?? null;
+        if ($currentK4 === null || $currentK1 === null || $currentMemberSeed === null) {
+            throw new RateLimiterException('Missing current opaque anchor for device_cap_account correlation state.');
         }
 
-        return $keys['k4'] . ':' . $keys['k1'];
+        $currentKey = $this->nonAccountKeys->derive(
+            NonAccountScopePurpose::CORRELATION_DEVICE_CAP_ACCOUNT_SCOPE,
+            $policyName,
+            $this->secret,
+            $currentK4,
+            $currentK1,
+        );
+        $currentMember = $this->nonAccountKeys->derive(
+            NonAccountScopePurpose::CORRELATION_DEVICE_CAP_ACCOUNT_MEMBER,
+            $policyName,
+            $this->secret,
+            $currentMemberSeed,
+        );
+
+        $previousK4 = $keysV1['k4'] ?? null;
+        $previousK1 = $keysV1['k1'] ?? null;
+        $hasPrevious = $previousK4 !== null
+            && $previousK1 !== null
+            && ($this->previousSecret !== null || $previousMemberSeed !== null);
+        if (! $hasPrevious) {
+            return new BoundedCorrelationObservationDTO($currentKey, $currentMember);
+        }
+
+        $previousSecret = $this->previousSecret ?? $this->secret;
+        $previousMemberSeed ??= $currentMemberSeed;
+        $previousKey = $this->nonAccountKeys->derive(
+            NonAccountScopePurpose::CORRELATION_DEVICE_CAP_ACCOUNT_SCOPE,
+            $policyName,
+            $previousSecret,
+            $previousK4,
+            $previousK1,
+        );
+        $previousMember = $this->nonAccountKeys->derive(
+            NonAccountScopePurpose::CORRELATION_DEVICE_CAP_ACCOUNT_MEMBER,
+            $policyName,
+            $previousSecret,
+            $previousMemberSeed,
+        );
+        $bridgeKey = $this->nonAccountKeys->derive(
+            NonAccountScopePurpose::CORRELATION_DEVICE_CAP_ACCOUNT_BRIDGE,
+            $policyName,
+            $this->secret,
+            $currentKey,
+        );
+
+        return new BoundedCorrelationObservationDTO(
+            $currentKey,
+            $currentMember,
+            $previousKey,
+            $previousMember,
+            $bridgeKey,
+        );
     }
 
     private function correlationStateKey(string $policyName, string $purpose, string $anchor, string $secret): string
     {
-        return $this->hashKey(
-            "{$policyName}:rate_limiter:correlation:{$purpose}:v1:{$this->envScope}:{$anchor}",
-            $secret,
-        );
+        $registeredPurpose = match ($purpose) {
+            'distributed_account_watch' => NonAccountScopePurpose::CORRELATION_DISTRIBUTED_WATCH,
+            'churn_watch' => NonAccountScopePurpose::CORRELATION_CHURN_WATCH,
+            'dilution_watch' => NonAccountScopePurpose::CORRELATION_DILUTION_WATCH,
+            default => throw new RateLimiterException("Unknown correlation state purpose: {$purpose}."),
+        };
+
+        return $this->nonAccountKeys->derive($registeredPurpose, $policyName, $secret, $anchor);
     }
 
     /**
@@ -3173,15 +3329,11 @@ class EvaluationPipeline
         ?AdmissionLaneEnum $lane = null,
         ?string $k5Material = null,
     ): array {
-        // Enforce strict Key Strategy namespacing:
-        // {policy}:rate_limiter:{type}:{algo_ver}:{env}:{scope_val}
-        $base = "{$policyName}:rate_limiter";
-        $ver = "v2"; // Current algo version
-        $env = $this->envScope;
+        $ipPrefix = $this->getIpPrefix($context->ip);
 
-        $k1 = $this->hashKey("{$base}:k1:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}", $secret);
-        $k2 = $this->hashKey("{$base}:k2:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}:{$ua}", $secret);
-        $k3 = IdentityPresence::isPresent($fpHash) ? $this->hashKey("{$base}:k3:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}:{$fpHash}", $secret) : null;
+        $k1 = $this->nonAccountKeys->deriveK1($policyName, $ipPrefix, $secret);
+        $k2 = $this->nonAccountKeys->deriveK2($policyName, $ipPrefix, $ua, $secret);
+        $k3 = IdentityPresence::isPresent($fpHash) ? $this->nonAccountKeys->deriveK3($policyName, $ipPrefix, $fpHash, $secret) : null;
         $k4 = IdentityPresence::account($context) ? $this->deriveAccountKey($this->k4KeyType($lane), $policyName, $context->accountId, $secret) : null;
         $k5 = IdentityPresence::account($context) && IdentityPresence::isPresent($fpHash) ? $this->deriveAccountKey($this->k5KeyType($lane), $policyName, $context->accountId, $secret, $k5Material ?? $fpHash) : null;
 

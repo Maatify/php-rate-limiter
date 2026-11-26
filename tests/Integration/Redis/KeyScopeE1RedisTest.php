@@ -179,11 +179,10 @@ final class KeyScopeE1RedisTest extends TestCase
         $keys = $this->keys();
         self::assertContains($this->e1ScoreKey(), $keys);
         $device = (new \Maatify\RateLimiter\Service\DeviceIdentityResolver(new \Maatify\RateLimiter\Service\FingerprintHasher('test_fp')))->resolve($this->context());
-        $base = self::POLICY . ':rate_limiter:';
         $expected = [
-            hash_hmac('sha256', $base . 'k1:v2:' . self::ENV . ':192.0.2.77', self::SECRET),
-            hash_hmac('sha256', $base . 'k2:v2:' . self::ENV . ':192.0.2.77:' . $device->normalizedUa, self::SECRET),
-            hash_hmac('sha256', $base . 'k3:v2:' . self::ENV . ':192.0.2.77:' . $device->fingerprintHash, self::SECRET),
+            \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1(self::POLICY, self::ENV, '192.0.2.77', self::SECRET),
+            \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k2(self::POLICY, self::ENV, '192.0.2.77', $device->normalizedUa, self::SECRET),
+            \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k3(self::POLICY, self::ENV, '192.0.2.77', (string) $device->fingerprintHash, self::SECRET),
         ];
         $expected = array_map(static fn(string $logical): string => self::v1Prefix() . 'score:' . hash('sha256', $logical), $expected);
         foreach (self::under($keys, self::v1Prefix() . 'score:') as $key) {
@@ -397,7 +396,7 @@ final class KeyScopeE1RedisTest extends TestCase
                     if ($layout === 'e1') {
                         $rival->e1Keyspace()->incrementAt(E1AccountScopeKeyDeriver::key(self::SECRET, ['k4', self::POLICY, self::ENV, self::ACCOUNT]), 86400, 1, self::NOW);
                     } else {
-                        $logical = hash_hmac('sha256', self::POLICY . ':rate_limiter:k1:v2:' . self::ENV . ':' . \Maatify\RateLimiter\Service\SourcePrefix::of('192.0.2.77', 64), self::SECRET);
+                        $logical = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1(self::POLICY, self::ENV, \Maatify\RateLimiter\Service\SourcePrefix::of('192.0.2.77', 64), self::SECRET);
                         $rival->incrementAt($logical, 86400, 1, self::NOW);
                     }
                     $snapshots['before'] = $this->snapshot();

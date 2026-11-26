@@ -546,7 +546,13 @@ For new traffic use an isolated namespace/environment with no prior V2 state for
 
 A package update does not migrate live traffic safely. V2 account blocks, scores, budgets and history are not read by E1; derivative Set B identities also differ. Mixed V2/E1 workers and live rollback are unsupported. Do not infer old-block expiry from a namespace change. No dual-read, seeding across encodings or deletion of Redis state is provided. Secret/material Current/Previous rotation **inside E1** remains supported and atomic.
 
-Direct root store methods still place every plain string, even an E1-shaped one, in layout v1. The explicit account view accepts only the registered E1 families and key grammar. K1–K3 and non-account families retain their G1 identities. Adjacent Admission/other framing defects remain release blockers on #284; this change does not fix them or authorize losing their state.
+Direct root store methods still place every plain string, even an E1-shaped one, in layout v1. The explicit account view accepts only the registered E1 families and key grammar.
+
+## Non-account canonical key framing (`f1`) and breaking boundary (DEC-047)
+
+K1–K3, correlation (`device_cap_ip`, `device_cap_account`, `churn`, `dilution`, distributed account device/occurrence scopes, bridges, watches, and dilution confirmations), and adaptive IPv6 keys use canonical length-prefixed framing (`maatify.rate-limiter.non-account.f1\x00`) with a closed internal purpose registry and dedicated HMAC key domain (`maatify.rate-limiter.key-domain.non-account.f1`). They remain under the physical `v1` root layout (`maatify:rate-limiter:v1:...`) with no `e1.` prefix and no new public API. Writer and operational reader share one immutable implementation for K1–K3 and one shared checked `u32be` implementation for simple fixed-window throttling.
+
+E1 account state (`e1:`) and simple fixed-window state (`v1:budget`) retain byte-identical keys with no intended reset. For affected non-account families and K1-dependent credential-spray scopes/bridges/watches, start new traffic in an isolated namespace/environment with homogeneous workers; existing traffic loses visibility of prior state in those families until old TTLs expire. Mixed workers, live rollback, cross-format block preservation, migration/dual-read/write layers, and Redis data deletion are unsupported. Current/Previous secret and material rotation **inside `f1`** remains supported. Admission (`A1`–`A3`) and epoch/cohort semantics remain queued for G3 under [#281](https://github.com/Maatify/php-rate-limiter/issues/281) and [#284](https://github.com/Maatify/php-rate-limiter/issues/284).
 
 ## Walkthrough: Pre-Check
 

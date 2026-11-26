@@ -1408,10 +1408,13 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         string $secret = 'test_secret',
         string $environment = 'prod',
     ): string {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:ipv6_adaptive:hierarchy:v1:{$cidr}:{$environment}:{$prefix}",
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            'ipv6_adaptive.hierarchy.scope',
+            $policy,
+            $environment,
             $secret,
+            (string) $cidr,
+            $prefix,
         );
     }
 
@@ -1421,10 +1424,13 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         string $currentScope,
         string $secret = 'test_secret',
     ): string {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:ipv6_adaptive:hierarchy:v1:{$cidr}:prod:bridge:{$currentScope}",
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            'ipv6_adaptive.hierarchy.bridge',
+            $policy,
+            'prod',
             $secret,
+            (string) $cidr,
+            $currentScope,
         );
     }
 
@@ -1435,10 +1441,13 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         string $anchor,
         string $secret = 'test_secret',
     ): string {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:ipv6_adaptive:{$purpose}:v1:{$cidr}:prod:scope:{$anchor}",
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            "ipv6_adaptive.{$purpose}.scope",
+            $policy,
+            'prod',
             $secret,
+            (string) $cidr,
+            $anchor,
         );
     }
 
@@ -1449,10 +1458,13 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         string $currentKey,
         string $secret = 'test_secret',
     ): string {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:ipv6_adaptive:{$purpose}:v1:{$cidr}:prod:bridge:{$currentKey}",
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            "ipv6_adaptive.{$purpose}.bridge",
+            $policy,
+            'prod',
             $secret,
+            (string) $cidr,
+            $currentKey,
         );
     }
 
@@ -1462,10 +1474,12 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         string $currentKey,
         string $secret = 'test_secret',
     ): string {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:correlation:{$purpose}:v1:prod:bridge:{$currentKey}",
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            "correlation.{$purpose}.bridge",
+            $policy,
+            'prod',
             $secret,
+            $currentKey,
         );
     }
 
@@ -1476,10 +1490,13 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         string $memberSeed,
         string $secret = 'test_secret',
     ): string {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:ipv6_adaptive:{$purpose}:v1:{$cidr}:prod:member:{$memberSeed}",
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            "ipv6_adaptive.{$purpose}.member",
+            $policy,
+            'prod',
             $secret,
+            (string) $cidr,
+            $memberSeed,
         );
     }
 
@@ -1490,10 +1507,14 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         string $ua,
         string $secret = 'test_secret',
     ): string {
-        $anchor = hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:ipv6_adaptive:churn_anchor:v1:{$cidr}:prod:{$scope}:{$ua}",
+        $anchor = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            'ipv6_adaptive.churn_anchor',
+            $policy,
+            'prod',
             $secret,
+            (string) $cidr,
+            $scope,
+            $ua,
         );
 
         return $this->adaptiveObservationKey($policy, 'churn', $cidr, $anchor, $secret);
@@ -1514,9 +1535,11 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         string $fingerprint,
         string $secret = 'test_secret',
     ): string {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:k3:v2:prod:{$this->prefix($ip, 64)}:{$fingerprint}",
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k3(
+            $policy,
+            'prod',
+            $this->prefix($ip, 64),
+            $fingerprint,
             $secret,
         );
     }
@@ -1528,10 +1551,12 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
 
     private function dilutionKey(string $policy, string $fingerprint, string $secret = 'test_secret'): string
     {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:correlation:dilution:v1:prod:scope:{$fingerprint}",
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            'correlation.dilution.scope',
+            $policy,
+            'prod',
             $secret,
+            $fingerprint,
         );
     }
 
@@ -1540,10 +1565,12 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         string $canonicalK1,
         string $secret = 'test_secret',
     ): string {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:correlation:dilution:v1:prod:member:{$canonicalK1}",
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            'correlation.dilution.member',
+            $policy,
+            'prod',
             $secret,
+            $canonicalK1,
         );
     }
 
@@ -1553,10 +1580,13 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         int $windowId,
         string $secret = 'test_secret',
     ): string {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:correlation:dilution_confirmation:v1:prod:{$scope}:{$windowId}",
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            'correlation.dilution_confirmation',
+            $policy,
+            'prod',
             $secret,
+            $scope,
+            (string) $windowId,
         );
     }
 
@@ -1574,9 +1604,10 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
 
     private function legacyMacroKey(string $policy, string $ip, int $cidr): string
     {
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:k1:v2:prod:{$this->prefix($ip, $cidr)}",
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1(
+            $policy,
+            'prod',
+            $this->prefix($ip, $cidr),
             'test_secret',
         );
     }

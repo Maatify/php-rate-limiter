@@ -66,9 +66,11 @@ final class RateLimiterEngineClaimFailureTest extends TestCase
         self::assertSame('HARD_BLOCK', $hard->decision);
 
         $clock->setNow($clock->now()->modify('+61 seconds'));
-        $k2 = hash_hmac(
-            'sha256',
-            'login_protection:rate_limiter:k2:v2:prod:198.51.100.42:other/0',
+        $k2 = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k2(
+            'login_protection',
+            'prod',
+            '198.51.100.42',
+            'other/0',
             'test_secret',
         );
         \Maatify\RateLimiter\Tests\Support\ExpectedStoreLayout::forKey($store, $k2)->block($k2, 2, 600);

@@ -75,14 +75,18 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
         $this->assertSame('NORMAL', $firefoxResult->failureMode);
         $this->assertNull($firefoxResult->metadata);
 
-        $chromeKey = hash_hmac(
-            'sha256',
-            'api_heavy_protection:rate_limiter:k2:v2:prod:203.0.113.10:' . DeviceIdentityResolver::normalizeUserAgent(self::CHROME_UA),
+        $chromeKey = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k2(
+            'api_heavy_protection',
+            'prod',
+            '203.0.113.10',
+            DeviceIdentityResolver::normalizeUserAgent(self::CHROME_UA),
             'test_secret',
         );
-        $firefoxKey = hash_hmac(
-            'sha256',
-            'api_heavy_protection:rate_limiter:k2:v2:prod:203.0.113.10:' . DeviceIdentityResolver::normalizeUserAgent(self::FIREFOX_UA),
+        $firefoxKey = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k2(
+            'api_heavy_protection',
+            'prod',
+            '203.0.113.10',
+            DeviceIdentityResolver::normalizeUserAgent(self::FIREFOX_UA),
             'test_secret',
         );
 

@@ -387,17 +387,16 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
 
     private function deviceCapAccountKey(string $policy, string $accountId): string
     {
-        $k1 = hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:k1:v2:prod:198.51.100.90",
-            'test_secret',
-        );
+        $k1 = \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::k1($policy, 'prod', '198.51.100.90', 'test_secret');
         $k4 = (new \Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver('prod'))->derive('k4', ($policy), ($accountId), 'test_secret');
 
-        return hash_hmac(
-            'sha256',
-            "{$policy}:rate_limiter:correlation:device_cap_account:v1:prod:scope:{$k4}:{$k1}",
+        return \Maatify\RateLimiter\Tests\Support\NonAccountKeyOracle::derive(
+            'correlation.device_cap_account.scope',
+            $policy,
+            'prod',
             'test_secret',
+            $k4,
+            $k1,
         );
     }
 
