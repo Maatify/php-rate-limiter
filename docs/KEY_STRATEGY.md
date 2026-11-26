@@ -788,7 +788,7 @@ E1AccountScopeKeyDeriver tuple (N = 5):
 
 ### 4.6 Account/Policy Auxiliary State Keys (Locked)
 
-Non-Admission account-derived auxiliary state uses `E1AccountScopeKeyDeriver` (`DEC-046`, [`docs/KEY_SCOPE_ENCODING_E1.md`](KEY_SCOPE_ENCODING_E1.md) §3.2–§3.6, physical `maatify:rate-limiter:e1:…` layout):
+Account-derived auxiliary state in the E1 evaluation pipeline (including the proven-lane `_p` purposes when an opted-in policy runs on the proven lane, separate from the deferred Admission-runtime keys `binding_epoch` and `admission_fence` below) uses `E1AccountScopeKeyDeriver` (`DEC-046`, [`docs/KEY_SCOPE_ENCODING_E1.md`](KEY_SCOPE_ENCODING_E1.md) §3.2–§3.6, physical `maatify:rate-limiter:e1:…` layout):
 
 ```text
 E1AccountScopeKeyDeriver tuple (N = 4):
@@ -809,13 +809,13 @@ The admission layer adds the following purposes (LOCKED amendment under DEC-026,
 2026-10-20). They are derived only for a policy that opts into the admission reservation.
 
 * `binding_epoch` — one integer per account, the per-account epoch of the admission binding
-  credential. Historically specified with `{budget group}` in the preimage (`DEC-034` 6.1), whereas current source (`AdmissionRuntime::epochKey()`) hashes `env ‖ 0x00 ‖ "binding_epoch" ‖ 0x00 ‖ accountId` without budget group (`KEY_SCOPE_ENCODING_E1.md` §5.4). Both the NUL-delimited Admission join (`A1`) and this `binding_epoch` contract-vs-source discrepancy (`A2`) remain **open release blockers queued for G3** under `#281`/`#284`. It is **not** a §10.1
+  credential. Historically specified with `{budget group}` in the preimage (`DEC-034` 6.1), whereas current source (`AdmissionRuntime::epochKey()`) hashes `env ‖ 0x00 ‖ "binding_epoch" ‖ 0x00 ‖ accountId` without budget group (`KEY_SCOPE_ENCODING_E1.md` §5.4). All three Admission-layer blockers — NUL-delimited Admission framing (`A1`), fence/epoch domain collision in the shared physical epoch namespace including cross-purpose alias (`A2`), and this unresolved `binding_epoch` contract-vs-source discrepancy (`A3`) — remain **open release blockers queued for G3** under `#281`/`#284` (alongside token cohort and trust-domain semantics). It is **not** a §10.1
   generation-bound namespace. Current key is written; the previous-generation key is read-only
   and read only when the current key is absent. The derivation is in `AdmissionRuntime` (stage 5-b3b), keyed by `accountId` and the active key
   secret (with the previous-generation key read-only); the store operations (`readBindingEpoch`,
   `bumpBindingEpoch`) receive opaque, already-derived keys; see §4.8.
 * `admission_fence` — the fleet fence of the admission runtime (contract §6, M2): one integer per
-  budget group in the epoch namespace, currently `HMAC-SHA256({env}\0admission_fence\0{budget group}, key secret)` (**NUL-delimited Admission framing `A1` remains queued for G3** under `#281`/`#284`). It is read under the active key secret and, when a previous key secret is configured,
+  budget group in the epoch namespace, currently `HMAC-SHA256({env}\0admission_fence\0{budget group}, key secret)` (**both NUL-delimited Admission framing `A1` and fence/epoch domain collision in the physical epoch namespace `A2` remain open release blockers queued for G3** under `#281`/`#284`). It is read under the active key secret and, when a previous key secret is configured,
   under the previous one (current, else previous), so a key-secret rotation does not close it. The new
   path is enabled for a budget group only when the value read is at least 1; below 1 the request is
   processed as if no admission runtime existed. It is opened through

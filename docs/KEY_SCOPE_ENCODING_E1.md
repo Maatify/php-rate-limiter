@@ -246,13 +246,10 @@ Under G1 (`DEC-046`, historical D-2 in §10), E1 alone left their outer preimage
 
 ### 5.4 Adjacent findings from this mapping (not E1, not fixed here)
 
-1. **Admission keys use a NUL join.** `AdmissionRuntime::key()` and `epochKey()` join `env`, group, purpose, value and label
-   (and `env`, `'binding_epoch'`, `accountId`) with `"\0"` and no length prefix (`:537-545`). `env` and `accountId` accept
-   NUL, so the same class of ambiguity as #284 exists there. It is a different surface (admission opt-in policies) and a
-   separate decision.
-2. **Documentation and source disagree on `binding_epoch`.** KEY_STRATEGY §4.6 says its preimage is
-   `{budget group}:rate_limiter:aux:binding_epoch:v1:{env}:{accountId}`; the source hashes `env ‖ 0x00 ‖ "binding_epoch" ‖ 0x00 ‖ accountId`
-   with no budget group (`AdmissionRuntime.php:544`). Not changed here; recorded for the Owner.
+1. **Admission keys use a NUL join (`A1`) and share the physical epoch namespace (`A2`).** `AdmissionRuntime::key()` and `epochKey()` join `env`, group, purpose, value and label
+   (and `env`, `'binding_epoch'`, `accountId`; `fenceKey()` joins `env`, `'admission_fence'`, `budgetGroup`) with `"\0"` and no length prefix (`:537-545`). `env` and `accountId` accept
+   NUL, creating framing ambiguity (`A1`) and fence/epoch domain collision including cross-purpose aliasing in the physical epoch namespace (`A2`). Both remain open release blockers queued for G3 under `#281`/`#284`.
+2. **Unresolved contract-vs-source discrepancy on `binding_epoch` (`A3`).** `DEC-034` 6.1 and the historical `KEY_STRATEGY` §4.6 specification included `{budget group}` (`{budget group}:rate_limiter:aux:binding_epoch:v1:{env}:{accountId}`), whereas `AdmissionRuntime::epochKey()` hashes `env ‖ 0x00 ‖ "binding_epoch" ‖ 0x00 ‖ accountId` without budget group (`AdmissionRuntime.php:544`). `KEY_STRATEGY` §4.6 now flags this unresolved contract-vs-source discrepancy explicitly; `A3` is not resolved here and remains queued for G3 under `#281`/`#284`.
 
 ## 6. Storage identity
 
@@ -377,7 +374,7 @@ cycle rule, a lifecycle rule or a rotation rule. Therefore, for E1 runtimes:
 4. Start new traffic in an isolated namespace/environment after capability/ACL setup. The package does not discover old workers or prove the namespace empty.
 5. Moving existing V2 traffic starts fresh Set A and derivative Set B identities (and moving pre-G2 traffic starts fresh affected non-account `f1` identities under [DEC-047](decisions/DEC-047_NON_ACCOUNT_CANONICAL_KEY_FRAMING.md)), losing visibility of prior blocks, scores, budgets, cooldowns and affected history. No live upgrade, dual-read, cross-encoding seed, mixed workers or rollback is supported. No Redis data is deleted. Preserved E1 bytes alone do not qualify a deployment update.
 6. Current/Previous always means secret/material generations **inside E1** (and inside `f1` for non-account keys under `DEC-047`). Their atomic budget seed and lifecycle continuity remain; it is not a migration between encodings.
-7. G1 (`DEC-046`) did not fix non-account or Admission framing defects; G2 ([DEC-047](decisions/DEC-047_NON_ACCOUNT_CANONICAL_KEY_FRAMING.md)) subsequently resolved non-account multi-field framing (`A4` and recurrence across K1–K3, correlation, and adaptive IPv6). Adjacent Admission NUL joins, the `binding_epoch` contract discrepancy, and cohort/trust-domain semantics (`A1`–`A3`) remain open release blockers tracked on `#281` and `#284` for G3.
+7. G1 (`DEC-046`) did not fix non-account or Admission framing defects; G2 ([DEC-047](decisions/DEC-047_NON_ACCOUNT_CANONICAL_KEY_FRAMING.md)) subsequently resolved non-account multi-field framing (`A4` and recurrence across K1–K3, correlation, and adaptive IPv6). Adjacent Admission blockers — `A1` (Admission NUL joins), `A2` (fence/epoch domain collision in the physical epoch namespace), and `A3` (unresolved `binding_epoch` contract-vs-source discrepancy) — plus token cohort/trust-domain semantics remain open release blockers tracked on `#281` and `#284` for G3.
 
 ## 9. Historical opt-in acceptance criteria
 
