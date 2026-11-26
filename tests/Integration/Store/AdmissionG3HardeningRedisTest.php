@@ -289,13 +289,15 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
         $this->assertExactPermitClaimed($pSuccAfter, $afterPFail, $pFailArtifacts['permitKey'], 'failure');
         self::assertArrayNotHasKey($pFailArtifacts['memberId'], $this->zsetMembers($afterPFail, $pFailArtifacts['namedCounterKeys'][AdmissionScopePurpose::PPEND]), 'P failure must release named ppend slot');
         foreach ([AdmissionScopePurpose::PACCT, AdmissionScopePurpose::PACCTD, AdmissionScopePurpose::PPROOF, AdmissionScopePurpose::PPROOFD] as $proofPurpose) {
-            self::assertArrayHasKey($pFailArtifacts['memberId'], $this->zsetMembers($afterPFail, $pFailArtifacts['namedCounterKeys'][$proofPurpose]), "P failure must NOT refund {$proofPurpose}");
+            $proofKey = $pFailArtifacts['namedCounterKeys'][$proofPurpose];
+            self::assertArrayHasKey($pFailArtifacts['memberId'], $this->zsetMembers($afterPFail, $proofKey), "P failure must NOT refund {$proofPurpose}");
+            self::assertSame($pSuccAfter[$proofKey], $afterPFail[$proofKey], "P failure must preserve {$proofPurpose} entry untouched");
         }
         $pFailSetKey = $this->deriveAdmSetKey(AdmissionScopePurpose::PFAIL, '198.51.100.71', 'outer-s1');
         $pFailMember = $this->deriveAdmMember('acct-p-fail', 'outer-s1');
         $k4pKey = $this->deriveE1ScoreKey('k4p', 'acct-p-fail', 'outer-s1');
         $k4WrongLaneKey = $this->deriveE1ScoreKey('k4', 'acct-p-fail', 'outer-s1');
-        $this->assertExactFailureAttribution($pSuccAfter, $afterPFail, $pFailSetKey, $pFailMember, $k4pKey, $k4WrongLaneKey);
+        $this->assertExactFailureAttribution($pSuccAfter, $afterPFail, $pFailSetKey, $pFailMember, self::NOW + 600, $k4pKey, 3, $k4WrongLaneKey);
 
         // U SUCCESS under closed fence: claims exact permit, deletes exact acct-u-succ bucket (absent => full), leaves acct-u-fail bucket intact, zero ufail/score!
         $uSuccSettle = $runtime->limit($ctxUSucc, new RateLimitCommand('login_protection', 1, false, false, true, $uSuccPermit));
@@ -317,7 +319,7 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
         $uFailMember = $this->deriveAdmMember('acct-u-fail', 'outer-s1');
         $k4Key = $this->deriveE1ScoreKey('k4', 'acct-u-fail', 'outer-s1');
         $k4pWrongLaneKey = $this->deriveE1ScoreKey('k4p', 'acct-u-fail', 'outer-s1');
-        $this->assertExactFailureAttribution($afterUSucc, $afterUFail, $uFailSetKey, $uFailMember, $k4Key, $k4pWrongLaneKey);
+        $this->assertExactFailureAttribution($afterUSucc, $afterUFail, $uFailSetKey, $uFailMember, self::NOW + 600, $k4Key, 3, $k4pWrongLaneKey);
 
         // Re-open fence briefly to confirm P pending slot on 198.51.100.70 was genuinely released in Redis!
         $runtime->openAdmissionFence('login');
@@ -433,23 +435,52 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
     public function testDetectorCatchesWrongFailurePurposeOrWrongLaneScore(): void
     {
         $pfail = 'maatify:rate-limiter:v1:{ns}:adm:a1:s:' . str_repeat('1', 64);
+        $unrelated = 'maatify:rate-limiter:v1:{ns}:adm:a1:s:' . str_repeat('9', 64);
         $k4p = 'maatify:rate-limiter:e1:ns:score:' . str_repeat('2', 64);
         $k4Wrong = 'maatify:rate-limiter:e1:ns:score:' . str_repeat('3', 64);
         $member = 'a1.scope.member.' . str_repeat('4', 64);
 
-        $before = [];
+        $before = [
+            $unrelated => ['type' => 'zset', 'value' => ['m1' => '1767226200'], 'hasTtl' => true],
+        ];
         $wrongLaneScoreAfter = [
-            $pfail => ['type' => 'zset', 'value' => [$member => '1767226200'], 'hasTtl' => true],
-            $k4Wrong => ['type' => 'hash', 'value' => ['value' => '5'], 'hasTtl' => true],
+            $unrelated => ['type' => 'zset', 'value' => ['m1' => '1767226200'], 'hasTtl' => true],
+            $pfail => ['type' => 'zset', 'value' => [$member => (string) (self::NOW + 600)], 'hasTtl' => true],
+            $k4Wrong => ['type' => 'hash', 'value' => ['value' => '3'], 'hasTtl' => true],
+        ];
+        $wrongExpiryAfter = [
+            $unrelated => ['type' => 'zset', 'value' => ['m1' => '1767226200'], 'hasTtl' => true],
+            $pfail => ['type' => 'zset', 'value' => [$member => '1'], 'hasTtl' => true],
+            $k4p => ['type' => 'hash', 'value' => ['value' => '3'], 'hasTtl' => true],
+        ];
+        $wrongScoreValueAfter = [
+            $unrelated => ['type' => 'zset', 'value' => ['m1' => '1767226200'], 'hasTtl' => true],
+            $pfail => ['type' => 'zset', 'value' => [$member => (string) (self::NOW + 600)], 'hasTtl' => true],
+            $k4p => ['type' => 'hash', 'value' => ['value' => '999'], 'hasTtl' => true],
+        ];
+        $swappedUnrelatedSetAfter = [
+            $unrelated => ['type' => 'zset', 'value' => ['m2' => '1767226200'], 'hasTtl' => true],
+            $pfail => ['type' => 'zset', 'value' => [$member => (string) (self::NOW + 600)], 'hasTtl' => true],
+            $k4p => ['type' => 'hash', 'value' => ['value' => '3'], 'hasTtl' => true],
         ];
 
-        $caught = false;
-        try {
-            $this->assertExactFailureAttribution($before, $wrongLaneScoreAfter, $pfail, $member, $k4p, $k4Wrong);
-        } catch (\PHPUnit\Framework\AssertionFailedError) {
-            $caught = true;
+        foreach ([$wrongLaneScoreAfter, $wrongExpiryAfter, $wrongScoreValueAfter, $swappedUnrelatedSetAfter] as $candidate) {
+            $caught = false;
+            try {
+                $this->assertExactFailureAttribution($before, $candidate, $pfail, $member, self::NOW + 600, $k4p, 3, $k4Wrong);
+            } catch (\PHPUnit\Framework\AssertionFailedError) {
+                $caught = true;
+            }
+            self::assertTrue($caught, 'DETECTOR (F302-R4-01): wrong lane/expiry/score-value/unrelated-set must be caught');
         }
-        self::assertTrue($caught, 'DETECTOR (F302-R3-02): scoring wrong lane K4 instead of K4P must be caught');
+
+        $wrongTypeCaught = false;
+        try {
+            $this->zsetMembers([$pfail => ['type' => 'string', 'value' => 'bad', 'hasTtl' => true]], $pfail);
+        } catch (\PHPUnit\Framework\AssertionFailedError) {
+            $wrongTypeCaught = true;
+        }
+        self::assertTrue($wrongTypeCaught, 'DETECTOR (F302-R4-01): wrong Redis type at zset key must fail');
     }
 
     public function testDetectorCatchesMissingBucketRefundOnUSuccess(): void
@@ -572,16 +603,23 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
         array $after,
         string $expectedFailSetKey,
         string $expectedFailMember,
+        int $expectedFailExpiry,
         string $expectedScoreKey,
+        int $expectedScoreDelta,
         string $wrongLaneScoreKey,
     ): void {
-        self::assertArrayNotHasKey($expectedFailMember, $this->zsetMembers($before, $expectedFailSetKey));
-        self::assertArrayHasKey($expectedFailMember, $this->zsetMembers($after, $expectedFailSetKey), "Failure must add {$expectedFailMember} to {$expectedFailSetKey}");
+        $beforeMembers = $this->zsetMembers($before, $expectedFailSetKey);
+        $afterMembers = $this->zsetMembers($after, $expectedFailSetKey);
+        self::assertArrayNotHasKey($expectedFailMember, $beforeMembers);
+        self::assertArrayHasKey($expectedFailMember, $afterMembers, "Failure must add {$expectedFailMember} to {$expectedFailSetKey}");
+        self::assertIsScalar($afterMembers[$expectedFailMember]);
+        self::assertSame((string) $expectedFailExpiry, (string) $afterMembers[$expectedFailMember], "Failure member expiry must equal NOW + W ({$expectedFailExpiry})");
 
-        self::assertSame($this->admSetSizes($before)[$expectedFailSetKey] ?? 0, count($this->zsetMembers($before, $expectedFailSetKey)));
-        foreach ($this->admSetSizes($after) as $setKey => $size) {
-            if ($setKey !== $expectedFailSetKey) {
-                self::assertSame($this->admSetSizes($before)[$setKey] ?? 0, $size, "Unrelated failure set {$setKey} must not change");
+        $allKeys = array_unique(array_merge(array_keys($before), array_keys($after)));
+        foreach ($allKeys as $key) {
+            $keyStr = (string) $key;
+            if (str_contains($keyStr, ':adm:a1:s:') && $keyStr !== $expectedFailSetKey) {
+                self::assertSame($before[$keyStr] ?? null, $after[$keyStr] ?? null, "Unrelated failure set {$keyStr} must not change or be deleted");
             }
         }
 
@@ -589,7 +627,7 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
         $afterRaw = is_array($after[$expectedScoreKey]['value'] ?? null) ? ($after[$expectedScoreKey]['value']['value'] ?? 0) : 0;
         $beforeScore = is_numeric($beforeRaw) ? (int) $beforeRaw : 0;
         $afterScore = is_numeric($afterRaw) ? (int) $afterRaw : 0;
-        self::assertGreaterThan($beforeScore, $afterScore, "Expected lane score key {$expectedScoreKey} must increase on failure");
+        self::assertSame($expectedScoreDelta, $afterScore - $beforeScore, "Expected lane score key {$expectedScoreKey} must increase by exact delta {$expectedScoreDelta}");
         self::assertSame($before[$wrongLaneScoreKey] ?? null, $after[$wrongLaneScoreKey] ?? null, "Wrong-lane score key {$wrongLaneScoreKey} must remain untouched");
     }
 
@@ -664,9 +702,11 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
      */
     private function zsetMembers(array $dump, string $key): array
     {
-        if (! array_key_exists($key, $dump) || $dump[$key]['type'] !== 'zset' || ! is_array($dump[$key]['value'])) {
+        if (! array_key_exists($key, $dump)) {
             return [];
         }
+        self::assertSame('zset', $dump[$key]['type'], "Expected zset at {$key}");
+        self::assertIsArray($dump[$key]['value'], "Expected array zset value at {$key}");
         $out = [];
         foreach ($dump[$key]['value'] as $member => $score) {
             $out[(string) $member] = $score;

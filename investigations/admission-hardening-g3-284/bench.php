@@ -86,9 +86,14 @@ $warmup = 15;
 $iters = 150;
 
 $gitOut = static function (string $cmd) use ($srcRoot): string {
-    $res = shell_exec('git -C ' . escapeshellarg($srcRoot) . ' ' . $cmd . ' 2>/dev/null');
+    $lines = [];
+    $exit = 0;
+    exec('git -C ' . escapeshellarg($srcRoot) . ' ' . $cmd . ' 2>&1', $lines, $exit);
+    if ($exit !== 0) {
+        throw new RuntimeException("git {$cmd} failed (exit {$exit}): " . implode("\n", $lines));
+    }
 
-    return is_string($res) ? trim($res) : 'unknown';
+    return trim(implode("\n", $lines));
 };
 $sourceSha = $gitOut('rev-parse HEAD');
 $sourceTree = $gitOut('rev-parse HEAD^{tree}');
