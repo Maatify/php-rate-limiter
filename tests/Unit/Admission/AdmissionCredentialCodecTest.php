@@ -168,6 +168,104 @@ final class AdmissionCredentialCodecTest extends TestCase
         );
     }
 
+    public function testEncodeAcceptsExactMaxLengthAndRejectsClosestOversizeAnd4096AsciiAccount(): void
+    {
+        $codec = $this->codec();
+
+        // Find the largest ASCII account length whose encoded token fits within MAX_LENGTH (4096).
+        // JSON overhead with acct-1 / ['login', 'reauth'] / inst-1 / jti-1 / exp=1000100 / bat=999990 / epo=4 / 16-hex kid
+        // leaves exact 4096-byte token at account length 2894 (payload 4052 + '.' + 43-char MAC = 4096).
+        $baseClaims = static fn(string $account): AdmissionCredentialDTO => new AdmissionCredentialDTO(
+            $account,
+            'acct-1',
+            ['login', 'reauth'],
+            'inst-1',
+            'jti-1',
+            self::NOW + 100,
+            self::NOW - 10,
+            4,
+        );
+
+        $maxAccountLen = 2894;
+        $exactAccount = str_repeat('a', $maxAccountLen);
+        $exactClaims = $baseClaims($exactAccount);
+        $exactToken = $codec->encode($exactClaims);
+        self::assertSame(AdmissionCredentialCodec::MAX_LENGTH, strlen($exactToken));
+        self::assertSame(
+            AdmissionCredentialVerdictEnum::VALID,
+            $codec->verify($exactToken, $exactAccount, 'acct-1', 'login', 'inst-1', self::NOW, 4)->verdict,
+        );
+
+        // Closest possible length above the 4096 boundary (+1 byte on account -> 4098 chars) must be rejected at encode().
+        // Construct DTO outside try so only encode() is under test, and verify the actual codec bindingKey/stateSecret are never leaked.
+        $closestOversizeAccount = str_repeat('a', $maxAccountLen + 1);
+        $closestOversizeClaims = $baseClaims($closestOversizeAccount);
+        $oversizeRejected = false;
+        try {
+            $codec->encode($closestOversizeClaims);
+        } catch (RateLimiterException $e) {
+            $oversizeRejected = true;
+            self::assertSame('Encoded admission credential exceeds the maximum length of 4096 characters.', $e->getMessage());
+            self::assertStringNotContainsString($closestOversizeAccount, $e->getMessage());
+            self::assertStringNotContainsString('binding-key', $e->getMessage());
+            self::assertStringNotContainsString(self::STATE_SECRET, $e->getMessage());
+        }
+        self::assertTrue($oversizeRejected, 'encode() must reject closest length over MAX_LENGTH');
+
+        // F-G4-01 regression: 4096-char ASCII account previously produced a 5699-char token that verify() rejected as MALFORMED.
+        $legacy4096Claims = $baseClaims(str_repeat('a', 4096));
+        $legacy4096Rejected = false;
+        try {
+            $codec->encode($legacy4096Claims);
+        } catch (RateLimiterException $e) {
+            $legacy4096Rejected = true;
+            self::assertSame('Encoded admission credential exceeds the maximum length of 4096 characters.', $e->getMessage());
+        }
+        self::assertTrue($legacy4096Rejected, 'encode() must reject 4096-char ASCII account instead of issuing an unusable 5699-char token');
+
+        // Signed v2 credential built independent of encode() at the closest length over 4096 (4098 bytes)
+        // must be rejected as MALFORMED by verify(), isolating the MAX_LENGTH guard from JSON/format errors.
+        $keys = new \Maatify\RateLimiter\Service\AdmissionKeyDeriver(self::ENV, self::DOMAIN, self::STATE_SECRET);
+        $kid = $keys->bindingKeyId('binding-key');
+        $b64Url = static fn(string $raw): string => rtrim(strtr(base64_encode($raw), '+/', '-_'), '=');
+        $oversizePayload = $b64Url(json_encode([
+            'v' => AdmissionCredentialCodec::VERSION,
+            'acc' => $closestOversizeAccount,
+            'sub' => 'acct-1',
+            'grp' => ['login', 'reauth'],
+            'ins' => 'inst-1',
+            'jti' => 'jti-1',
+            'exp' => self::NOW + 100,
+            'bat' => self::NOW - 10,
+            'epo' => 4,
+            'kid' => $kid,
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+        $oversizeSignedToken = $oversizePayload . '.' . $b64Url($keys->credentialMac($oversizePayload, 'binding-key'));
+        self::assertSame(4098, strlen($oversizeSignedToken));
+        self::assertSame(
+            AdmissionCredentialVerdictEnum::MALFORMED,
+            $codec->verify($oversizeSignedToken, $closestOversizeAccount, 'acct-1', 'login', 'inst-1', self::NOW, 4)->verdict,
+        );
+    }
+
+    public function testEncodeThrowsJsonExceptionOnNonUtf8Claims(): void
+    {
+        $codec = $this->codec();
+        $nonUtf8Claims = new AdmissionCredentialDTO(
+            "\xFF",
+            'acct-1',
+            ['login'],
+            'inst-1',
+            'jti-1',
+            self::NOW + 100,
+            self::NOW - 10,
+            4,
+        );
+
+        $this->expectException(\JsonException::class);
+        $codec->encode($nonUtf8Claims);
+    }
+
     public function testSignedPayloadWithUnexpectedShapeIsMalformed(): void
     {
         $codec = $this->codec();

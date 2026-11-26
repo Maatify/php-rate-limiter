@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Service;
 
+use JsonException;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\AdmissionCredentialDTO;
 use Maatify\RateLimiter\DTO\AdmissionCredentialVerificationDTO;
@@ -92,7 +93,15 @@ final class AdmissionCredentialCodec
         return $this->keys->cohort();
     }
 
-    /** Sign the v2 claims with the current binding key under this trust context's framed credential MAC domain. */
+    /**
+     * Sign the v2 claims with the current binding key under this trust context's framed credential MAC domain
+     * (DEC-048 D5), enforcing the 4096-character maximum encoded token length.
+     *
+     * Precondition: all claim strings must be valid UTF-8 so JSON serialization succeeds.
+     *
+     * @throws JsonException when JSON serialization of the claims fails (for example, malformed UTF-8).
+     * @throws RateLimiterException when the encoded signed credential exceeds 4096 characters (fixed message without claims or secrets).
+     */
     public function encode(AdmissionCredentialDTO $claims): string
     {
         $payload = self::base64UrlEncode(json_encode([
@@ -108,7 +117,12 @@ final class AdmissionCredentialCodec
             'kid' => $this->currentKeyId,
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
 
-        return $payload . '.' . self::base64UrlEncode($this->keys->credentialMac($payload, $this->bindingKey));
+        $token = $payload . '.' . self::base64UrlEncode($this->keys->credentialMac($payload, $this->bindingKey));
+        if (strlen($token) > self::MAX_LENGTH) {
+            throw new RateLimiterException('Encoded admission credential exceeds the maximum length of ' . self::MAX_LENGTH . ' characters.');
+        }
+
+        return $token;
     }
 
     /**

@@ -121,14 +121,44 @@ final class AdmissionEngineReserveTest extends TestCase
 
     public function testThePermitTokenStaysBoundedWhateverTheHostPutsInTheCredentialId(): void
     {
-        $lab = new EngineLab();
-        $credential = $lab->mint('acct-1', 'inst-1', jti: str_repeat('j', 3000));
-        $permit = (string) EngineLab::permit($lab->check($lab->context('acct-1', self::IP, 'inst-1', $credential)));
+        $lab = new EngineLab(EngineLab::budgets(sourceCapacity: 1, proofProofWindow: 1));
+        // Exhaust sourceCapacity=1 on Lane U so only a genuine Lane P decision can be admitted on self::IP.
+        $uCheck = $lab->check($lab->context('u-filler', self::IP));
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $uCheck->decision);
+        self::assertSame('source_capacity', EngineLab::cause($lab->check($lab->context('u-control', self::IP))));
 
+        $jti = str_repeat('j', 2800);
+        $credential = $lab->mint('acct-1', 'inst-1', jti: $jti);
+        self::assertGreaterThan(3500, strlen($credential));
+        self::assertLessThanOrEqual(\Maatify\RateLimiter\Service\AdmissionCredentialCodec::MAX_LENGTH, strlen($credential));
+
+        $first = $lab->check($lab->context('acct-1', self::IP, 'inst-1', $credential));
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $first->decision, 'Proven Lane P must bypass exhausted Lane U sourceCapacity');
+        $permit = EngineLab::permit($first);
+        self::assertIsString($permit);
+        self::assertNotSame('', $permit);
         self::assertLessThanOrEqual(512, strlen($permit));
-        // The bounded reference still binds the outcome to its proof: the success is accepted and refunds.
+
+        $permitPayloadJson = $lab->codec->verifyPermitToken($permit);
+        self::assertIsString($permitPayloadJson);
+        $permitPayload = json_decode($permitPayloadJson, true, 512, JSON_THROW_ON_ERROR);
+        self::assertIsArray($permitPayload);
+        self::assertSame('P', $permitPayload['lane'] ?? null);
+        self::assertSame(substr(hash('sha256', $jti), 0, 32), $permitPayload['j'] ?? null);
+
+        // Before settlement, proofProofWindow=1 blocks a second admission for the same proof.
+        $blockedBeforeRefund = $lab->check($lab->context('acct-1', self::IP, 'inst-1', $credential));
+        self::assertFalse($blockedBeforeRefund->isAllowed());
+        self::assertSame('proof_capacity', EngineLab::cause($blockedBeforeRefund));
+
+        // Success settlement accepts and refunds the proofProofWindow=1 counter so a subsequent check is allowed.
         $result = $lab->outcome($lab->context('acct-1', self::IP, 'inst-1', $credential), true, $permit);
-        self::assertStringStartsNotWith('permit_', (string) EngineLab::cause($result));
+        self::assertTrue($result->isAllowed());
+        self::assertNull($result->metadata?->cause);
+
+        $afterRefund = $lab->check($lab->context('acct-1', self::IP, 'inst-1', $credential));
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $afterRefund->decision);
+        self::assertNotNull(EngineLab::permit($afterRefund));
     }
 
     public function testANonOptedPolicyIsUntouchedByTheRuntime(): void
