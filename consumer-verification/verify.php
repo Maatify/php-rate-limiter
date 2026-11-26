@@ -1109,8 +1109,18 @@ $admissionStore = new RedisFullCapabilityStore($executor, 'consumer-admission');
 // reason). A frozen caller clock is safe here since #153 phase 2 (#158): the bounded correlation snapshots take their
 // expiry from the caller's clock, not Redis TIME, so real time passing no longer invalidates them.
 $admissionClock = new FixedClock(new DateTimeImmutable('now', new DateTimeZone('UTC')));
-$admissionBuild = static function (string $env, BlockPolicyInterface $policy) use ($admissionStore, $admissionClock): CompositeRateLimiterRuntimeInterface {
-    return RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('admission-key', 'admission-fingerprint', $env, bindingKeySecret: 'admission-binding'), $admissionStore, new RecordingFailureSignalEmitter())
+$admissionTrustDomain = 'consumer-verification-auth-realm';
+$admissionStateSecret = 'consumer-verification-state-secret-32-bytes!';
+$admissionConfigFor = static fn(string $env): RateLimiterConfig => new RateLimiterConfig(
+    'admission-key',
+    'admission-fingerprint',
+    $env,
+    bindingKeySecret: 'admission-binding',
+    admissionTrustDomain: $admissionTrustDomain,
+    admissionStateSecret: $admissionStateSecret,
+);
+$admissionBuild = static function (string $env, BlockPolicyInterface $policy) use ($admissionStore, $admissionClock, $admissionConfigFor): CompositeRateLimiterRuntimeInterface {
+    return RateLimiterBuilder::fromFullCapabilityStore($admissionConfigFor($env), $admissionStore, new RecordingFailureSignalEmitter())
         ->withPolicy($policy)
         ->withClock($admissionClock)
         ->build();
@@ -1165,10 +1175,10 @@ requireCondition($cvh2Refused->metadata?->cause === 'source_capacity' && $cvh2Re
 requireCondition($cvh2Refused->retryAfter > 0 && $cvh2Refused->retryAfter <= 600, 'CVH-2: retryAfter is outside the window.');
 requireCondition($admission->limit($admissionContext('cvh2-24', '203.0.113.121'), RateLimitCommand::checkOnly('login_protection'))->decision === RateLimitResultDTO::DECISION_ALLOW, 'CVH-2 control: another source was refused.');
 
-// CVH-3: a Host-minted credential is admitted from the exhausted source; the same with a changed MAC is not.
-$codec = new AdmissionCredentialCodec('admission-binding');
+// CVH-3: a Host-minted credential (from the same RateLimiterConfig via AdmissionCredentialCodec::fromConfig) is admitted from the exhausted source; the same with a changed MAC is not.
+$codec = AdmissionCredentialCodec::fromConfig($admissionConfigFor('cvh'));
 // The credential's issue and expiry times come from the admission clock, so they agree with the runtime's `now`.
-$mint = static fn(int $epoch): string => $codec->encode(new AdmissionCredentialDTO('cvh-owner', ['login'], 'inst-owner', 'jti-owner-' . $epoch, $admissionClock->now()->getTimestamp() + 86400, $admissionClock->now()->getTimestamp(), $epoch));
+$mint = static fn(int $epoch): string => $codec->encode(new AdmissionCredentialDTO('cvh-owner', 'cvh-owner', ['login'], 'inst-owner', 'jti-owner-' . $epoch, $admissionClock->now()->getTimestamp() + 86400, $admissionClock->now()->getTimestamp(), $epoch));
 $credential = $mint($admission->bindingEpoch('cvh-owner'));
 $tampered = substr($credential, 0, -2) . (str_ends_with($credential, 'AA') ? 'BB' : 'AA');
 $cvh3 = $admission->limit($admissionContext('cvh-owner', $exhausted, 'inst-owner', $credential), RateLimitCommand::checkOnly('login_protection'));
@@ -1220,7 +1230,75 @@ for ($i = 0; $i < 25; $i++) {
     $cvh6Dropped++;
 }
 requireCondition($cvh6Dropped === 24, 'CVH-6: a dropping Host was not held at the source capacity 24.');
-$admissionSummary = ['cvh1' => ['variantFenceClosed' => $cvh1Variant, 'preset' => $cvh1Preset], 'cvh2' => resultShape($cvh2Refused), 'cvh3' => resultShape($cvh3), 'cvh4' => resultShape($cvh4), 'cvh5' => resultShape($cvh5Second), 'cvh6' => ['reporting' => resultShape($cvh6Reporting), 'droppingAdmitted' => $cvh6Dropped]];
+
+// CVH-7 (G3 DEC-048/DEC-049/DEC-050): fail-fast config validation before any Redis command, revocation survival across >=2 outer rotations, and closed-fence permit settlement.
+$cvh7Commands = 0;
+$cvh7CountingStore = new RedisFullCapabilityStore(new CallableRedisCommandExecutor(static function (array $command) use ($raw, &$cvh7Commands): mixed {
+    $cvh7Commands++;
+    return $raw->execute($command);
+}), 'consumer-admission-cvh7-config');
+foreach ([
+    static fn(): mixed => new RateLimiterConfig('k', 'f', 'prod', admissionTrustDomain: 'domain-only'),
+    static fn(): mixed => new RateLimiterConfig('k', 'f', 'prod', admissionStateSecret: str_repeat('a', 32)),
+    static fn(): mixed => new RateLimiterConfig('k', 'f', 'prod', admissionTrustDomain: 'domain', admissionStateSecret: str_repeat('a', 31)),
+    static fn(): mixed => RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('k', 'f', 'prod', bindingKeySecret: 'b'), $cvh7CountingStore, new RecordingFailureSignalEmitter())->withPolicy(new LoginProtectionAdmissionPolicy())->build(),
+    static fn(): mixed => RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('k', 'f', 'prod', admissionTrustDomain: 'domain', admissionStateSecret: str_repeat('a', 32)), $cvh7CountingStore, new RecordingFailureSignalEmitter())->withPolicy(new LoginProtectionAdmissionPolicy())->build(),
+] as $index => $invalidBuilder) {
+    $rejected = false;
+    try {
+        $invalidBuilder();
+    } catch (RateLimiterException) {
+        $rejected = true;
+    }
+    requireCondition($rejected, "CVH-7: invalid Admission config case {$index} was not rejected.");
+}
+requireCondition($cvh7Commands === 0, 'CVH-7: invalid Admission config executed Redis commands before failing.');
+
+// Revocation survival across >=2 outer key-secret rotations with zero intermediate activity for the revoked account.
+$cvh7Rot1 = RateLimiterBuilder::fromFullCapabilityStore(
+    new RateLimiterConfig('admission-key-2', 'admission-fingerprint', 'cvh', 'admission-key', null, 'admission-binding', null, $admissionTrustDomain, $admissionStateSecret),
+    $admissionStore,
+    new RecordingFailureSignalEmitter(),
+)->withPolicy(new LoginProtectionAdmissionPolicy())->withClock($admissionClock)->build();
+requireCondition($cvh7Rot1 instanceof AdmissionFenceControlInterface, 'CVH-7: rotated runtime 1 lacks fence control.');
+$cvh7Rot1->openAdmissionFence('login');
+
+$cvh7Rot2 = RateLimiterBuilder::fromFullCapabilityStore(
+    new RateLimiterConfig('admission-key-3', 'admission-fingerprint', 'cvh', 'admission-key-2', null, 'admission-binding', null, $admissionTrustDomain, $admissionStateSecret),
+    $admissionStore,
+    new RecordingFailureSignalEmitter(),
+)->withPolicy(new LoginProtectionAdmissionPolicy())->withClock($admissionClock)->build();
+requireCondition($cvh7Rot2 instanceof AdmissionFenceControlInterface && $cvh7Rot2 instanceof AdmissionBindingEpochInterface, 'CVH-7: rotated runtime 2 lacks fence/epoch controls.');
+$cvh7Rot2->openAdmissionFence('login');
+requireCondition($cvh7Rot2->bindingEpoch('cvh-owner') === 1, 'CVH-7: revoked epoch-1 state was lost after 2 outer rotations.');
+for ($i = 0; $i < 24; $i++) {
+    $c = $admissionContext('cvh7-fill-' . $i, $exhausted);
+    $r = $cvh7Rot2->limit($c, RateLimitCommand::checkOnly('login_protection'));
+    $cvh7Rot2->limit($c, $admissionCommand(true, $r->metadata?->permit));
+}
+$cvh7OldRevoked = $cvh7Rot2->limit($admissionContext('cvh-owner', $exhausted, 'inst-owner', $credential), RateLimitCommand::checkOnly('login_protection'));
+requireCondition($cvh7OldRevoked->metadata?->cause === 'source_capacity', 'CVH-7: revoked epoch-0 credential revived after 2 outer rotations.');
+$cvh7ValidReissued = $cvh7Rot2->limit($admissionContext('cvh-owner', $exhausted, 'inst-owner', $reissued), RateLimitCommand::checkOnly('login_protection'));
+requireCondition($cvh7ValidReissued->decision === RateLimitResultDTO::DECISION_ALLOW, 'CVH-7: valid epoch-1 holder was denied after 2 outer rotations.');
+$cvh7Rot2->limit($admissionContext('cvh-owner', $exhausted, 'inst-owner', $reissued), $admissionCommand(true, $cvh7ValidReissued->metadata?->permit));
+
+// D7 closed-fence settlement: issue a permit while open, close fence via 2 un-opened outer rotations, settle once.
+$cvh7D7Ctx = $admissionContext('cvh7-d7', '203.0.113.140');
+$cvh7D7Check = $cvh7Rot2->limit($cvh7D7Ctx, RateLimitCommand::checkOnly('login_protection'));
+requireCondition($cvh7D7Check->decision === RateLimitResultDTO::DECISION_ALLOW && is_string($cvh7D7Check->metadata?->permit), 'CVH-7 D7: permit not issued.');
+$cvh7Closed = RateLimiterBuilder::fromFullCapabilityStore(
+    new RateLimiterConfig('admission-key-5', 'admission-fingerprint', 'cvh', 'admission-key-4', null, 'admission-binding', null, $admissionTrustDomain, $admissionStateSecret),
+    $admissionStore,
+    new RecordingFailureSignalEmitter(),
+)->withPolicy(new LoginProtectionAdmissionPolicy())->withClock($admissionClock)->build();
+$cvh7ClosedSettle = $cvh7Closed->limit($cvh7D7Ctx, $admissionCommand(false, $cvh7D7Check->metadata?->permit));
+requireCondition(! str_starts_with((string) $cvh7ClosedSettle->metadata?->cause, 'permit_'), 'CVH-7 D7: valid outstanding permit did not settle under closed fence.');
+$cvh7ClosedDup = $cvh7Closed->limit($cvh7D7Ctx, $admissionCommand(false, $cvh7D7Check->metadata?->permit));
+requireCondition($cvh7ClosedDup->metadata?->cause === 'permit_duplicate', 'CVH-7 D7: replay under closed fence was not permit_duplicate.');
+$cvh7ClosedInvalid = $cvh7Closed->limit($cvh7D7Ctx, $admissionCommand(false, 'bogus.permit'));
+requireCondition($cvh7ClosedInvalid->metadata?->cause === 'permit_unknown', 'CVH-7 D7: invalid permit under closed fence was not permit_unknown.');
+
+$admissionSummary = ['cvh1' => ['variantFenceClosed' => $cvh1Variant, 'preset' => $cvh1Preset], 'cvh2' => resultShape($cvh2Refused), 'cvh3' => resultShape($cvh3), 'cvh4' => resultShape($cvh4), 'cvh5' => resultShape($cvh5Second), 'cvh6' => ['reporting' => resultShape($cvh6Reporting), 'droppingAdmitted' => $cvh6Dropped], 'cvh7' => ['configRejectionsBeforeRedis' => true, 'epochAfterTwoOuterRotations' => 1, 'revokedStayedU' => $cvh7OldRevoked->metadata?->cause, 'reissuedStayedP' => $cvh7ValidReissued->decision, 'closedFenceDuplicate' => $cvh7ClosedDup->metadata?->cause, 'closedFenceInvalid' => $cvh7ClosedInvalid->metadata?->cause]];
 
 $keys = redisKeys($raw);
 requireCondition(count($keys) > 0, 'No Redis persistence was observable.');

@@ -560,14 +560,13 @@ signal remains `HARD_BLOCK` L2 but is persisted against K2, never K3.
 
 ## 5. Correlation Rules (Attack Detection)
 
-> **Interim posture (DEC-027, which superseded DEC-019 on 2026-10-20):** for every policy that
-> does not opt into the admission reservation, and for an opted policy while its fleet fence is
+> **Interim posture ([DEC-050](decisions/DEC-050_RETAINED_CORRELATION_POSTURE_AND_CLOSED_FENCE_PERMIT_SETTLEMENT.md), which superseded DEC-027 on 2026-11-26):** for every policy that
+> does not opt into the admission reservation, and for `checkOnly` / permit-less outcomes of an opted policy while its fleet fence is
 > closed, the correlation rules in this section remain the shipped behavior under the
-> Owner-approved interim Security-first posture, recorded in
-> [DEC-027](decisions/DEC-027_RETAINED_CORRELATION_POSTURE_FOR_POLICIES_THAT_DO_NOT_OPT_INTO_ADMISSION.md). That posture
+> Owner-approved interim Security-first posture (while explicit permit-bearing outcomes of a healthy opted policy still settle through permit verification/claim under DEC-050). That posture
 > is not a fix: issues #97 (LOW passive-UA), #100 (K2 shared-NAT churn), and #106 (K1 spray
 > on shared NAT) remain OPEN for those policies, and legitimate shared-NAT users can still be
-> denied. A policy that opts in follows §12 and DEC-022 instead. This note changes no rule,
+> denied. A policy that opts in follows §12, DEC-022, and DEC-048 instead. This note changes no rule,
 > threshold, or table.
 
 ### 5.0 Near-Threshold Watch (Mandatory Anti N-1 Gaming)
@@ -1015,8 +1014,8 @@ These limits are intended behavior approved by the Owner (#183, 2026-11-03) on t
 1. **Collective harm behind shared NAT (policies that do not opt into admission).** K1 and K2
    are shared-scope keys (IP prefix; IP prefix + normalized UA). Unrelated clients behind one
    NAT share them, so one client's failures, churn or credential spray can block the others
-   (#100, #106). This is the DEC-027 posture (DEC-019 carried verbatim). The supported
-   alternative is the admission reservation (the active decisions DEC-022, DEC-023, DEC-024, DEC-026, DEC-033, DEC-034 and DEC-035, §12), where K1 credential spray is
+   (#100, #106). This is the DEC-050 posture (superseding DEC-027). The supported
+   alternative is the admission reservation (the active decisions DEC-022, DEC-023, DEC-024, DEC-026, DEC-033, DEC-034, DEC-035, DEC-048, DEC-049 and DEC-050, §12), where K1 credential spray is
    not evaluated and is replaced by the source capacity `U_src` and the net failure cap `F`
    (DEC-022).
 2. **Trusted sessions on several accounts (policies that do not opt into admission).** The
@@ -1067,9 +1066,9 @@ constructs the admission runtime with the package constants (DEC-035) when a reg
 declares the capability. The figures recorded in DEC-034 (for example the co-located office replay, legitimate refusals 26/61 and capped attacker reach 40 under sliding windows, against 21/61 and 72 under the fixed windows of DEC-025) are measured trade-offs of registered replays that the Owner accepted (#220). They are not production guarantees: the bounds a deployment gets are the package constants, and its own traffic can measure differently. For such a policy, while its fleet fence is open, the evaluation order of
 §1 gains one stage:
 
-1. identity resolution, then the **lane** (a verified credential selects the proven lane `P`, anything
-   else the unproven lane `U`; a closed fleet fence means no admission at all and the policy runs
-   the path of a policy that did not opt in);
+1. identity resolution, then the **lane** (a verified v2 credential selects the proven lane `P`, anything
+   else the unproven lane `U`; while the fleet fence is closed, `checkOnly` and permit-less outcomes run
+   the path of a policy that did not opt in, whereas an explicit permit-bearing outcome of a healthy opted policy still settles through permit verification/claim under DEC-050);
 2. the pipeline decides `ALLOW` or a block with the lane as a parameter (penalties read first);
 3. **admission**, only on an allowed `checkOnly`: all-or-nothing reservation of the lane's scopes. A
    refusal is a non-persisted `SOFT_BLOCK` (`source_capacity`, `source_failure_cap`,

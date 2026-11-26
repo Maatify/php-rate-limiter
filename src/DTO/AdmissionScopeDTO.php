@@ -40,14 +40,14 @@ final readonly class AdmissionScopeDTO
         public bool $settlesOnExpiry = false,
         public bool $releasesOnFailure = false,
     ) {
-        if (trim($name) === '' || trim($key) === '') {
+        if (trim($name, " \t\n\r\v\f") === '' || trim($key, " \t\n\r\v\f") === '') {
             throw new RateLimiterException('Admission scope name and key must not be empty.');
         }
         if ($capacity < 1 || $ttlSeconds < 1) {
             throw new RateLimiterException('Admission scope capacity and lifetime must be positive integers.');
         }
         $needsMember = $kind === AdmissionScopeKindEnum::DEVICE_MEMBER || $kind === AdmissionScopeKindEnum::SET_SIZE;
-        if ($needsMember && ($member === null || trim($member) === '')) {
+        if ($needsMember && ($member === null || trim($member, " \t\n\r\v\f") === '')) {
             throw new RateLimiterException('A device-member or set-size admission scope requires a member.');
         }
         if ($successKeepsSettled && $kind !== AdmissionScopeKindEnum::SET_SIZE) {

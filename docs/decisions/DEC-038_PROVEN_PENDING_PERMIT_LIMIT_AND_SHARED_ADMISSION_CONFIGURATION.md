@@ -6,7 +6,7 @@
 
 ## Status
 
-`ACTIVE` — approved by the Owner on 2026-11-13 after Lead acceptance of `01c24f7`. The activation commit is tracked in PR [#207](https://github.com/Maatify/php-rate-limiter/pull/207) (#206).
+`SUPERSEDED` by [DEC-049](DEC-049_DURABLE_SHARED_ADMISSION_CONFIGURATION_AND_PROVEN_PENDING_PERMIT_LIMIT.md) on 2026-11-26 (G3 `D4`, [#284 comment 7185799202](https://github.com/Maatify/php-rate-limiter/issues/284#issuecomment-7185799202)). Historically `ACTIVE` — approved by the Owner on 2026-11-13 after Lead acceptance of `01c24f7`. The activation commit is tracked in PR [#207](https://github.com/Maatify/php-rate-limiter/pull/207) (#206).
 
 ## Date
 
@@ -88,4 +88,4 @@ None
 
 ## Superseded By
 
-None
+`DEC-049`

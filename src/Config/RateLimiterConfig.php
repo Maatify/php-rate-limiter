@@ -15,6 +15,9 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
  */
 final readonly class RateLimiterConfig
 {
+    /** Minimum required byte length of the stable high-entropy admission state secret (DEC-048 D1). */
+    public const MIN_ADMISSION_STATE_SECRET_BYTES = 32;
+
     private string $keySecret;
 
     private string $fingerprintSecret;
@@ -29,6 +32,10 @@ final readonly class RateLimiterConfig
 
     private ?string $previousBindingKeySecret;
 
+    private ?string $admissionTrustDomain;
+
+    private ?string $admissionStateSecret;
+
     /**
      * Validate and retain the active and optional previous generation inputs.
      *
@@ -39,7 +46,9 @@ final readonly class RateLimiterConfig
      * @param ?string $previousFingerprintSecret Optional previous fingerprint-generation secret.
      * @param ?string $bindingKeySecret Optional admission-credential binding key. Required only when a policy declares the admission capability.
      * @param ?string $previousBindingKeySecret Optional previous binding key; valid only together with an active one.
-     * @throws RateLimiterException When any required or provided optional value is blank.
+     * @param ?string $admissionTrustDomain Optional opaque non-blank admission state/issuance trust domain (DEC-048 D1). Required with `$admissionStateSecret` only when an admission policy is registered.
+     * @param ?string $admissionStateSecret Optional stable high-entropy admission state secret, minimum 32 bytes (DEC-048 D1). Must be provided together with `$admissionTrustDomain`.
+     * @throws RateLimiterException When any required or provided optional value is blank, short, or inconsistently paired.
      */
     public function __construct(
         #[\SensitiveParameter]
@@ -55,6 +64,9 @@ final readonly class RateLimiterConfig
         ?string $bindingKeySecret = null,
         #[\SensitiveParameter]
         ?string $previousBindingKeySecret = null,
+        ?string $admissionTrustDomain = null,
+        #[\SensitiveParameter]
+        ?string $admissionStateSecret = null,
     ) {
         self::assertNotBlank($keySecret, 'Active key secret');
         self::assertNotBlank($fingerprintSecret, 'Active fingerprint secret');
@@ -79,6 +91,23 @@ final readonly class RateLimiterConfig
             }
         }
 
+        if ($admissionTrustDomain !== null) {
+            self::assertOpaqueNotBlank($admissionTrustDomain, 'Admission trust domain');
+        }
+
+        if ($admissionStateSecret !== null) {
+            self::assertOpaqueNotBlank($admissionStateSecret, 'Admission state secret');
+            if (strlen($admissionStateSecret) < self::MIN_ADMISSION_STATE_SECRET_BYTES) {
+                throw new RateLimiterException(
+                    'Admission state secret must be at least ' . self::MIN_ADMISSION_STATE_SECRET_BYTES . ' bytes.',
+                );
+            }
+        }
+
+        if (($admissionTrustDomain === null) !== ($admissionStateSecret === null)) {
+            throw new RateLimiterException('Admission trust domain and admission state secret must be provided together.');
+        }
+
         $this->keySecret = $keySecret;
         $this->fingerprintSecret = $fingerprintSecret;
         $this->environmentScope = $environmentScope;
@@ -86,6 +115,8 @@ final readonly class RateLimiterConfig
         $this->previousFingerprintSecret = $previousFingerprintSecret;
         $this->bindingKeySecret = $bindingKeySecret;
         $this->previousBindingKeySecret = $previousBindingKeySecret;
+        $this->admissionTrustDomain = $admissionTrustDomain;
+        $this->admissionStateSecret = $admissionStateSecret;
     }
 
     /**
@@ -144,9 +175,32 @@ final readonly class RateLimiterConfig
         return $this->previousBindingKeySecret;
     }
 
+    /**
+     * Return the optional opaque admission trust-domain identifier (DEC-048 D1).
+     */
+    public function admissionTrustDomain(): ?string
+    {
+        return $this->admissionTrustDomain;
+    }
+
+    /**
+     * Return the optional stable high-entropy admission state secret (DEC-048 D1).
+     */
+    public function admissionStateSecret(): ?string
+    {
+        return $this->admissionStateSecret;
+    }
+
     private static function assertNotBlank(string $value, string $name): void
     {
         if (trim($value) === '') {
+            throw new RateLimiterException("{$name} must not be empty or whitespace-only.");
+        }
+    }
+
+    private static function assertOpaqueNotBlank(string $value, string $name): void
+    {
+        if (trim($value, " \t\n\r\v\f") === '') {
             throw new RateLimiterException("{$name} must not be empty or whitespace-only.");
         }
     }

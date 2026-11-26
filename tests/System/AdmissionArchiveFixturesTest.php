@@ -363,8 +363,8 @@ final class AdmissionArchiveFixturesTest extends TestCase
     public function testDetectorNpOnTheIdGivesTheArchivedDNpidValues(): void
     {
         $runtime = ServiceMutant::load('AdmissionRuntime', [], [[
-            "\$this->key(\$group, 'dev', (string) \$device->fingerprintHash, ''),\n            \$previousMember,",
-            "\$this->key(\$group, 'dev', (string) (\$device->deviceIdHash ?? \$device->fingerprintHash), ''),\n            \$previousMember,",
+            "\$this->key(\$group, AdmissionScopePurpose::DEV, (string) \$device->fingerprintHash, ''),\n            \$previousMember,",
+            "\$this->key(\$group, AdmissionScopePurpose::DEV, (string) (\$device->deviceIdHash ?? \$device->fingerprintHash), ''),\n            \$previousMember,",
         ]]);
         $r = new FixtureReplays(static fn(): EngineLab => new EngineLab(StreamReplay::fullBudgets(), runtimeClass: $runtime));
         $steal = $r->steal();

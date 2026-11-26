@@ -90,9 +90,16 @@ final class AdmissionBuilderActivationTest extends TestCase
         ];
     }
 
-    private static function config(bool $withBindingKey = true): RateLimiterConfig
+    private static function config(bool $withBindingKey = true, bool $withTrustContext = true): RateLimiterConfig
     {
-        return new RateLimiterConfig(EngineLab::KEY_SECRET, EngineLab::FINGERPRINT_SECRET, EngineLab::ENV, bindingKeySecret: $withBindingKey ? EngineLab::BINDING_SECRET : null);
+        return new RateLimiterConfig(
+            EngineLab::KEY_SECRET,
+            EngineLab::FINGERPRINT_SECRET,
+            EngineLab::ENV,
+            bindingKeySecret: $withBindingKey ? EngineLab::BINDING_SECRET : null,
+            admissionTrustDomain: $withTrustContext ? EngineLab::TRUST_DOMAIN : null,
+            admissionStateSecret: $withTrustContext ? EngineLab::STATE_SECRET : null,
+        );
     }
 
     private static function engineOf(CompositeRateLimiterRuntimeInterface $runtime): RateLimiterEngine
@@ -156,7 +163,7 @@ final class AdmissionBuilderActivationTest extends TestCase
             (new \ReflectionMethod(RateLimiterConfig::class, '__construct'))->getParameters(),
         );
         self::assertSame(
-            ['keySecret', 'fingerprintSecret', 'environmentScope', 'previousKeySecret', 'previousFingerprintSecret', 'bindingKeySecret', 'previousBindingKeySecret'],
+            ['keySecret', 'fingerprintSecret', 'environmentScope', 'previousKeySecret', 'previousFingerprintSecret', 'bindingKeySecret', 'previousBindingKeySecret', 'admissionTrustDomain', 'admissionStateSecret'],
             $parameters,
         );
 
@@ -278,12 +285,12 @@ final class AdmissionBuilderActivationTest extends TestCase
     public function testTheSharedConfigurationValueBoundariesAreDecimalStrings(string $value, bool $supported): void
     {
         if ($supported) {
-            self::assertSame($value, (new AdmissionSharedConfigDTO('k', null, $value))->value);
+            self::assertSame($value, (new AdmissionSharedConfigDTO('k', $value))->value);
 
             return;
         }
         $this->expectException(RateLimiterException::class);
-        new AdmissionSharedConfigDTO('k', null, $value);
+        new AdmissionSharedConfigDTO('k', $value);
     }
 
     public function testTheDecimalMaximumComparisonNeverConvertsToANativeNumber(): void
@@ -314,7 +321,7 @@ final class AdmissionBuilderActivationTest extends TestCase
 
         // The DTOs agree with the builder on the same range.
         self::assertSame($limit, AdmissionBudgetsDTO::packageDefaults()->withProvenPendingPermitCap($limit)->provenPendingPermitCap);
-        self::assertSame((string) $limit, (new AdmissionSharedConfigDTO('k', null, (string) $limit))->value);
+        self::assertSame((string) $limit, (new AdmissionSharedConfigDTO('k', (string) $limit))->value);
     }
 
     #[DataProvider('pendingLimitRange')]
@@ -327,7 +334,7 @@ final class AdmissionBuilderActivationTest extends TestCase
         }
         foreach ([
             static fn() => AdmissionBudgetsDTO::packageDefaults()->withProvenPendingPermitCap($limit),
-            static fn() => new AdmissionSharedConfigDTO('k', null, (string) $limit),
+            static fn() => new AdmissionSharedConfigDTO('k', (string) $limit),
         ] as $make) {
             try {
                 $make();
@@ -460,7 +467,14 @@ final class AdmissionBuilderActivationTest extends TestCase
     private static function scenarioAWithTheVariant(bool $openFence): string
     {
         $clock = new FixedClock('2026-01-01 12:00:00');
-        $config = new RateLimiterConfig('lab-secret', 'lab-fp-secret', 'prod', bindingKeySecret: EngineLab::BINDING_SECRET);
+        $config = new RateLimiterConfig(
+            'lab-secret',
+            'lab-fp-secret',
+            'prod',
+            bindingKeySecret: EngineLab::BINDING_SECRET,
+            admissionTrustDomain: EngineLab::TRUST_DOMAIN,
+            admissionStateSecret: EngineLab::STATE_SECRET,
+        );
         $runtime = RateLimiterBuilder::fromFullCapabilityStore($config, new AdmissionInMemoryReferenceStore($clock), new RecordingFailureSignalEmitter())
             ->withClock($clock)
             ->withPolicy(new LoginProtectionAdmissionPolicy())

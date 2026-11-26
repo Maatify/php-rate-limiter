@@ -17,6 +17,9 @@ use Maatify\RateLimiter\Enum\AdmissionScopeKindEnum;
 use Maatify\RateLimiter\Repository\AdmissionCapableFullStoreInterface;
 use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Repository\AtomicAdmissionPermitStoreInterface;
+use Maatify\RateLimiter\Exception\RateLimiterException;
+use Maatify\RateLimiter\Service\AdmissionKeyDeriver;
+use Maatify\RateLimiter\Service\KeyPreimageFraming;
 use Maatify\RateLimiter\Tests\Support\FullCapability\FullCapabilityInMemoryStore;
 
 /**
@@ -32,7 +35,9 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
     AtomicAdmissionPermitStoreInterface,
     SharedAdmissionConfigStoreInterface
 {
-    /** @var array<string, string> registered shared admission configuration (DEC-038), per budget group and key */
+    private const EXACT_MAX = 9007199254740991;
+
+    /** @var array<string, string> registered shared admission configuration (DEC-049), per framed (budgetGroup, key) */
     private array $configs = [];
 
     /** @var array<string, array<string, int>> member => expiry score, per counter */
@@ -54,7 +59,15 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
     private array $permits = [];
 
     /** @var array<string, int> */
+    private array $fences = [];
+
+    /** @var array<string, int> */
     private array $epochs = [];
+
+    private static function slot(string $verifierClass, string $key): string
+    {
+        return KeyPreimageFraming::encodeTuple("ref.adm.a1\x00", [$verifierClass, $key], 'reference admission key');
+    }
 
     public function reserveAdmission(AdmissionReservationRequestDTO $request, int $now): AdmissionReservationResultDTO
     {
@@ -62,7 +75,7 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
         $class = $request->verifierClass;
         $config = $request->sharedConfig;
         if ($config !== null) {
-            $stored = $this->configs[$class . "\0" . $config->key] ?? ($config->previousKey === null ? null : ($this->configs[$class . "\0" . $config->previousKey] ?? null));
+            $stored = $this->configs[self::slot($class, $config->key)] ?? null;
             if ($stored !== null && $stored !== $config->value) {
                 throw new AdmissionConfigurationException('The admission shared configuration differs from the registered one.');
             }
@@ -71,8 +84,8 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
         $firstRefusal = null;
         $longestRetry = 0;
         foreach ($request->scopes as $scope) {
-            $own = $class . "\0" . $scope->key;
-            $previous = $scope->previousKey === null || $scope->previousKey === $scope->key ? null : $class . "\0" . $scope->previousKey;
+            $own = self::slot($class, $scope->key);
+            $previous = $scope->previousKey === null || $scope->previousKey === $scope->key ? null : self::slot($class, $scope->previousKey);
             $retry = null;
             if ($scope->kind === AdmissionScopeKindEnum::COUNTER) {
                 $total = $this->liveCounterCount($own, $now) + ($previous === null ? 0 : ($this->liveCounterCount($previous, $now)));
@@ -148,8 +161,8 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
             return new AdmissionReservationResultDTO(false, 'permit_exists');
         }
         foreach ($request->scopes as $scope) {
-            $own = $class . "\0" . $scope->key;
-            $previous = $scope->previousKey === null || $scope->previousKey === $scope->key ? null : $class . "\0" . $scope->previousKey;
+            $own = self::slot($class, $scope->key);
+            $previous = $scope->previousKey === null || $scope->previousKey === $scope->key ? null : self::slot($class, $scope->previousKey);
             if ($scope->kind === AdmissionScopeKindEnum::COUNTER) {
                 $member = $scope->member ?? $permit?->id;
                 $this->counters[$own] = array_filter($this->counters[$own] ?? [], static fn(int $expiry): bool => $expiry > $now);
@@ -177,7 +190,7 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
         }
 
         if ($config !== null) {
-            $this->configs[$class . "\0" . $config->key] ??= $config->value;
+            $this->configs[self::slot($class, $config->key)] ??= $config->value;
         }
 
         return new AdmissionReservationResultDTO(true);
@@ -185,7 +198,7 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
 
     public function rebindAdmissionConfig(string $budgetGroup, AdmissionSharedConfigDTO $config): void
     {
-        $this->configs[$budgetGroup . "\0" . $config->key] = $config->value;
+        $this->configs[self::slot($budgetGroup, $config->key)] = $config->value;
     }
 
     public function applyAdmissionOutcome(AdmissionOutcomeDTO $outcome, int $now): void
@@ -193,7 +206,7 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
         AdmissionReferenceInput::outcome($outcome, $now);
         $success = $outcome->outcome === AdmissionOutcomeKindEnum::SUCCESS;
         foreach ($outcome->scopes as $scope) {
-            $own = $outcome->verifierClass . "\0" . $scope->key;
+            $own = self::slot($outcome->verifierClass, $scope->key);
             if ($scope->kind === AdmissionScopeKindEnum::SET_SIZE) {
                 $member = (string) $scope->member;
                 if ($success) {
@@ -226,16 +239,62 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
         }
     }
 
-    public function readBindingEpoch(string $key, ?string $previousKey): int
+    public function readAdmissionFence(string $key, ?string $previousKey): int
     {
-        return $this->epochs[$key] ?? ($previousKey === null || $previousKey === $key ? 0 : ($this->epochs[$previousKey] ?? 0));
+        if (! AdmissionKeyDeriver::isNonBlank($key)) {
+            throw new RateLimiterException('Admission fence key must not be empty.');
+        }
+        $previousKey = $previousKey === $key ? null : $previousKey;
+        if ($previousKey !== null && ! AdmissionKeyDeriver::isNonBlank($previousKey)) {
+            throw new RateLimiterException('Admission fence previous key must not be blank.');
+        }
+
+        return $this->fences[$key] ?? ($previousKey === null ? 0 : ($this->fences[$previousKey] ?? 0));
     }
 
-    public function bumpBindingEpoch(string $key, ?string $previousKey): int
+    public function bumpAdmissionFence(string $key, ?string $previousKey): int
     {
-        $previous = $previousKey === null || $previousKey === $key ? 0 : ($this->epochs[$previousKey] ?? 0);
+        if (! AdmissionKeyDeriver::isNonBlank($key)) {
+            throw new RateLimiterException('Admission fence key must not be empty.');
+        }
+        $previousKey = $previousKey === $key ? null : $previousKey;
+        if ($previousKey !== null && ! AdmissionKeyDeriver::isNonBlank($previousKey)) {
+            throw new RateLimiterException('Admission fence previous key must not be blank.');
+        }
+        $previous = $previousKey === null ? 0 : ($this->fences[$previousKey] ?? 0);
+        $base = max($this->fences[$key] ?? 0, $previous);
+        if ($base >= self::nativeCounterMax()) {
+            throw new RateLimiterException('Malformed admission fence response: fence overflow.');
+        }
 
-        return $this->epochs[$key] = max($this->epochs[$key] ?? 0, $previous) + 1;
+        return $this->fences[$key] = $base + 1;
+    }
+
+    public function readBindingEpoch(string $key): int
+    {
+        if (! AdmissionKeyDeriver::isNonBlank($key)) {
+            throw new RateLimiterException('Admission epoch key must not be empty.');
+        }
+
+        return $this->epochs[$key] ?? 0;
+    }
+
+    public function bumpBindingEpoch(string $key): int
+    {
+        if (! AdmissionKeyDeriver::isNonBlank($key)) {
+            throw new RateLimiterException('Admission epoch key must not be empty.');
+        }
+        $base = $this->epochs[$key] ?? 0;
+        if ($base >= self::nativeCounterMax()) {
+            throw new RateLimiterException('Malformed admission epoch response: epoch overflow.');
+        }
+
+        return $this->epochs[$key] = $base + 1;
+    }
+
+    private static function nativeCounterMax(): int
+    {
+        return (float) PHP_INT_MAX < (float) self::EXACT_MAX ? PHP_INT_MAX : (int) self::EXACT_MAX;
     }
 
     public function claimAdmissionPermit(

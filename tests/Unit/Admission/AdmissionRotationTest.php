@@ -151,12 +151,22 @@ final class AdmissionRotationTest extends TestCase
     {
         $this->build(self::S1, null, true);
         $mutant = ServiceMutant::load('AdmissionRuntime', [
-            'fenceOpen' => 'return $this->store->readBindingEpoch(self::fenceKey($this->envScope, $budgetGroup, $this->keySecret), null) >= 1;',
+            'fenceOpen' => 'return $this->store->readAdmissionFence($this->keys->fenceKey($budgetGroup, $this->keySecret), null) >= 1;',
         ]);
-        $runtime = new $mutant($this->store, new \Maatify\RateLimiter\Service\AdmissionCredentialCodec(EngineLab::BINDING_SECRET), EngineLab::budgets(), $this->clock, self::S2, EngineLab::ENV, self::S1);
+        $runtime = new $mutant(
+            $this->store,
+            new \Maatify\RateLimiter\Service\AdmissionCredentialCodec(EngineLab::BINDING_SECRET, EngineLab::ENV, EngineLab::TRUST_DOMAIN, EngineLab::STATE_SECRET),
+            EngineLab::budgets(),
+            $this->clock,
+            self::S2,
+            EngineLab::ENV,
+            EngineLab::TRUST_DOMAIN,
+            EngineLab::STATE_SECRET,
+            self::S1,
+        );
         self::assertTrue(method_exists($runtime, 'fenceOpen'));
 
-        self::assertFalse($runtime->fenceOpen(EngineLab::GROUP), 'DETECTOR: the 5-b3b read closes the fence at a rotation');
+        self::assertFalse($runtime->fenceOpen(EngineLab::GROUP), 'DETECTOR: a current-only fence read closes the fence at the first rotation');
     }
 
     private function runtimeOf(EngineLab $lab): AdmissionRuntime

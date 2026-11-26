@@ -87,14 +87,14 @@ final class AdmissionEngineS0GoldensTest extends TestCase
             null,
             null,
         );
-        $codec = new AdmissionCredentialCodec(EngineLab::BINDING_SECRET);
+        $codec = new AdmissionCredentialCodec(EngineLab::BINDING_SECRET, 'prod', EngineLab::TRUST_DOMAIN, EngineLab::STATE_SECRET);
         $admission = null;
         if ($runtime !== 'none') {
             $admissionStore = new AdmissionInMemoryReferenceStore($clock);
-            $admission = new AdmissionRuntime($admissionStore, $codec, EngineLab::budgets(), $clock, 'lab-secret', 'prod');
+            $admission = new AdmissionRuntime($admissionStore, $codec, EngineLab::budgets(), $clock, 'lab-secret', 'prod', EngineLab::TRUST_DOMAIN, EngineLab::STATE_SECRET);
             if ($runtime === 'open') {
                 // The fence of the Login budget group is open; the policies under test name no budget group at all.
-                $admissionStore->bumpBindingEpoch(AdmissionRuntime::fenceKey('prod', 'login', 'lab-secret'), null);
+                $admission->openFence('login');
             }
         }
         $emitter = new RecordingFailureSignalEmitter();
@@ -115,6 +115,7 @@ final class AdmissionEngineS0GoldensTest extends TestCase
             $known = $step % 3 !== 0;
             $instance = $known ? 'inst-' . $n : ($step % 5 === 0 ? null : 'new-' . $step);
             $credential = $instance === null ? null : $codec->encode(new AdmissionCredentialDTO(
+                'acct-' . $n,
                 'acct-' . $n,
                 ['login'],
                 $instance,

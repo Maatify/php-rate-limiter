@@ -440,8 +440,13 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
                 $device = OwnershipRegistry::crossing($this, fn() => $this->deviceResolver->resolve($context));
                 $group = $this->admissionGroup($policy);
 
-                if ($group !== null && $this->admission !== null && $this->admission->fenceOpen($group)) {
-                    return $this->limitWithAdmission($this->admission, $policy, $group, $context, $request, $device, $settled);
+                if ($group !== null && $this->admission !== null) {
+                    if (($request->isFailure || $request->isSuccess) && $request->permit !== null) {
+                        return $this->settleAdmissionOutcome($this->admission, $policy, $group, $context, $request, $device, $settled);
+                    }
+                    if ($this->admission->fenceOpen($group)) {
+                        return $this->limitWithAdmission($this->admission, $policy, $group, $context, $request, $device, $settled);
+                    }
                 }
 
                 return $this->pipeline->process($policy, $context, $request, $device);
@@ -648,6 +653,33 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
     }
 
     /**
+     * Settle an explicit permit-bearing outcome of a healthy opted policy (DEC-048 D6, DEC-050 D7): always routed
+     * through permit verification and atomic claim even if the fleet fence has since closed, so a valid outstanding
+     * permit settles once within D/G while an old, invalid, or foreign permit never scores in S0.
+     */
+    private function settleAdmissionOutcome(
+        AdmissionRuntime $admission,
+        BlockPolicyInterface $policy,
+        string $group,
+        RateLimitContextDTO $context,
+        RateLimitCommand $request,
+        \Maatify\RateLimiter\DTO\DeviceIdentityDTO $device,
+        ?AdmissionLaneEnum &$settled = null,
+    ): RateLimitResultDTO {
+        $permit = $request->permit;
+        if ($permit === null) {
+            throw new RateLimiterException("Policy {$this->hostPolicy(fn() => $policy->getName())} invalid use: an outcome of an admission policy requires the permit issued with its admission.");
+        }
+        $applied = $settled ?? $admission->applyOutcome($this->hostPolicy(fn() => $policy->getName()), $group, $context, $permit, $request->isSuccess);
+        if ($applied instanceof RateLimitResultDTO) {
+            return $applied;
+        }
+        $settled = $applied;
+
+        return $this->pipeline->process($policy, $context, $request, $device, $applied);
+    }
+
+    /**
      * Evaluate a request of an opted policy while the fleet fence is open (contract §2.1): lane, pipeline with the lane as a
      * parameter, the reservation after an allowed pre-check, and the permit-bound outcome hooks.
      */
@@ -661,16 +693,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
         ?AdmissionLaneEnum &$settled = null,
     ): RateLimitResultDTO {
         if ($request->isFailure || $request->isSuccess) {
-            if ($request->permit === null) {
-                throw new RateLimiterException("Policy {$this->hostPolicy(fn() => $policy->getName())} invalid use: an outcome of an admission policy requires the permit issued with its admission.");
-            }
-            $applied = $settled ?? $admission->applyOutcome($this->hostPolicy(fn() => $policy->getName()), $group, $context, $request->permit, $request->isSuccess);
-            if ($applied instanceof RateLimitResultDTO) {
-                return $applied;
-            }
-            $settled = $applied;
-
-            return $this->pipeline->process($policy, $context, $request, $device, $applied);
+            return $this->settleAdmissionOutcome($admission, $policy, $group, $context, $request, $device, $settled);
         }
 
         // The lane, the evaluation and the reservation of an allowed pre-check are one request: nothing is saved

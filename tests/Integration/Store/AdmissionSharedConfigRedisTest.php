@@ -270,7 +270,15 @@ final class AdmissionSharedConfigRedisTest extends AdmissionRedisGateTestCase
 
     private function rotatedWorker(?int $limit): CompositeRateLimiterRuntimeInterface
     {
-        $config = new RateLimiterConfig('redis-gate-key-2', 'redis-gate-fingerprint', 'test', 'redis-gate-key', bindingKeySecret: PublicRedisAdmissionFixture::BINDING_SECRET);
+        $config = new RateLimiterConfig(
+            'redis-gate-key-2',
+            'redis-gate-fingerprint',
+            PublicRedisAdmissionFixture::ENV,
+            'redis-gate-key',
+            bindingKeySecret: PublicRedisAdmissionFixture::BINDING_SECRET,
+            admissionTrustDomain: PublicRedisAdmissionFixture::TRUST_DOMAIN,
+            admissionStateSecret: PublicRedisAdmissionFixture::STATE_SECRET,
+        );
 
         return PublicRedisAdmissionFixture::build($this->executor, self::NAMESPACE, self::NOW, 500, $limit, $this->clock, $config);
     }
@@ -283,8 +291,8 @@ final class AdmissionSharedConfigRedisTest extends AdmissionRedisGateTestCase
 
     private function context(string $account, string $ip = self::IP): RateLimitContextDTO
     {
-        $credential = (new AdmissionCredentialCodec(PublicRedisAdmissionFixture::BINDING_SECRET))->encode(
-            new AdmissionCredentialDTO($account, ['login'], 'inst-' . $account, 'jti-' . $account, self::NOW + 3600, self::NOW, 0),
+        $credential = PublicRedisAdmissionFixture::codec()->encode(
+            new AdmissionCredentialDTO($account, $account, ['login'], 'inst-' . $account, 'jti-' . $account, self::NOW + 3600, self::NOW, 0),
         );
 
         return new RateLimitContextDTO(ip: $ip, ua: 'redis-gate', accountId: $account, clientInstanceId: 'inst-' . $account, admissionCredential: $credential);

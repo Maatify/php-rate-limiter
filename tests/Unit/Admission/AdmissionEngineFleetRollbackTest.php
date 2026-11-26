@@ -129,7 +129,7 @@ final class AdmissionEngineFleetRollbackTest extends TestCase
         $allOld = self::fleet(4, false);
 
         self::assertSame($allOld['decisions'], $mixed['decisions'], 'a closed fence: every decision is the all-old fleet\'s');
-        self::assertSame(['readEpoch'], $mixed['storeCalls'], 'only the fence is read; no reservation, claim or outcome');
+        self::assertSame(['readFence'], $mixed['storeCalls'], 'only the fence is read; no reservation, claim, epoch or outcome');
     }
 
     #[DataProvider('oldShares')]
@@ -184,9 +184,9 @@ final class AdmissionEngineFleetRollbackTest extends TestCase
         // ignores the admission state.
         $copy = unserialize(serialize($lab->store));
         self::assertInstanceOf(AdmissionInMemoryReferenceStore::class, $copy);
-        foreach (['counters', 'devices', 'sets', 'pending', 'buckets', 'permits', 'epochs'] as $property) {
+        foreach (['counters', 'devices', 'sets', 'pending', 'buckets', 'permits', 'fences', 'epochs'] as $property) {
             $reflection = new \ReflectionProperty(AdmissionInMemoryReferenceStore::class, $property);
-            if (in_array($property, ['counters', 'sets', 'buckets', 'permits', 'epochs'], true)) {
+            if (in_array($property, ['counters', 'sets', 'buckets', 'permits', 'fences'], true)) {
                 self::assertNotSame([], $reflection->getValue($lab->store), "the new build left {$property} (the copy differs)");
             }
             $reflection->setValue($copy, []);

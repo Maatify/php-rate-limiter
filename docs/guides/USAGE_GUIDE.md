@@ -388,6 +388,7 @@ fingerprint-only, and both-rotated inputs never form Cartesian generation pairs.
 | Inspect current operational rate-limit state (Advanced Path) | <code>RateLimitOperationalReaderInterface::read()</code> | [Operational read](#walkthrough-operational-read) | [operational-read.php](../../examples/operational-read.php) |
 | Inspect persisted simple fixed-window state | <code>CompositeRateLimitOperationalReaderInterface::readSimpleThrottle()</code> | [Operational read](#walkthrough-operational-read) | [simple-fixed-window.php](../../examples/simple-fixed-window.php) |
 | Apply simple fixed-window throttling | <code>SimpleRateLimiterInterface::consume(policyName, subject, cost = 1)</code> | [Simple fixed-window consume](#walkthrough-simple-fixed-window-consume) | [simple-fixed-window.php](../../examples/simple-fixed-window.php) |
+| Opt into Admission-Reservation with v2 credentials & durable revocation | <code>LoginProtectionAdmissionPolicy</code> + <code>AdmissionCredentialCodec::fromConfig()</code> | [Admission-Reservation Policies](#admission-reservation-policies) | [admission-hardening.php](../../examples/admission-hardening.php) |
 
 ## Admission-Reservation Policies
 
@@ -397,36 +398,37 @@ bucket, or the proven-lane counters) all-or-nothing, and it is **not read-only**
 probes with `checkOnly` before the real attempt spends one admission per probe. Policies that did
 not opt in keep today's read-only pre-check.
 
-**Opting in** (DEC-024, DEC-026; `POLICIES.md` §7.2): register `LoginProtectionAdmissionPolicy`
+**Opting in** (`DEC-024`, `DEC-026`, `DEC-048`, `DEC-049`, `DEC-050`; `POLICIES.md` §7.2): register `LoginProtectionAdmissionPolicy`
 with `withPolicy()` (it replaces `login_protection` under the same name, so the account and device
-state written before the switch is read on), set `bindingKeySecret` on `RateLimiterConfig`, use a
+state written before the switch is read on), configure `bindingKeySecret`, `admissionTrustDomain` (non-blank authority identifier shared solely by workers and the Host issuer for that state), and `admissionStateSecret` (a stable random high-entropy secret of **at least 32 bytes**, generated once and stored outside source code) on `RateLimiterConfig`, construct the Host credential codec from the same config via `AdmissionCredentialCodec::fromConfig($config)`, use a
 store implementing `AtomicAdmissionPermitStoreInterface` (provided by `RedisFullCapabilityStore`),
 and open the fleet fence once every worker runs this version ("Operating the admission fence" below).
-`RateLimiterBuilder::build()` requires this capability when an admission policy is registered.
+Non-opted consumers require none of these Admission parameters. `RateLimiterBuilder::build()` rejects any opted policy with missing `bindingKeySecret`, `admissionTrustDomain`, or `admissionStateSecret` before issuing any backend command.
 The budgets are package constants (DEC-033, DEC-034, DEC-035). Under DEC-033, windowed counters and
 failure sets use sliding sorted sets scored by expiration. Short windows run for W (600 s) and
 daily windows for Day (86400 s). Only a Host that calls `checkOnly` and then records every outcome
-(`pre+out`) may opt in (DEC-023). The figures recorded in DEC-034 (for example the co-located office replay, legitimate refusals 26/61 and capped attacker reach 40 under sliding windows, against 21/61 and 72 under the fixed windows of DEC-025) are measured trade-offs of registered replays that the Owner accepted (#220). They are not production guarantees: the bounds a deployment gets are the package constants, and its own traffic can measure differently.
+(`pre+out`) may opt in (DEC-023). The figures recorded in DEC-034 (for example the co-located office replay, legitimate refusals 26/61 and capped attacker reach 40 under sliding windows, against 21/61 and 72 under the fixed windows of DEC-025) are measured trade-offs of registered replays that the Owner accepted (#220). They are not production guarantees: the bounds a deployment gets are the package constants, and its own traffic can measure differently. See [examples/admission-hardening.php](../../examples/admission-hardening.php) for the complete runnable end-to-end consumer walkthrough.
 
 Inputs (all optional on `RateLimitContextDTO`; ignored by every policy that did not opt in):
 
 * `clientInstanceId`: an untrusted continuity hint, separate from `sessionDeviceId` (trust) and
   `clientFingerprint`. It never selects the proven lane by itself.
-* `admissionCredential`: the opaque credential the Host minted with `AdmissionCredentialCodec`.
-  The library verifies integrity, subject, budget group, instance, expiry and the account's
-  binding epoch. **Any failed check is the unproven lane**, never an error or a refusal by itself.
+* `admissionCredential`: the opaque **v2** credential the Host minted with `AdmissionCredentialCodec::fromConfig($config)` (embedding both explicit `account` and effective `subject`).
+  The library verifies format (`v = 2`), cohort/trust-domain-scoped signature, account, subject, budget group, instance, expiry and the account's
+  durable binding epoch. Legacy v1 credentials are unconditionally rejected. **Any failed check is the unproven lane**, never an error or a refusal by itself.
   Nothing else selects the proven lane: not `isDevicePreviouslyVerifiedForAccount`, not a trusted
   session, not an instance id.
 
 Outputs and duties:
 
-* An admitted `checkOnly` carries an opaque `permit` (`RateLimitMetadataDTO::$permit`, at most 512
-  characters). **The Host must send it back on the outcome command**
+* An admitted `checkOnly` carries an opaque **v2** `permit` (`RateLimitMetadataDTO::$permit`, at most 512
+  characters, cryptographically bound to the trust cohort, budget group, operation, canonical source IP, account, effective subject, client instance, and credential digest under `DEC-048` D6). **The Host must send it back on the outcome command**
   (`new RateLimitCommand(policyName: $policy, isFailure: $isFailure, isSuccess: $isSuccess, permit: $permit)`).
-  An outcome without a permit for an opted policy violates the Host contract and raises
+  An outcome without a permit for an opted policy while the fence is open violates the Host contract and raises
   `RateLimiterException`.
-* The outcome must be sent with **the same context** as the admission (same source address, account
-  and credential): the failure set an outcome touches is keyed by the outcome's source.
+* The outcome must be sent with **the exact same context** as the admission (same source address, account,
+  effective subject, client instance, operation, budget group, and credential): a mismatched context returns
+  `permit_rejected` before touching the store, scores nothing, and leaves the original permit claimable once.
 * **Every admitted `checkOnly` on an opted policy is followed by an outcome command carrying its
   permit**, using the outcome command above within the permit's deadline: 30 s after the
   `checkOnly` (`D`, DEC-035). From 30 s to 630 s the claim is `permit_late`, after that
@@ -463,8 +465,8 @@ Outputs and duties:
   default value. Choose it above the number of legitimate verifications that overlap behind one source (an office or a
   carrier-grade NAT) and below the number of simultaneous attempts you accept from one source; the measurements and the
   trade-off are in [`investigations/proven-pending-permits-206/RESULTS.md`](../../investigations/proven-pending-permits-206/RESULTS.md).
-* **One value for the whole fleet (DEC-038)**: every worker on one Redis must hold the same pending-permit limit,
-  "no limit" included. The store compares the worker's value with the registered one in the same script as the reservation: a
+* **One value for the whole fleet (`DEC-049`, superseding `DEC-038`)**: every worker on one Redis must hold the same pending-permit limit,
+  "no limit" included. The shared configuration key (`pcfg`) is keyed solely by the durable `admissionStateSecret` (single durable key, no `previousKey`, no TTL), so the registered limit or `off` survives arbitrary outer `keySecret` rotations even with zero intermediate reservations. The store compares the worker's value with the registered one in the same script as the reservation: a
   worker whose value differs (two different limits, or one worker with a limit and one without) raises
   `AdmissionConfigurationException` before it reserves anything, on either lane, and never changes the shared value itself. The first
   accepted reservation of a budget group registers its value. A limit needs a store that holds the shared configuration
@@ -512,9 +514,9 @@ Outputs and duties:
 
 ### Operating the admission fence
 
-The fleet fence (contract M2; `KEY_STRATEGY.md` §4.6) keeps the admission path off for a budget group
-until every worker can reserve. While it is closed, an opted policy runs exactly the path of a policy
-that did not opt in (no admission, no lane, no permit needed).
+The fleet fence (contract M2; `KEY_STRATEGY.md` §4.6; `DEC-048` D3–D4; `DEC-050`) keeps new admission reservations off for a budget group
+until every worker can reserve. While it is closed, `checkOnly` and permit-less outcomes of an opted policy run the exact path of a policy
+that did not opt in (no admission reservation, no lane, no permit issued). However, under **`DEC-050` (D7)**, an explicit **permit-bearing outcome** of a healthy opted policy is always routed through permit verification and atomic claim even after the fence closes: a valid outstanding permit settles once within `D`/`G` on its recorded lane, while an old, invalid, or foreign-context permit returns `permit_unknown` / `permit_late` / `permit_rejected` and **never** scores in S0.
 
 1. **Roll the whole fleet** to a version that contains the admission runtime. While old and new
    workers serve the same budget group, the old workers reserve nothing, so the bound is the
@@ -522,17 +524,24 @@ that did not opt in (no admission, no lane, no permit needed).
 2. **Open the fence once per budget group** through the composite runtime:
    `if ($runtime instanceof AdmissionFenceControlInterface) { $runtime->openAdmissionFence('login'); }`.
    It returns the fence value (at least 1 means open).
-3. **Cost.** Every request of an opted policy reads the fence from the store, also while it is closed;
+3. **Cost.** Every request of an opted policy reads the fence from the store (unless it is an explicit permit-bearing outcome routed directly to permit settlement under `DEC-050`), also while it is closed;
    an outage of that read takes the typed backend-failure path (`FAILURE_SEMANTICS.md` §4.5).
-4. **Key-secret rotation.** The fence is read under the active key secret and, when configured, the
-   previous one, so a rotation does not close it. Re-open it under the new secret (step 2) **before**
-   the previous secret is withdrawn; otherwise the next rotation closes it and opted policies fall
-   back to the path without admission.
-5. **Closing.** No package operation closes the fence. To close it, delete its key in Redis (the key
-   is derived as `KEY_STRATEGY.md` §4.6 states), or let two key-secret rotations pass without re-opening
-   it (it is then read under neither secret it was opened under). After it
-   closes, the counters, sets, buckets and permits expire by their TTLs; the binding epochs and the
+4. **Key-secret rotation.** The fence is read under the active outer `keySecret` and, when configured,
+   `previousKeySecret`, so a rotation does not close it. Re-open it under the new secret (step 2) **before**
+   the previous secret is withdrawn; otherwise the next rotation closes it and new `checkOnly` / permit-less calls fall
+   back to the S0 path. Routine outer `keySecret` and `bindingKeySecret` rotations are independent of `admissionStateSecret` and never revive revoked account epochs or clear durable `pcfg`.
+5. **Closing.** No package operation closes the fence. To close it, let two outer key-secret rotations pass without re-opening
+   it (it is then read under neither outer secret it was opened under), or establish a fresh isolated scope when required. After it
+   closes, the counters, sets, buckets and permits expire by their TTLs; the durable binding epochs, durable `pcfg`, and the
    fence have no TTL (`KEY_STRATEGY.md` §4.8).
+
+## Admission canonical `a1` framing, durable state, and breaking boundary (DEC-048, DEC-049, DEC-050)
+
+All Admission logical keys, token MACs, permit context commitments, and Redis physical two-field wrappers use canonical checked `u32be` framing (`a1` / `v2`) under the explicit physical layout `maatify:rate-limiter:v1:{sha256(namespace)}:adm:a1:*`, with strictly separated `:fence:` and `:epoch:` families and a closed 12-purpose registry (`AdmissionScopePurpose`).
+
+* **Secret roles:** `admissionStateSecret` (≥ 32 random bytes, stored outside source code) is **stable** for the lifetime of durable revocation epochs and `pcfg`; it is **not** rotated during routine outer `keySecret`, `fingerprintSecret`, or `bindingKeySecret` rotations.
+* **Loss of persistence continuity:** If Redis/store continuity is lost (or when retiring an old trust domain), **never reuse the previous `admissionStateSecret`**. Establish a **fresh isolated scope** with a new `admissionTrustDomain` and a newly generated ≥ 32-byte `admissionStateSecret`, ensuring credentials from the lost scope cannot verify as epoch 0.
+* **Unsupported operations:** Mixed pre-G3 / post-G3 workers, live rollback, cross-version v1/v2 credential or permit acceptance, live migration, dual-read/dual-write, Redis data deletion, and re-issuing credentials from legacy claims are unsupported. Non-opted consumers, E1 account keys (`e1:`), non-account `f1` keys (`v1:`), simple fixed-window keys (`v1:budget`), and `LocalFallbackLimiter` are unaffected.
 
 ## Account-scope E1 and the breaking pre-Stable boundary (DEC-046)
 
@@ -552,7 +561,7 @@ Direct root store methods still place every plain string, even an E1-shaped one,
 
 K1–K3, correlation (`device_cap_ip`, `device_cap_account`, `churn`, `dilution`, distributed account device/occurrence scopes, bridges, watches, and dilution confirmations), and adaptive IPv6 keys use canonical length-prefixed framing (`maatify.rate-limiter.non-account.f1\x00`) with a closed internal purpose registry and dedicated HMAC key domain (`maatify.rate-limiter.key-domain.non-account.f1`). They remain under the physical `v1` root layout (`maatify:rate-limiter:v1:...`) with no `e1.` prefix and no new public API. Writer and operational reader share one immutable implementation for K1–K3 and one shared checked `u32be` implementation for simple fixed-window throttling.
 
-E1 account state (`e1:`) and simple fixed-window state (`v1:budget`) retain byte-identical keys with no intended reset. For affected non-account families and K1-dependent credential-spray scopes/bridges/watches, start new traffic in an isolated namespace/environment with homogeneous workers; existing traffic loses visibility of prior state in those families until old TTLs expire. Mixed workers, live rollback, cross-format block preservation, migration/dual-read/write layers, and Redis data deletion are unsupported. Current/Previous secret and material rotation **inside `f1`** remains supported. Admission (`A1`–`A3`) and epoch/cohort semantics remain queued for G3 under [#281](https://github.com/Maatify/php-rate-limiter/issues/281) and [#284](https://github.com/Maatify/php-rate-limiter/issues/284).
+E1 account state (`e1:`) and simple fixed-window state (`v1:budget`) retain byte-identical keys with no intended reset. For affected non-account families and K1-dependent credential-spray scopes/bridges/watches, start new traffic in an isolated namespace/environment with homogeneous workers; existing traffic loses visibility of prior state in those families until old TTLs expire. Mixed workers, live rollback, cross-format block preservation, migration/dual-read/write layers, and Redis data deletion are unsupported. Current/Previous secret and material rotation **inside `f1`** remains supported. Admission canonical `a1` framing, durable revocation/config state, and v2 tokens are governed separately under `DEC-048`, `DEC-049`, and `DEC-050` above.
 
 ## Walkthrough: Pre-Check
 
@@ -694,6 +703,13 @@ Run the complete in-memory assembly from the repository root after installing de
 throws from a host-side storage adapter and prints the resulting failure mode and
 emitted signal. It demonstrates the current failure boundary without changing the
 runtime implementation.
+
+[admission-hardening.php](../../examples/admission-hardening.php) demonstrates the
+complete Admission-Reservation consumer flow (`DEC-048`, `DEC-049`, `DEC-050`): unified
+`RateLimiterConfig` + `AdmissionCredentialCodec::fromConfig($config)` setup, fence opening,
+`checkOnly` + permit-bound outcome, v2 credential issuance via `bindingEpoch()`, account
+revocation surviving independent outer and binding key rotations, and establishing a fresh
+isolated scope upon persistence loss.
 
 ## Operational Read / Reporting Boundary
 

@@ -93,8 +93,10 @@ final class AdmissionStoreRotFailPermitRedisTest extends AdmissionRedisGateTestC
         $calls = [
             'reserve' => static fn() => $store->reserveAdmission(S::request(S::counter('src', 'f:c', 3, 1200, null, 'm-fc')), self::NOW),
             'outcome' => static fn() => $store->applyAdmissionOutcome(S::outcome(AdmissionOutcomeKindEnum::SUCCESS, S::counter('src', 'f:c', 3, 1200, null, 'm-fc')), self::NOW),
-            'epochRead' => static fn() => $store->readBindingEpoch('f:e', null),
-            'epochBump' => static fn() => $store->bumpBindingEpoch('f:e', null),
+            'fenceRead' => static fn() => $store->readAdmissionFence('f:f', null),
+            'fenceBump' => static fn() => $store->bumpAdmissionFence('f:f', null),
+            'epochRead' => static fn() => $store->readBindingEpoch('f:e'),
+            'epochBump' => static fn() => $store->bumpBindingEpoch('f:e'),
             'claim' => static fn() => $store->claimAdmissionPermit('f:p', 'U', 'acctT', 'login', AdmissionOutcomeKindEnum::FAILURE, self::NOW),
         ];
         $out = [];
@@ -131,7 +133,7 @@ final class AdmissionStoreRotFailPermitRedisTest extends AdmissionRedisGateTestC
     {
         $before = $this->dump();
         $classes = $this->failureClasses($this->failingExecutor(new BackendFailureException('Redis connection lost.')));
-        self::assertSame(array_fill_keys(['reserve', 'outcome', 'epochRead', 'epochBump', 'claim'], BackendFailureException::class), $classes);
+        self::assertSame(array_fill_keys(['reserve', 'outcome', 'fenceRead', 'fenceBump', 'epochRead', 'epochBump', 'claim'], BackendFailureException::class), $classes);
         self::assertSame($before, $this->dump());
     }
 
@@ -139,7 +141,7 @@ final class AdmissionStoreRotFailPermitRedisTest extends AdmissionRedisGateTestC
     public function testUnclassifiedThrowableIsNeitherWrappedNorReclassified(): void
     {
         $classes = $this->failureClasses($this->failingExecutor(new \LogicException('programming error')));
-        self::assertSame(array_fill_keys(['reserve', 'outcome', 'epochRead', 'epochBump', 'claim'], \LogicException::class), $classes);
+        self::assertSame(array_fill_keys(['reserve', 'outcome', 'fenceRead', 'fenceBump', 'epochRead', 'epochBump', 'claim'], \LogicException::class), $classes);
     }
 
     #[Group('fail')]
@@ -193,7 +195,7 @@ final class AdmissionStoreRotFailPermitRedisTest extends AdmissionRedisGateTestC
         }
         $before = $this->dump();
         $operation = str_starts_with($case, 'epoch')
-            ? fn() => $this->store->bumpBindingEpoch('m:e', null)
+            ? fn() => $this->store->bumpBindingEpoch('m:e')
             : fn() => $this->store->claimAdmissionPermit('m:p', 'U', 'acctT', 'login', AdmissionOutcomeKindEnum::FAILURE, self::NOW);
         try {
             $operation();

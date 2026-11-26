@@ -201,11 +201,13 @@ final class AdmissionRegistrationRulesTest extends TestCase
 
         return new AdmissionRuntime(
             new \Maatify\RateLimiter\Tests\Support\Admission\AdmissionInMemoryReferenceStore($clock),
-            new \Maatify\RateLimiter\Service\AdmissionCredentialCodec('binding-secret'),
+            new \Maatify\RateLimiter\Service\AdmissionCredentialCodec('binding-secret', 'prod', 'reg-authority', 'reg-test-state-secret-32-bytes!!'),
             \Maatify\RateLimiter\Tests\Support\Admission\EngineLab::budgets(),
             $clock,
             'key-secret',
             'prod',
+            'reg-authority',
+            'reg-test-state-secret-32-bytes!!',
         );
     }
 
@@ -238,13 +240,15 @@ final class AdmissionRegistrationRulesTest extends TestCase
         );
     }
 
-    private function config(bool $withBindingKey): RateLimiterConfig
+    private function config(bool $withBindingKey, bool $withTrustContext = true): RateLimiterConfig
     {
         return new RateLimiterConfig(
             'key-secret',
             'fingerprint-secret',
             'prod',
             bindingKeySecret: $withBindingKey ? 'binding-secret' : null,
+            admissionTrustDomain: $withTrustContext ? 'reg-authority' : null,
+            admissionStateSecret: $withTrustContext ? 'reg-test-state-secret-32-bytes!!' : null,
         );
     }
 }

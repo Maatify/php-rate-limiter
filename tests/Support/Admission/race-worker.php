@@ -84,7 +84,7 @@ if ($runtime !== null) {
     // `public_proven`: an independent account, instance and proof per worker behind the spec's source, so that only the
     // pending-permit slot (#206) can tie the workers together. The permit is left pending: no outcome is sent.
     $credential = $spec->op !== 'public_check'
-        ? (new AdmissionCredentialCodec(PublicRedisAdmissionFixture::BINDING_SECRET))->encode(new AdmissionCredentialDTO('redis-gate-' . $index, ['login'], 'inst-' . $index, 'jti-' . $index, $spec->now + 3600, $spec->now, 0))
+        ? PublicRedisAdmissionFixture::codec()->encode(new AdmissionCredentialDTO('redis-gate-' . $index, 'redis-gate-' . $index, ['login'], 'inst-' . $index, 'jti-' . $index, $spec->now + 3600, $spec->now, 0))
         : null;
     if ($spec->jitterMs > 0) {
         usleep(random_int(0, $spec->jitterMs * 1000));

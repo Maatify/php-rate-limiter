@@ -294,7 +294,7 @@ final class EvalshaStudyRedisTest extends TestCase
             $expiry = $raw->execute(['PEXPIRETIME', $key]);
             self::assertTrue(is_int($expiry) || is_string($expiry));
             // A permit id is random, so its key differs between two runs: it is identified by its content instead.
-            $name = str_contains($key, ':adm:permit:') ? 'permit:' . sha1(serialize($content)) : $key;
+            $name = (str_contains($key, ':adm:a1:permit:') || str_contains($key, ':adm:permit:')) ? 'permit:' . sha1(serialize($content)) : $key;
             $state[$name] = [$type, $content, (float) $expiry];
         }
 

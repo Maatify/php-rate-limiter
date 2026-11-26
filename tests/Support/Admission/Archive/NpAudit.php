@@ -30,9 +30,34 @@ final class NpAudit
         $this->resolver = new DeviceIdentityResolver(new FingerprintHasher(EngineLab::FINGERPRINT_SECRET));
     }
 
+    /** @param list<string> $fields */
+    private static function encodeTuple(string $magic, array $fields): string
+    {
+        $out = $magic . pack('N', count($fields));
+        foreach ($fields as $field) {
+            $out .= pack('N', strlen($field)) . $field;
+        }
+
+        return $out;
+    }
+
+    /** Independent oracle of the Admission `a1` `dev` scope key (DEC-048 D2), intentionally not calling `AdmissionKeyDeriver`. */
     private static function devKey(string $value): string
     {
-        return 'dev:' . hash_hmac('sha256', implode("\0", [EngineLab::ENV, EngineLab::GROUP, 'dev', $value, '']), EngineLab::KEY_SECRET);
+        $cohortSubkey = hash_hmac('sha256', 'maatify.rate-limiter.key-domain.admission.cohort.a1', EngineLab::STATE_SECRET, true);
+        $cohort = hash_hmac(
+            'sha256',
+            self::encodeTuple("maatify.rate-limiter.admission.cohort.a1\x00", ['a1', EngineLab::ENV, EngineLab::TRUST_DOMAIN]),
+            $cohortSubkey,
+        );
+        $scopeSubkey = hash_hmac('sha256', 'maatify.rate-limiter.key-domain.admission.scope.a1', EngineLab::KEY_SECRET, true);
+        $digest = hash_hmac(
+            'sha256',
+            self::encodeTuple("maatify.rate-limiter.admission.scope.a1\x00", [$cohort, EngineLab::ENV, EngineLab::TRUST_DOMAIN, EngineLab::GROUP, 'dev', $value, '']),
+            $scopeSubkey,
+        );
+
+        return 'a1.scope.dev.' . $digest;
     }
 
     /** @return \Closure(Step, ReplaySession): void */

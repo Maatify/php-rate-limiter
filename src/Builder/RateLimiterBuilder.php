@@ -474,33 +474,47 @@ final class RateLimiterBuilder
                     'Policy ' . $policy->getName() . ' requires a binding key secret.',
                 );
             }
+
+            if ($this->config->admissionTrustDomain() === null || $this->config->admissionStateSecret() === null) {
+                throw new RateLimiterException(
+                    'Policy ' . $policy->getName() . ' requires both admissionTrustDomain and admissionStateSecret on RateLimiterConfig (DEC-048).',
+                );
+            }
         }
     }
 
     /**
-     * The admission runtime (DEC-024 point 4, DEC-026, DEC-035, DEC-036): constructed only when a registered policy declares
-     * `PolicyCapabilityEnum::ADMISSION_RESERVATION`, with the package constants and the configured key and binding secrets.
-     * Any other composition has no admission runtime and behaves exactly as before. The capability assertion has already
-     * required the permit store and the binding key.
+     * The admission runtime (DEC-024 point 4, DEC-026, DEC-035, DEC-036, DEC-048, DEC-049): constructed only when a registered
+     * policy declares `PolicyCapabilityEnum::ADMISSION_RESERVATION`, with the package constants, the configured outer key
+     * secret, binding key secret, and explicit trust domain + state secret. Any other composition has no admission runtime
+     * and behaves exactly as before. The capability assertion has already required the permit store and admission config.
      */
     private function admissionRuntime(ClockInterface $clock): ?AdmissionRuntime
     {
         $bindingKey = $this->config->bindingKeySecret();
-        if (! $this->hasAdmissionPolicy() || ! $this->rateLimitStore instanceof AtomicAdmissionPermitStoreInterface || $bindingKey === null) {
+        $trustDomain = $this->config->admissionTrustDomain();
+        $stateSecret = $this->config->admissionStateSecret();
+        if (! $this->hasAdmissionPolicy()
+            || ! $this->rateLimitStore instanceof AtomicAdmissionPermitStoreInterface
+            || $bindingKey === null
+            || $trustDomain === null
+            || $stateSecret === null) {
             return null;
         }
 
         if ($this->provenPendingPermitLimit !== null && ! $this->rateLimitStore instanceof SharedAdmissionConfigStoreInterface) {
-            throw new AdmissionConfigurationException('A proven pending permit limit needs a store that holds the shared admission configuration (SharedAdmissionConfigStoreInterface), so that workers on one store can be proven to agree (DEC-038).');
+            throw new AdmissionConfigurationException('A proven pending permit limit needs a store that holds the shared admission configuration (SharedAdmissionConfigStoreInterface), so that workers on one store can be proven to agree (DEC-049).');
         }
 
         return new AdmissionRuntime(
             $this->rateLimitStore,
-            new AdmissionCredentialCodec($bindingKey, $this->config->previousBindingKeySecret()),
+            AdmissionCredentialCodec::fromConfig($this->config),
             AdmissionBudgetsDTO::packageDefaults()->withProvenPendingPermitCap($this->provenPendingPermitLimit),
             $clock,
             $this->config->keySecret(),
             $this->config->environmentScope(),
+            $trustDomain,
+            $stateSecret,
             $this->config->previousKeySecret(),
         );
     }

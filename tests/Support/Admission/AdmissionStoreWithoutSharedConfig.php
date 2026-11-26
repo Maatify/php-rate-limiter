@@ -41,14 +41,24 @@ final class AdmissionStoreWithoutSharedConfig extends FullCapabilityInMemoryStor
         $this->inner->applyAdmissionOutcome($outcome, $now);
     }
 
-    public function readBindingEpoch(string $key, ?string $previousKey): int
+    public function readAdmissionFence(string $key, ?string $previousKey): int
     {
-        return $this->inner->readBindingEpoch($key, $previousKey);
+        return $this->inner->readAdmissionFence($key, $previousKey);
     }
 
-    public function bumpBindingEpoch(string $key, ?string $previousKey): int
+    public function bumpAdmissionFence(string $key, ?string $previousKey): int
     {
-        return $this->inner->bumpBindingEpoch($key, $previousKey);
+        return $this->inner->bumpAdmissionFence($key, $previousKey);
+    }
+
+    public function readBindingEpoch(string $key): int
+    {
+        return $this->inner->readBindingEpoch($key);
+    }
+
+    public function bumpBindingEpoch(string $key): int
+    {
+        return $this->inner->bumpBindingEpoch($key);
     }
 
     public function claimAdmissionPermit(

@@ -167,14 +167,15 @@ final class AdmissionEngineCyclesLifecycleTest extends TestCase
      */
     private static function blockedOnP(EngineLab $lab): void
     {
-        $permits = [];
+        $admissions = [];
         for ($i = 0; $i < 3; $i++) {
             $lab->at($i);
-            $permits[] = EngineLab::permit($lab->check(self::context($lab, true, false)));
+            $ctx = self::context($lab, true, false);
+            $admissions[] = [$ctx, EngineLab::permit($lab->check($ctx))];
         }
         $last = '';
-        foreach ($permits as $permit) {
-            $last = $lab->outcome(self::context($lab, true, false), false, $permit)->decision;
+        foreach ($admissions as [$ctx, $permit]) {
+            $last = $lab->outcome($ctx, false, $permit)->decision;
         }
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $last);
         $lab->at(603);

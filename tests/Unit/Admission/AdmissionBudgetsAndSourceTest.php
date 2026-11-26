@@ -54,12 +54,16 @@ final class AdmissionBudgetsAndSourceTest extends TestCase
 
     public function testTheFenceKeyIsPerBudgetGroupAndEnvironmentAndSecret(): void
     {
-        $base = AdmissionRuntime::fenceKey('prod', 'login', 'key-secret');
+        $deriver = new \Maatify\RateLimiter\Service\AdmissionKeyDeriver('prod', EngineLab::TRUST_DOMAIN, EngineLab::STATE_SECRET);
+        $base = $deriver->fenceKey('login', 'key-secret');
 
-        self::assertNotSame($base, AdmissionRuntime::fenceKey('prod', 'otp', 'key-secret'));
-        self::assertNotSame($base, AdmissionRuntime::fenceKey('staging', 'login', 'key-secret'));
-        self::assertNotSame($base, AdmissionRuntime::fenceKey('prod', 'login', 'other-secret'));
-        self::assertSame($base, AdmissionRuntime::fenceKey('prod', 'login', 'key-secret'));
+        self::assertNotSame($base, $deriver->fenceKey('otp', 'key-secret'));
+        self::assertNotSame(
+            $base,
+            (new \Maatify\RateLimiter\Service\AdmissionKeyDeriver('staging', EngineLab::TRUST_DOMAIN, EngineLab::STATE_SECRET))->fenceKey('login', 'key-secret'),
+        );
+        self::assertNotSame($base, $deriver->fenceKey('login', 'other-secret'));
+        self::assertSame($base, $deriver->fenceKey('login', 'key-secret'));
         self::assertStringNotContainsString('login', $base, 'the derived key is opaque');
     }
 

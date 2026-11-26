@@ -212,7 +212,15 @@ final class AdmissionProofCounterRotationRedisTest extends AdmissionRedisGateTes
 
     private function rotatedRuntime(): CompositeRateLimiterRuntimeInterface
     {
-        $config = new RateLimiterConfig('redis-gate-key-2', 'redis-gate-fingerprint', 'test', 'redis-gate-key', bindingKeySecret: PublicRedisAdmissionFixture::BINDING_SECRET);
+        $config = new RateLimiterConfig(
+            'redis-gate-key-2',
+            'redis-gate-fingerprint',
+            PublicRedisAdmissionFixture::ENV,
+            'redis-gate-key',
+            bindingKeySecret: PublicRedisAdmissionFixture::BINDING_SECRET,
+            admissionTrustDomain: PublicRedisAdmissionFixture::TRUST_DOMAIN,
+            admissionStateSecret: PublicRedisAdmissionFixture::STATE_SECRET,
+        );
 
         return PublicRedisAdmissionFixture::build($this->executor, self::NAMESPACE, self::NOW, 500, null, $this->clock, $config);
     }
@@ -226,8 +234,8 @@ final class AdmissionProofCounterRotationRedisTest extends AdmissionRedisGateTes
     private function context(string $account): RateLimitContextDTO
     {
         $now = self::NOW;
-        $credential = (new AdmissionCredentialCodec(PublicRedisAdmissionFixture::BINDING_SECRET))->encode(
-            new AdmissionCredentialDTO($account, ['login'], 'inst-' . $account, 'jti-' . $account, $now + 3600, $now, 0),
+        $credential = PublicRedisAdmissionFixture::codec()->encode(
+            new AdmissionCredentialDTO($account, $account, ['login'], 'inst-' . $account, 'jti-' . $account, $now + 3600, $now, 0),
         );
 
         return new RateLimitContextDTO(ip: self::IP, ua: 'redis-gate', accountId: $account, clientInstanceId: 'inst-' . $account, admissionCredential: $credential);

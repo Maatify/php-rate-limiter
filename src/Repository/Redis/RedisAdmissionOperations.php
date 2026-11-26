@@ -15,6 +15,8 @@ use Maatify\RateLimiter\Enum\AdmissionScopeKindEnum;
 use Maatify\RateLimiter\Exception\AdmissionConfigurationException;
 use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
+use Maatify\RateLimiter\Service\AdmissionKeyDeriver;
+use Maatify\RateLimiter\Service\KeyPreimageFraming;
 
 /**
  * Redis implementation of the admission store operations (DEC-024, contract §2.4), used by `RedisFullCapabilityStore`.
@@ -37,6 +39,10 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
 final class RedisAdmissionOperations
 {
     private const PREFIX = 'maatify:rate-limiter:v1';
+
+    private const PHYSICAL_SCOPE_MAGIC_PREFIX = 'maatify.rate-limiter.redis.adm.a1.scope.';
+    private const PHYSICAL_PENDING_MAGIC = "maatify.rate-limiter.redis.adm.a1.pending\x00";
+    private const PHYSICAL_CONFIG_MAGIC = "maatify.rate-limiter.redis.adm.a1.config\x00";
 
     /**
      * The largest integer Lua doubles and Redis represent exactly (2^53 - 1). On 32-bit PHP this literal is a `float` (it does not
@@ -256,29 +262,22 @@ if hasPermit then
   if record == nil then return bad(err) end
   permitExists = not record.absent
 end
--- Shared configuration (DEC-038): compare before any gate and any write; the registration is written in phase 3.
-local cfgKey, cfgPrev, cfgValue = KEYS[2 * n + 2], KEYS[2 * n + 3], ARGV[9 + 6 * n]
+-- Shared configuration (DEC-049, durable key without previousKey): compare before any gate and any write; register in phase 3.
+local cfgKey, cfgValue = KEYS[2 * n + 2], ARGV[9 + 6 * n]
 local cfgRegister = nil
 if cfgValue ~= '' then
-  local function cfgRead(k)
-    if k == '' then return nil end
-    local t = keyType(k)
-    if t == 'none' then return nil end
-    if t ~= 'string' then return false, 'shared configuration key has type ' .. t end
-    local v = redis.call('GET', k)
-    if v ~= 'off' and canonical(v) == nil then return false, 'shared configuration value is malformed' end
-    return v
-  end
-  local cur, e1 = cfgRead(cfgKey)
-  if cur == false then return bad(e1) end
-  local stored = cur
-  if cur == nil then
-    local prev, e2 = cfgRead(cfgPrev)
-    if prev == false then return bad(e2) end
-    stored = prev
+  local stored = nil
+  if cfgKey ~= '' then
+    local t = keyType(cfgKey)
+    if t ~= 'none' then
+      if t ~= 'string' then return bad('shared configuration key has type ' .. t) end
+      local v = redis.call('GET', cfgKey)
+      if v ~= 'off' and canonical(v) == nil then return bad('shared configuration value is malformed') end
+      stored = v
+    end
   end
   if stored ~= nil and stored ~= cfgValue then return {2, 0, 0} end
-  if cur == nil then cfgRegister = cfgValue end
+  if stored == nil then cfgRegister = cfgValue end
 end
 -- Phase 2: gates, in the order of the request. Keep the first refusal and the longest wait without writing.
 local firstRefusal = nil
@@ -569,28 +568,32 @@ redis.call('SET', KEYS[1], ARGV[1])
 return 1
 LUA;
 
-    private const EPOCH_READ = self::LUA_COMMON . "\n" . <<<'LUA'
-local function epoch(k)
+    private const MONOTONIC_COUNTER = self::LUA_COMMON . "\n" . <<<'LUA'
+local label = ARGV[3]
+local maxVal = tonumber(ARGV[2])
+if maxVal == nil or maxVal > EXACT then maxVal = EXACT end
+local function readCounter(k)
   if k == '' then return 0, false end
   local t = keyType(k)
   if t == 'none' then return 0, false end
-  if t ~= 'string' then return nil, 'epoch key has type ' .. t end
+  if t ~= 'string' then return nil, label .. ' key has type ' .. t end
   local v = canonical(redis.call('GET', k))
-  if v == nil then return nil, 'epoch value is not a canonical non-negative integer' end
+  if v == nil then return nil, label .. ' value is not a canonical non-negative integer' end
   return v, true
 end
-local current, currentPresent = epoch(KEYS[1])
+local current, currentPresent = readCounter(KEYS[1])
 if current == nil then return bad(currentPresent) end
-local previous, previousPresent = epoch(KEYS[2])
+local previous, previousPresent = readCounter(KEYS[2])
 if previous == nil then return bad(previousPresent) end
 if ARGV[1] == 'read' then
-  if currentPresent then return current end
-  return previous
+  local out = currentPresent and current or previous
+  if out > maxVal then return bad(label .. ' value exceeds caller integer range') end
+  return out
 end
 local value = current
 if previous > value then value = previous end
+if value >= maxVal then return bad(label .. ' overflow') end
 value = value + 1
-if value > EXACT then return bad('epoch overflow') end
 redis.call('SET', KEYS[1], string.format('%d', value))
 return value
 LUA;
@@ -602,19 +605,38 @@ LUA;
 
     public function scopeKey(string $verifierClass, AdmissionScopeKindEnum $kind, string $key): string
     {
-        return $this->base() . ':' . self::KIND_CODE[$kind->value] . ':' . hash('sha256', $verifierClass . "\0" . $key);
+        $code = self::KIND_CODE[$kind->value];
+        $preimage = KeyPreimageFraming::encodeTuple(
+            self::PHYSICAL_SCOPE_MAGIC_PREFIX . $code . "\x00",
+            [$verifierClass, $key],
+            'admission physical scope key',
+        );
+
+        return $this->base() . ':' . $code . ':' . hash('sha256', $preimage);
     }
 
     /** Pending (not yet settled) members of a failure set: a zset scored by the permit deadline, same logical key as its set. */
     public function pendingKey(string $verifierClass, string $key): string
     {
-        return $this->base() . ':p:' . hash('sha256', $verifierClass . "\0" . $key);
+        $preimage = KeyPreimageFraming::encodeTuple(
+            self::PHYSICAL_PENDING_MAGIC,
+            [$verifierClass, $key],
+            'admission physical pending key',
+        );
+
+        return $this->base() . ':p:' . hash('sha256', $preimage);
     }
 
-    /** The registered shared configuration of a budget group (DEC-038): a plain string, no expiry, like the epoch and fence keys. */
+    /** The registered durable shared configuration of a budget group (DEC-049): a plain string, no expiry. */
     public function configKey(string $verifierClass, string $key): string
     {
-        return $this->base() . ':cfg:' . hash('sha256', $verifierClass . "\0" . $key);
+        $preimage = KeyPreimageFraming::encodeTuple(
+            self::PHYSICAL_CONFIG_MAGIC,
+            [$verifierClass, $key],
+            'admission physical config key',
+        );
+
+        return $this->base() . ':cfg:' . hash('sha256', $preimage);
     }
 
     public function rebindConfig(string $verifierClass, AdmissionSharedConfigDTO $config): void
@@ -630,6 +652,13 @@ LUA;
         return $this->base() . ':permit:' . hash('sha256', $permitId);
     }
 
+    /** Physical key for the fleet-fence family (DEC-048 D3: strictly separate from binding epochs). */
+    public function fenceKey(string $key): string
+    {
+        return $this->base() . ':fence:' . hash('sha256', $key);
+    }
+
+    /** Physical key for the durable account binding-epoch family (DEC-048 D3: strictly separate from fleet fences). */
     public function epochKey(string $key): string
     {
         return $this->base() . ':epoch:' . hash('sha256', $key);
@@ -697,13 +726,12 @@ LUA;
         $keys[] = $permit === null ? '' : $this->permitKey($permit->id);
         $config = $request->sharedConfig;
         $keys[] = $config === null ? '' : $this->configKey($request->verifierClass, $config->key);
-        $keys[] = $config?->previousKey === null ? '' : $this->configKey($request->verifierClass, $config->previousKey);
         $args[] = $config === null ? '' : $config->value;
 
         $tuple = $this->tuple($this->eval(self::RESERVE, $keys, $args), 3, 'admission reservation');
         $verdict = $this->integer($tuple[0], 'admission reservation verdict');
         if ($verdict === 2) {
-            throw new AdmissionConfigurationException('The admission shared configuration of this worker (proven pending permit limit ' . ($config->value ?? '') . ') differs from the one registered for budget group "' . $request->verifierClass . '". No reservation was made. Align every worker, or rebind the shared value explicitly (DEC-038).');
+            throw new AdmissionConfigurationException('The admission shared configuration of this worker (proven pending permit limit ' . ($config->value ?? '') . ') differs from the one registered for budget group "' . $request->verifierClass . '". No reservation was made. Align every worker, or rebind the shared value explicitly (DEC-049).');
         }
         $index = $this->integer($tuple[1], 'admission reservation scope');
         $retry = $this->integer($tuple[2], 'admission reservation retry-after');
@@ -758,7 +786,7 @@ LUA;
     {
         $this->assertTime($now);
         foreach (['permit id' => $permitId, 'lane' => $lane, 'subject' => $subject, 'operation' => $operation] as $label => $value) {
-            if (trim($value) === '') {
+            if (! AdmissionKeyDeriver::isNonBlank($value)) {
                 throw new RateLimiterException('Admission permit ' . $label . ' must not be empty.');
             }
         }
@@ -780,11 +808,11 @@ LUA;
     ): AdmissionPermitClaimEnum {
         $this->assertTime($now);
         $permitId = $outcome->permitId;
-        if ($permitId === null || trim($permitId) === '') {
+        if ($permitId === null || ! AdmissionKeyDeriver::isNonBlank($permitId)) {
             throw new RateLimiterException('Admission permit id is required for atomic outcome claim.');
         }
         foreach (['permit id' => $permitId, 'lane' => $lane, 'subject' => $subject, 'operation' => $operation] as $label => $value) {
-            if (trim($value) === '') {
+            if (! AdmissionKeyDeriver::isNonBlank($value)) {
                 throw new RateLimiterException('Admission permit ' . $label . ' must not be empty.');
             }
         }
@@ -825,39 +853,61 @@ LUA;
         return $claim;
     }
 
-    public function readEpoch(string $key, ?string $previousKey): int
+    public function readFence(string $key, ?string $previousKey): int
     {
-        return $this->epoch('read', $key, $previousKey);
+        return $this->monotonicCounter('read', 'fence', $key, $previousKey, fn(string $k): string => $this->fenceKey($k));
     }
 
-    public function bumpEpoch(string $key, ?string $previousKey): int
+    public function bumpFence(string $key, ?string $previousKey): int
     {
-        return $this->epoch('bump', $key, $previousKey);
+        return $this->monotonicCounter('bump', 'fence', $key, $previousKey, fn(string $k): string => $this->fenceKey($k));
     }
 
-    private function epoch(string $mode, string $key, ?string $previousKey): int
+    public function readEpoch(string $key): int
     {
-        if (trim($key) === '') {
-            throw new RateLimiterException('Binding epoch key must not be empty.');
+        return $this->monotonicCounter('read', 'epoch', $key, null, fn(string $k): string => $this->epochKey($k));
+    }
+
+    public function bumpEpoch(string $key): int
+    {
+        return $this->monotonicCounter('bump', 'epoch', $key, null, fn(string $k): string => $this->epochKey($k));
+    }
+
+    /** @param \Closure(string): string $physicalKey */
+    private function monotonicCounter(string $mode, string $label, string $key, ?string $previousKey, \Closure $physicalKey): int
+    {
+        if (! AdmissionKeyDeriver::isNonBlank($key)) {
+            throw new RateLimiterException('Admission ' . $label . ' key must not be empty.');
         }
         $previousKey = $previousKey === $key ? null : $previousKey;
-        if ($previousKey !== null && trim($previousKey) === '') {
-            throw new RateLimiterException('Binding epoch previous key must not be blank.');
+        if ($previousKey !== null && ! AdmissionKeyDeriver::isNonBlank($previousKey)) {
+            throw new RateLimiterException('Admission ' . $label . ' previous key must not be blank.');
         }
         $value = $this->integer(
-            $this->eval(self::EPOCH_READ, [$this->epochKey($key), $previousKey === null ? '' : $this->epochKey($previousKey)], [$mode]),
-            'binding epoch response',
+            $this->eval(
+                self::MONOTONIC_COUNTER,
+                [$physicalKey($key), $previousKey === null ? '' : $physicalKey($previousKey)],
+                [$mode, self::nativeCounterMaxDecimal(), $label],
+            ),
+            'admission ' . $label . ' response',
         );
         if ($value < 0) {
-            throw new RateLimiterException('Malformed binding epoch response.');
+            throw new RateLimiterException('Malformed admission ' . $label . ' response.');
         }
 
         return $value;
     }
 
+    private static function nativeCounterMaxDecimal(): string
+    {
+        return (float) PHP_INT_MAX < (float) self::EXACT_MAX
+            ? (string) PHP_INT_MAX
+            : '9007199254740991';
+    }
+
     private function base(): string
     {
-        return self::PREFIX . ':{' . hash('sha256', $this->namespace) . '}:adm';
+        return self::PREFIX . ':{' . hash('sha256', $this->namespace) . '}:adm:a1';
     }
 
     private function previousKeyOf(AdmissionScopeDTO $scope): ?string
@@ -891,13 +941,13 @@ LUA;
             if ($previous !== null && ! ($device || $scope->kind === AdmissionScopeKindEnum::COUNTER)) {
                 throw new RateLimiterException('Only counter and device-member admission scopes can name a previous generation.');
             }
-            if ($previous !== null && trim($previous) === '') {
+            if ($previous !== null && ! AdmissionKeyDeriver::isNonBlank($previous)) {
                 throw new RateLimiterException('Admission scope previous key must not be blank.');
             }
             if ((! $keyed && $scope->member !== null) || (! $device && $scope->previousMember !== null)) {
                 throw new RateLimiterException('Admission scope carries a member its kind does not use.');
             }
-            if ($scope->previousMember !== null && trim($scope->previousMember) === '') {
+            if ($scope->previousMember !== null && ! AdmissionKeyDeriver::isNonBlank($scope->previousMember)) {
                 throw new RateLimiterException('Admission scope previous member must not be blank.');
             }
             if ($scope->ttlSeconds > self::TTL_MAX || $scope->capacity > self::EXACT_MAX || $now > self::EXACT_MAX - $scope->ttlSeconds) {
@@ -906,11 +956,10 @@ LUA;
             if ($scope->kind === AdmissionScopeKindEnum::BUCKET && self::productExceedsExactMax($scope->capacity, $scope->ttlSeconds)) {
                 throw new RateLimiterException('Admission bucket capacity times its take cost is not representable.');
             }
-            $identity = $scope->kind->value . "\0" . $scope->key;
-            if (isset($seen[$identity])) {
+            if (isset($seen[$scope->kind->value][$scope->key])) {
                 throw new RateLimiterException('An admission request names the same scope key twice.');
             }
-            $seen[$identity] = true;
+            $seen[$scope->kind->value][$scope->key] = true;
         }
     }
 

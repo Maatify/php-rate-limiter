@@ -72,27 +72,50 @@ final class AdmissionSettlementOptInRedisTest extends AdmissionRedisGateTestCase
     }
 
     /**
-     * #185 DEC-033: the production failure set is a sorted set scored by each failure's expiry, where
-     * d6aea4d stored a set. OFF-PARITY compares it by its members (the d6aea4d content); every other key, every result and
-     * every TTL presence is compared as it is.
+     * #185 DEC-033 + #284 DEC-048: compare frozen `d6aea4d` (`:adm:{family}:{oldHash}`) against production `a1`
+     * (`:adm:a1:{family}:{framedHash}`) by normalizing only the physical key layout (`:adm:a1:` and framed scope digests)
+     * and, for non-sliding `d6aea4d`, the DEC-033 sliding-window representations. Permit hashes, family counts, types,
+     * contents, scores and TTL presence remain compared verbatim at every step.
      *
      * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $dump
-     * @return array<string, array{type: string, value: mixed, hasTtl: bool}>
+     * @return array<string, mixed>
      */
-    private static function membersOfFailureSets(array $dump): array
+    private static function canonicalDump(array $dump, bool $downgradeSliding): array
     {
+        $normalized = [];
+        /** @var array<string, list<array{type: string, value: mixed, hasTtl: bool}>> $byFamily */
+        $byFamily = [];
         foreach ($dump as $key => $entry) {
-            if ($entry['type'] === 'zset' && str_contains($key, ':adm:s:') && is_array($entry['value'])) {
-                $members = array_map('strval', array_keys($entry['value']));
-                sort($members);
-                $dump[$key] = ['type' => 'set', 'value' => $members, 'hasTtl' => $entry['hasTtl']];
+            if (preg_match('/^(.*:adm:)(?:a1:)?([a-z]+):([0-9a-f]{64})$/', $key, $m) !== 1) {
+                $normalized[$key] = $entry;
+                continue;
             }
-            if ($entry['type'] === 'zset' && str_contains($key, ':adm:c:') && is_array($entry['value'])) {
-                $dump[$key] = ['type' => 'string', 'value' => (string) count($entry['value']), 'hasTtl' => $entry['hasTtl']];
+            $prefix = $m[1];
+            $family = $m[2];
+            $hash = $m[3];
+            if ($downgradeSliding) {
+                if ($entry['type'] === 'zset' && $family === 's' && is_array($entry['value'])) {
+                    $members = array_map('strval', array_keys($entry['value']));
+                    sort($members);
+                    $entry = ['type' => 'set', 'value' => $members, 'hasTtl' => $entry['hasTtl']];
+                }
+                if ($entry['type'] === 'zset' && $family === 'c' && is_array($entry['value'])) {
+                    $entry = ['type' => 'string', 'value' => (string) count($entry['value']), 'hasTtl' => $entry['hasTtl']];
+                }
             }
+            if ($family === 'permit') {
+                $normalized[$prefix . 'permit:' . $hash] = $entry;
+                continue;
+            }
+            $byFamily[$prefix . $family][] = $entry;
         }
+        foreach ($byFamily as $familyKey => $entries) {
+            usort($entries, static fn(array $a, array $b): int => json_encode($a, JSON_THROW_ON_ERROR) <=> json_encode($b, JSON_THROW_ON_ERROR));
+            $normalized[$familyKey] = $entries;
+        }
+        ksort($normalized);
 
-        return $dump;
+        return $normalized;
     }
 
     private function production(): RedisAdmissionOperations
@@ -145,7 +168,11 @@ final class AdmissionSettlementOptInRedisTest extends AdmissionRedisGateTestCase
         };
         self::assertSame($stripRetry($mergedTrace), $stripRetry($productionTrace));
         self::assertSame($merged['result'], $production['result']);
-        self::assertSame($merged['dumps'], array_map(self::membersOfFailureSets(...), $production['dumps']), "the key dump after every step of $name");
+        self::assertSame(
+            array_map(static fn(array $d): array => self::canonicalDump($d, false), $merged['dumps']),
+            array_map(static fn(array $d): array => self::canonicalDump($d, true), $production['dumps']),
+            "the key dump after every step of $name",
+        );
     }
 
     /** @return iterable<string, array{int}> */
@@ -167,7 +194,11 @@ final class AdmissionSettlementOptInRedisTest extends AdmissionRedisGateTestCase
         self::assertCount(300, $a);
         foreach ($a as $i => $step) {
             self::assertSame($step['record'], $b[$i]['record'], "result of step $i");
-            self::assertSame($step['dump'], $b[$i]['dump'], "key dump after step $i");
+            self::assertSame(
+                self::canonicalDump($step['dump'], false),
+                self::canonicalDump($b[$i]['dump'], false),
+                "key dump after step $i",
+            );
         }
         // The sequence is not vacuous: it admits, refuses, claims (accepted, late or unknown) and meets the malformed state.
         $records = implode(' ', array_column($a, 'record'));
@@ -259,7 +290,11 @@ final class AdmissionSettlementOptInRedisTest extends AdmissionRedisGateTestCase
         $mutated = $this->recorded($mutant, $run);
 
         // By members, as OFF-PARITY compares: a raw dump differs from d6aea4d in any case (a sorted set against a set).
-        self::assertNotSame($merged['dumps'], array_map(self::membersOfFailureSets(...), $mutated['dumps']), 'DETECTOR: a store that ignores the flag diverges from d6aea4d');
+        self::assertNotSame(
+            array_map(static fn(array $d): array => self::canonicalDump($d, false), $merged['dumps']),
+            array_map(static fn(array $d): array => self::canonicalDump($d, true), $mutated['dumps']),
+            'DETECTOR: a store that ignores the flag diverges from d6aea4d',
+        );
     }
 
     public function testDetectorAStoreWithoutTheWindowBreaksTheSeededOffParity(): void

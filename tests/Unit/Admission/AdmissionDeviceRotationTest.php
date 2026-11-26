@@ -29,6 +29,8 @@ final class AdmissionDeviceRotationTest extends TestCase
     private const GROUP = 'login';
     private const POLICY = 'login_protection';
     private const BINDING_SECRET = 'binding-secret-185';
+    private const TRUST_DOMAIN = 'device-rotation-authority';
+    private const STATE_SECRET = 'device-rotation-state-secret-32b';
     private const KEY_1 = 'key-secret-generation-1';
     private const KEY_2 = 'key-secret-generation-2';
     private const FP_1 = 'fp-secret-generation-1';
@@ -53,7 +55,7 @@ final class AdmissionDeviceRotationTest extends TestCase
         $clock = new FixedClock('@1767268800');
         $store = new AdmissionInMemoryReferenceStore($clock);
         $emitter = new RecordingFailureSignalEmitter();
-        $codec = new AdmissionCredentialCodec(self::BINDING_SECRET);
+        $codec = new AdmissionCredentialCodec(self::BINDING_SECRET, self::ENV, self::TRUST_DOMAIN, self::STATE_SECRET);
         $now = $clock->now()->getTimestamp();
         $context = new RateLimitContextDTO(
             ip: '198.51.100.1',
@@ -62,6 +64,7 @@ final class AdmissionDeviceRotationTest extends TestCase
             clientFingerprint: ['device' => 'test-device'],
             clientInstanceId: 'test-instance',
             admissionCredential: $codec->encode(new AdmissionCredentialDTO(
+                account: 'test-account',
                 subject: 'test-account',
                 budgetGroups: [self::GROUP],
                 instance: 'test-instance',
@@ -76,6 +79,8 @@ final class AdmissionDeviceRotationTest extends TestCase
             fingerprintSecret: self::FP_1,
             environmentScope: self::ENV,
             bindingKeySecret: self::BINDING_SECRET,
+            admissionTrustDomain: self::TRUST_DOMAIN,
+            admissionStateSecret: self::STATE_SECRET,
         );
         $after = new RateLimiterConfig(
             keySecret: $rotateKey ? self::KEY_2 : self::KEY_1,
@@ -84,6 +89,8 @@ final class AdmissionDeviceRotationTest extends TestCase
             previousKeySecret: $rotateKey ? self::KEY_1 : null,
             previousFingerprintSecret: $rotateFp ? self::FP_1 : null,
             bindingKeySecret: self::BINDING_SECRET,
+            admissionTrustDomain: self::TRUST_DOMAIN,
+            admissionStateSecret: self::STATE_SECRET,
         );
 
         $memberships = new ReflectionProperty(AdmissionInMemoryReferenceStore::class, 'devices');

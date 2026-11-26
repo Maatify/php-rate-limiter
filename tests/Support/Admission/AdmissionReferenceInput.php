@@ -9,6 +9,7 @@ use Maatify\RateLimiter\DTO\AdmissionReservationRequestDTO;
 use Maatify\RateLimiter\DTO\AdmissionScopeDTO;
 use Maatify\RateLimiter\Enum\AdmissionScopeKindEnum;
 use Maatify\RateLimiter\Exception\RateLimiterException;
+use Maatify\RateLimiter\Service\AdmissionKeyDeriver;
 
 /** The mutable PHP references mirror Redis admission's caller-input checks before applying state changes. */
 final class AdmissionReferenceInput
@@ -65,7 +66,7 @@ final class AdmissionReferenceInput
     {
         self::assertTime($now);
         $permitId = $outcome->permitId;
-        if ($permitId === null || trim($permitId) === '') {
+        if ($permitId === null || ! AdmissionKeyDeriver::isNonBlank($permitId)) {
             throw new RateLimiterException('Admission permit id is required for atomic outcome claim.');
         }
         self::assertClaimIdentity($permitId, $lane, $subject, $operation);
@@ -77,7 +78,7 @@ final class AdmissionReferenceInput
     private static function assertClaimIdentity(string $permitId, string $lane, string $subject, string $operation): void
     {
         foreach (['permit id' => $permitId, 'lane' => $lane, 'subject' => $subject, 'operation' => $operation] as $label => $value) {
-            if (trim($value) === '') {
+            if (! AdmissionKeyDeriver::isNonBlank($value)) {
                 throw new RateLimiterException('Admission permit ' . $label . ' must not be empty.');
             }
         }
@@ -109,13 +110,13 @@ final class AdmissionReferenceInput
             if ($previous !== null && ! ($device || $scope->kind === AdmissionScopeKindEnum::COUNTER)) {
                 throw new RateLimiterException('Only counter and device-member admission scopes can name a previous generation.');
             }
-            if ($previous !== null && trim($previous) === '') {
+            if ($previous !== null && ! AdmissionKeyDeriver::isNonBlank($previous)) {
                 throw new RateLimiterException('Admission scope previous key must not be blank.');
             }
             if ((! $keyed && $scope->member !== null) || (! $device && $scope->previousMember !== null)) {
                 throw new RateLimiterException('Admission scope carries a member its kind does not use.');
             }
-            if ($scope->previousMember !== null && trim($scope->previousMember) === '') {
+            if ($scope->previousMember !== null && ! AdmissionKeyDeriver::isNonBlank($scope->previousMember)) {
                 throw new RateLimiterException('Admission scope previous member must not be blank.');
             }
             if ($scope->ttlSeconds > self::TTL_MAX || $scope->capacity > self::EXACT_MAX || $now > self::EXACT_MAX - $scope->ttlSeconds) {
@@ -124,11 +125,10 @@ final class AdmissionReferenceInput
             if ($scope->kind === AdmissionScopeKindEnum::BUCKET && (float) $scope->capacity * (float) $scope->ttlSeconds > (float) self::EXACT_MAX) {
                 throw new RateLimiterException('Admission bucket capacity times its take cost is not representable.');
             }
-            $identity = $scope->kind->value . "\0" . $scope->key;
-            if (isset($seen[$identity])) {
+            if (isset($seen[$scope->kind->value][$scope->key])) {
                 throw new RateLimiterException('An admission request names the same scope key twice.');
             }
-            $seen[$identity] = true;
+            $seen[$scope->kind->value][$scope->key] = true;
         }
     }
 }

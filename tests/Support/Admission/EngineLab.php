@@ -42,6 +42,8 @@ final class EngineLab
     public const KEY_SECRET = 'key-secret';
     public const FINGERPRINT_SECRET = 'fingerprint-secret';
     public const BINDING_SECRET = 'binding-secret';
+    public const TRUST_DOMAIN = 'engine-lab-authority';
+    public const STATE_SECRET = 'engine-lab-state-secret-32-bytes!';
     public const ENV = 'prod';
     public const GROUP = 'login';
     public const POLICY = 'login_protection';
@@ -84,14 +86,15 @@ final class EngineLab
             // A mutation of the runtime is not an `AdmissionRuntime`: the engine under test accepts any object in its place.
             $engineClass = ServiceMutant::load('RateLimiterEngine', [], [
                 ['private readonly ?AdmissionRuntime $admission = null,', 'private readonly ?object $admission = null,'],
-                ["        AdmissionRuntime \$admission,\n        BlockPolicyInterface \$policy,", "        object \$admission,\n        BlockPolicyInterface \$policy,"],
+                ["    private function settleAdmissionOutcome(\n        AdmissionRuntime \$admission,", "    private function settleAdmissionOutcome(\n        object \$admission,"],
+                ["    private function limitWithAdmission(\n        AdmissionRuntime \$admission,", "    private function limitWithAdmission(\n        object \$admission,"],
                 ['private function requireAdmission(): AdmissionRuntime', 'private function requireAdmission(): object'],
             ]);
         }
         $this->clock = new FixedClock('@' . self::T0);
         $this->store = new AdmissionInMemoryReferenceStore($this->clock);
         $this->admissionStore = new FaultInjectingAdmissionStore($admissionInner ?? $this->store);
-        $this->codec = new AdmissionCredentialCodec(self::BINDING_SECRET);
+        $this->codec = new AdmissionCredentialCodec(self::BINDING_SECRET, self::ENV, self::TRUST_DOMAIN, self::STATE_SECRET);
         $this->emitter = new RecordingFailureSignalEmitter();
         $this->runtime = new $runtimeClass(
             $this->admissionStore,
@@ -100,6 +103,8 @@ final class EngineLab
             $this->clock,
             self::KEY_SECRET,
             self::ENV,
+            self::TRUST_DOMAIN,
+            self::STATE_SECRET,
         );
         $scores = $this->store;
         $correlation = $this->store->correlationStore();
@@ -157,9 +162,17 @@ final class EngineLab
         $lab->clock = $clock ?? new FixedClock('@' . self::T0);
         $lab->store = $store ?? new AdmissionInMemoryReferenceStore($lab->clock);
         $lab->admissionStore = new FaultInjectingAdmissionStore($lab->store);
-        $lab->codec = new AdmissionCredentialCodec(self::BINDING_SECRET);
+        $lab->codec = new AdmissionCredentialCodec(self::BINDING_SECRET, self::ENV, self::TRUST_DOMAIN, self::STATE_SECRET);
         $lab->emitter = new RecordingFailureSignalEmitter();
-        $config = new RateLimiterConfig($keySecret, self::FINGERPRINT_SECRET, self::ENV, $previousKeySecret, bindingKeySecret: self::BINDING_SECRET);
+        $config = new RateLimiterConfig(
+            $keySecret,
+            self::FINGERPRINT_SECRET,
+            self::ENV,
+            $previousKeySecret,
+            bindingKeySecret: self::BINDING_SECRET,
+            admissionTrustDomain: self::TRUST_DOMAIN,
+            admissionStateSecret: self::STATE_SECRET,
+        );
         $runtime = (new RateLimiterBuilder($config, $lab->store, $lab->store->correlationStore(), new InMemoryCircuitBreakerStore(), $lab->emitter))
             ->withClock($lab->clock)
             ->withPolicy(new LoginProtectionAdmissionPolicy())
@@ -215,7 +228,11 @@ final class EngineLab
 
     public function openFence(string $group = self::GROUP): void
     {
-        $this->admissionStore->bumpBindingEpoch(AdmissionRuntime::fenceKey(self::ENV, $group, self::KEY_SECRET), null);
+        $open = [$this->runtime, 'openFence'];
+        if (! is_callable($open)) {
+            throw new \LogicException('The runtime under test cannot open a fence.');
+        }
+        $open($group);
     }
 
     public function at(int $secondsFromStart): void
@@ -232,6 +249,7 @@ final class EngineLab
     public function mint(string $account, string $instance, int $lifetime = 86400, ?int $epoch = null, string $group = self::GROUP, ?string $subject = null, ?AdmissionCredentialCodec $codec = null, ?string $jti = null): string
     {
         $claims = new AdmissionCredentialDTO(
+            $account,
             $subject ?? $account,
             [$group],
             $instance,

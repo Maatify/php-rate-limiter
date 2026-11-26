@@ -139,12 +139,13 @@ final class AdmissionBuilderS0GoldensTest extends TestCase
     /** @return \Generator<int, array{RateLimitContextDTO, RateLimitCommand, string}> */
     private static function scenarioA(FixedClock $clock, string $name): \Generator
     {
-        $codec = new AdmissionCredentialCodec(EngineLab::BINDING_SECRET);
+        $codec = new AdmissionCredentialCodec(EngineLab::BINDING_SECRET, 'prod', EngineLab::TRUST_DOMAIN, EngineLab::STATE_SECRET);
         for ($step = 0; $step < 160; $step++) {
             $n = $step % 4;
             $known = $step % 3 !== 0;
             $instance = $known ? 'inst-' . $n : ($step % 5 === 0 ? null : 'new-' . $step);
             $credential = $instance === null ? null : $codec->encode(new AdmissionCredentialDTO(
+                'acct-' . $n,
                 'acct-' . $n,
                 ['login'],
                 $instance,

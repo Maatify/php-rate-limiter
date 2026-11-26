@@ -166,18 +166,27 @@ final class AdmissionEngineFenceFailTest extends TestCase
         self::assertSame(0, $lab->engine->bindingEpoch('acct-2'));
     }
 
-    // ---- LT-14: reported behaviour --------------------------------------------------------------------------------------------
+    // ---- DEC-048 D6 (replaces historical LT-14 cross-source outcome claim) ---------------------------------------------------
 
-    public function testReportedAnOutcomeFromAnotherSourceIsScoredAndLeavesTheAdmissionSourceUnchanged(): void
+    public function testAnOutcomeFromAnotherSourceIsRejectedBeforeClaimAndLeavesTheOriginalPermitClaimable(): void
     {
-        // Declared behaviour, not a gate (Lead, LT-14): the failure set of an outcome is keyed by the OUTCOME request's source.
+        // Under DEC-048 D6, the permit context commitment binds the canonical admission source (as well as group, operation,
+        // account, subject, instance, and credential digest). Presenting the permit from another source is rejected before
+        // store claim or scoring, leaves the original permit unconsumed, and writes nothing to either source.
         $lab = new EngineLab(EngineLab::budgets(sourceFailureCap: 1));
         $admitted = $lab->context('acct-1', self::IP);
         $permit = (string) EngineLab::permit($lab->check($admitted));
-        $lab->outcome($lab->context('acct-1', '203.0.113.50'), false, $permit);
 
-        // The failure landed on 203.0.113.50: that source is capped, the admission source is not (its pending entry settles at D).
-        $lab->at(31);
-        self::assertSame('source_failure_cap', EngineLab::cause($lab->check($lab->context('acct-2', '203.0.113.50'))));
+        $wrongSource = $lab->outcome($lab->context('acct-1', '203.0.113.50'), false, $permit);
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $wrongSource->decision);
+        self::assertSame('permit_rejected', EngineLab::cause($wrongSource));
+        self::assertSame('permit', EngineLab::scope($wrongSource));
+        // Neither the foreign source nor the admission source received a failure.
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $lab->check($lab->context('acct-2', '203.0.113.50'))->decision);
+
+        // Control: the valid permit is still unconsumed and settles once from the original source.
+        $settled = $lab->outcome($admitted, false, $permit);
+        self::assertStringStartsNotWith('permit_', (string) EngineLab::cause($settled));
+        self::assertSame('source_failure_cap', EngineLab::cause($lab->check($lab->context('acct-3', self::IP))));
     }
 }

@@ -93,7 +93,7 @@ final class CgnModel
                 $p = $legit === 1 && isset($bound[$who]);
                 $credential = null;
                 if ($p) {
-                    $credentials[$who] ??= $lab->codec->encode(new AdmissionCredentialDTO($acct, [EngineLab::GROUP], "i-$who", "tok-$who", EngineLab::T0 + 4 * 86400, $lab->now(), 0));
+                    $credentials[$who] ??= $lab->codec->encode(new AdmissionCredentialDTO($acct, $acct, [EngineLab::GROUP], "i-$who", "tok-$who", EngineLab::T0 + 4 * 86400, $lab->now(), 0));
                     $credential = $credentials[$who];
                 }
                 $context = new RateLimitContextDTO(
