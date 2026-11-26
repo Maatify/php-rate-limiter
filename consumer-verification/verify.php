@@ -1175,18 +1175,19 @@ requireCondition($cvh2Refused->metadata?->cause === 'source_capacity' && $cvh2Re
 requireCondition($cvh2Refused->retryAfter > 0 && $cvh2Refused->retryAfter <= 600, 'CVH-2: retryAfter is outside the window.');
 requireCondition($admission->limit($admissionContext('cvh2-24', '203.0.113.121'), RateLimitCommand::checkOnly('login_protection'))->decision === RateLimitResultDTO::DECISION_ALLOW, 'CVH-2 control: another source was refused.');
 
-// CVH-3: a Host-minted credential (from the same RateLimiterConfig via AdmissionCredentialCodec::fromConfig) is admitted from the exhausted source; the same with a changed MAC is not, and oversized credentials fail closed on encode.
+// CVH-3: a Host-minted credential (from the same RateLimiterConfig via AdmissionCredentialCodec::fromConfig) is admitted from the exhausted source; the same with a changed MAC is not, and oversized credentials are explicitly rejected at encode().
 $codec = AdmissionCredentialCodec::fromConfig($admissionConfigFor('cvh'));
 // The credential's issue and expiry times come from the admission clock, so they agree with the runtime's `now`.
 $mint = static fn(int $epoch): string => $codec->encode(new AdmissionCredentialDTO('cvh-owner', 'cvh-owner', ['login'], 'inst-owner', 'jti-owner-' . $epoch, $admissionClock->now()->getTimestamp() + 86400, $admissionClock->now()->getTimestamp(), $epoch));
 $credential = $mint($admission->bindingEpoch('cvh-owner'));
+$oversizeClaims = new AdmissionCredentialDTO(str_repeat('a', 4096), 'cvh-owner', ['login'], 'inst-owner', 'jti-oversize', $admissionClock->now()->getTimestamp() + 86400, $admissionClock->now()->getTimestamp(), 0);
 $oversizeRejected = false;
 try {
-    $codec->encode(new AdmissionCredentialDTO(str_repeat('a', 4096), 'cvh-owner', ['login'], 'inst-owner', 'jti-oversize', $admissionClock->now()->getTimestamp() + 86400, $admissionClock->now()->getTimestamp(), 0));
-} catch (\Maatify\RateLimiter\Exception\RateLimiterException) {
-    $oversizeRejected = true;
+    $codec->encode($oversizeClaims);
+} catch (\Maatify\RateLimiter\Exception\RateLimiterException $e) {
+    $oversizeRejected = $e->getMessage() === 'Encoded admission credential exceeds the maximum length of 4096 characters.';
 }
-requireCondition($oversizeRejected, 'CVH-3: public issuer encode() must reject credentials exceeding MAX_LENGTH (4096).');
+requireCondition($oversizeRejected, 'CVH-3: public issuer encode() must explicitly reject credentials exceeding MAX_LENGTH (4096).');
 $tampered = substr($credential, 0, -2) . (str_ends_with($credential, 'AA') ? 'BB' : 'AA');
 $cvh3 = $admission->limit($admissionContext('cvh-owner', $exhausted, 'inst-owner', $credential), RateLimitCommand::checkOnly('login_protection'));
 requireCondition($cvh3->decision === RateLimitResultDTO::DECISION_ALLOW, 'CVH-3: a verified credential was refused from the exhausted source.');
