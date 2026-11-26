@@ -176,48 +176,274 @@ final class AdmissionG3HardeningRedisTest extends AdmissionRedisGateTestCase
 
     public function testD7ClosedFenceSettlementAndPermitContextBindingOnRealRedis(): void
     {
-        $cfgOpen = $this->config('outer-s1', null, self::BINDING_1, null);
-        $rOpen = $this->buildRuntime($cfgOpen, pendingLimit: 1);
-        self::assertInstanceOf(AdmissionFenceControlInterface::class, $rOpen);
-        $rOpen->openAdmissionFence('login');
+        $cfg = $this->config('outer-s1', null, self::BINDING_1, null);
+        $runtime = $this->buildRuntime($cfg, pendingLimit: 1);
+        self::assertInstanceOf(AdmissionFenceControlInterface::class, $runtime);
+        $runtime->openAdmissionFence('login');
 
-        $codec = AdmissionCredentialCodec::fromConfig($cfgOpen);
-        $cred = $codec->encode(new AdmissionCredentialDTO('acct-d7', 'acct-d7', ['login'], 'inst-d7', 'jti-d7', self::NOW + 3600, self::NOW, 0));
-        $ctx = $this->context('acct-d7', self::SOURCE, 'inst-d7', $cred);
+        $codec = AdmissionCredentialCodec::fromConfig($cfg);
+        $credSucc = $codec->encode(new AdmissionCredentialDTO('acct-p-succ', 'acct-p-succ', ['login'], 'inst-p1', 'jti-p1', self::NOW + 3600, self::NOW, 0));
+        $credFail = $codec->encode(new AdmissionCredentialDTO('acct-p-fail', 'acct-p-fail', ['login'], 'inst-p2', 'jti-p2', self::NOW + 3600, self::NOW, 0));
+        $credExtra = $codec->encode(new AdmissionCredentialDTO('acct-p-extra', 'acct-p-extra', ['login'], 'inst-p3', 'jti-p3', self::NOW + 3600, self::NOW, 0));
 
-        $check = $rOpen->limit($ctx, RateLimitCommand::checkOnly('login_protection'));
-        self::assertTrue($check->isAllowed());
-        $permit = $check->metadata?->permit;
-        self::assertNotNull($permit);
+        $ctxPSucc = $this->context('acct-p-succ', '198.51.100.70', 'inst-p1', $credSucc);
+        $ctxPFail = $this->context('acct-p-fail', '198.51.100.71', 'inst-p2', $credFail);
+        $ctxUSucc = $this->context('acct-u-succ', '198.51.100.72');
+        $ctxUFail = $this->context('acct-u-fail', '198.51.100.73');
+        $ctxPLate = $this->context('acct-p-late', '198.51.100.74', 'inst-p4', $codec->encode(new AdmissionCredentialDTO('acct-p-late', 'acct-p-late', ['login'], 'inst-p4', 'jti-p4', self::NOW + 3600, self::NOW, 0)));
 
-        // Close fence (outer-s3 with outer-s2 previous: fence never opened under s2/s3).
-        $cfgClosed = $this->config('outer-s3', 'outer-s2', self::BINDING_1, null);
-        $rClosed = $this->buildRuntime($cfgClosed, pendingLimit: 1);
+        $pSuccCheck = $runtime->limit($ctxPSucc, RateLimitCommand::checkOnly('login_protection'));
+        $pFailCheck = $runtime->limit($ctxPFail, RateLimitCommand::checkOnly('login_protection'));
+        $uSuccCheck = $runtime->limit($ctxUSucc, RateLimitCommand::checkOnly('login_protection'));
+        $uFailCheck = $runtime->limit($ctxUFail, RateLimitCommand::checkOnly('login_protection'));
+        $pLateCheck = $runtime->limit($ctxPLate, RateLimitCommand::checkOnly('login_protection'));
 
-        // Foreign context rejected before claim; no Redis permit state changed!
-        $foreignCtx = $this->context('acct-d7', '203.0.113.99', 'inst-d7', $cred);
+        foreach ([$pSuccCheck, $pFailCheck, $uSuccCheck, $uFailCheck, $pLateCheck] as $c) {
+            self::assertTrue($c->isAllowed());
+            self::assertNotNull($c->metadata?->permit);
+        }
+        $pSuccPermit = $pSuccCheck->metadata?->permit;
+        $pFailPermit = $pFailCheck->metadata?->permit;
+        $uSuccPermit = $uSuccCheck->metadata?->permit;
+        $uFailPermit = $uFailCheck->metadata?->permit;
+        $pLatePermit = $pLateCheck->metadata?->permit;
+        self::assertIsString($pSuccPermit);
+        self::assertIsString($pFailPermit);
+        self::assertIsString($uSuccPermit);
+        self::assertIsString($uFailPermit);
+        self::assertIsString($pLatePermit);
+
+        // Pending limit = 1 is active on 198.51.100.70 before closing fence.
+        $refusedPending = $runtime->limit($this->context('acct-p-extra', '198.51.100.70', 'inst-p3', $credExtra), RateLimitCommand::checkOnly('login_protection'));
+        self::assertSame('source_pending_permits', $refusedPending->metadata?->cause);
+
+        // Close the fleet fence on the SAME outer generation via isolated test fixture control (remove :adm:a1:fence:* only).
+        $this->closeTestFenceKeys();
+
+        // Closed fence + checkOnly => S0 path, NO permit issued and NO admission or score state mutated!
+        $beforeClosedCheck = $this->admAndScoreDump($this->dump());
+        $closedCheck = $runtime->limit($this->context('acct-s0-check', '198.51.100.75'), RateLimitCommand::checkOnly('login_protection'));
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $closedCheck->decision);
+        self::assertNull($closedCheck->metadata?->permit);
+        self::assertSame($beforeClosedCheck, $this->admAndScoreDump($this->dump()), 'Closed-fence checkOnly writes zero admission or score state');
+
+        // Foreign-context permit under closed fence => permit_rejected, zero Redis mutation.
         $beforeForeign = $this->dump();
-        $foreignRes = $rClosed->limit($foreignCtx, new RateLimitCommand('login_protection', 1, false, true, false, $permit));
+        $foreignRes = $runtime->limit($this->context('acct-p-succ', '203.0.113.99', 'inst-p1', $credSucc), new RateLimitCommand('login_protection', 1, false, true, false, $pSuccPermit));
         self::assertSame('permit_rejected', $foreignRes->metadata?->cause);
         self::assertSame($beforeForeign, $this->dump(), 'Foreign permit under closed fence must not mutate Redis');
 
-        // Valid outstanding permit settles ONCE even while fence is closed!
-        $settled = $rClosed->limit($ctx, new RateLimitCommand('login_protection', 1, false, true, false, $permit));
-        self::assertNull($settled->metadata?->cause);
-        $dup = $rClosed->limit($ctx, new RateLimitCommand('login_protection', 1, false, true, false, $permit));
-        self::assertSame('permit_duplicate', $dup->metadata?->cause);
+        // Invalid permit under closed fence => permit_unknown, zero Redis mutation (zero S0 scoring!).
+        $beforeUnknown = $this->dump();
+        $unknownRes = $runtime->limit($ctxUFail, new RateLimitCommand('login_protection', 1, false, true, false, 'bogus.permit'));
+        self::assertSame('permit_unknown', $unknownRes->metadata?->cause);
+        self::assertSame($beforeUnknown, $this->dump(), 'Invalid permit under closed fence must not score in S0');
+
+        // P SUCCESS under closed fence: claims permit once, refunds proof counters (1 -> 0), releases ppend slot (1 -> 0), no pfail entry, no S0 score.
+        $pSuccBucketsBefore = $this->admKeysSummary();
+        self::assertGreaterThanOrEqual(5, $pSuccBucketsBefore['counterMembers'], 'pacct/pacctd/pproof/pproofd/ppend hold members before P success');
+        $pSuccSettle = $runtime->limit($ctxPSucc, new RateLimitCommand('login_protection', 1, false, false, true, $pSuccPermit));
+        self::assertNull($pSuccSettle->metadata?->cause);
+        $pSuccAfter = $this->dump();
+        // Verify permit record is CLAIMED/success and pending + proof counters for P success are released.
+        $pSuccPermitHash = $this->findPermitBySubject($pSuccAfter, 'acct-p-succ');
+        self::assertSame('CLAIMED', $pSuccPermitHash['state'] ?? null);
+        self::assertSame('success', $pSuccPermitHash['outcome'] ?? null);
+
+        // Duplicate & Conflict on settled P permit => zero Redis mutation.
+        $dupP = $runtime->limit($ctxPSucc, new RateLimitCommand('login_protection', 1, false, false, true, $pSuccPermit));
+        self::assertSame('permit_duplicate', $dupP->metadata?->cause);
+        self::assertSame($pSuccAfter, $this->dump());
+        $confP = $runtime->limit($ctxPSucc, new RateLimitCommand('login_protection', 1, false, true, false, $pSuccPermit));
+        self::assertSame('permit_conflict', $confP->metadata?->cause);
+        self::assertSame($pSuccAfter, $this->dump());
+
+        // P FAILURE under closed fence: claims permit, releases ppend slot, adds member to pfail (set_size), writes K4P/K5p score!
+        $scoresBeforePFail = $this->e1ScoreKeys($this->dump());
+        $setsBeforePFail = $this->admSetSizes($this->dump());
+        $pFailSettle = $runtime->limit($ctxPFail, new RateLimitCommand('login_protection', 1, false, true, false, $pFailPermit));
+        self::assertNull($pFailSettle->metadata?->cause);
+        $afterPFail = $this->dump();
+        $scoresAfterPFail = $this->e1ScoreKeys($afterPFail);
+        $setsAfterPFail = $this->admSetSizes($afterPFail);
+        self::assertGreaterThan(count($scoresBeforePFail), count($scoresAfterPFail), 'P failure must score K4P/K5p in e1:score:');
+        self::assertGreaterThan(array_sum($setsBeforePFail), array_sum($setsAfterPFail), 'P failure must add member to pfail set');
+
+        // U SUCCESS under closed fence: claims permit, refunds U account_bucket credit back to full (key deleted: absent => full), zero ufail entry!
+        $uSuccBucketsBefore = $this->bucketCredits($this->dump());
+        $setsBeforeUSucc = $this->admSetSizes($this->dump());
+        $uSuccSettle = $runtime->limit($ctxUSucc, new RateLimitCommand('login_protection', 1, false, false, true, $uSuccPermit));
+        self::assertNull($uSuccSettle->metadata?->cause);
+        $afterUSucc = $this->dump();
+        self::assertCount(count($uSuccBucketsBefore) - 1, $this->bucketCredits($afterUSucc), 'U success must refund account_bucket back to full (absent)');
+        self::assertSame($setsBeforeUSucc, $this->admSetSizes($afterUSucc), 'U success must not add to ufail');
+
+        // U FAILURE under closed fence: claims permit, adds member to ufail (set_size), writes K4 score!
+        $scoresBeforeUFail = $this->e1ScoreKeys($afterUSucc);
+        $uFailSettle = $runtime->limit($ctxUFail, new RateLimitCommand('login_protection', 1, false, true, false, $uFailPermit));
+        self::assertNull($uFailSettle->metadata?->cause);
+        $afterUFail = $this->dump();
+        self::assertGreaterThan(count($scoresBeforeUFail), count($this->e1ScoreKeys($afterUFail)), 'U failure must score K4 in e1:score:');
+        self::assertGreaterThan(array_sum($setsBeforeUSucc), array_sum($this->admSetSizes($afterUFail)), 'U failure must add member to ufail set');
+
+        // Re-open fence briefly to confirm P pending slot on 198.51.100.70 was genuinely released in Redis!
+        $runtime->openAdmissionFence('login');
+        self::assertTrue($runtime->limit($this->context('acct-p-extra', '198.51.100.70', 'inst-p3', $credExtra), RateLimitCommand::checkOnly('login_protection'))->isAllowed(), 'Pending slot on 198.51.100.70 must be free after closed-fence settlement');
+        $this->closeTestFenceKeys();
+
+        // LATE permit under closed fence (at NOW + 30, within G = 600): returns permit_late, zero score/set mutation!
+        $this->clock->setNow(new \DateTimeImmutable('@' . (self::NOW + 30)));
+        $beforeLate = $this->dump();
+        $lateRes = $runtime->limit($ctxPLate, new RateLimitCommand('login_protection', 1, false, true, false, $pLatePermit));
+        self::assertSame('permit_late', $lateRes->metadata?->cause);
+        self::assertSame($beforeLate, $this->dump(), 'Late permit under closed fence must not mutate Redis');
 
         // Privacy check: raw account/IP never appears in any Redis key or permit hash field.
         foreach ($this->dump() as $key => $entry) {
-            self::assertStringNotContainsString('acct-d7', (string) $key);
+            self::assertStringNotContainsString('acct-p-succ', (string) $key);
             if ($entry['type'] === 'hash' && str_contains((string) $key, ':adm:a1:permit:')) {
                 self::assertIsArray($entry['value']);
                 $subject = $entry['value']['subject'] ?? '';
                 self::assertIsString($subject);
-                self::assertNotSame('acct-d7', $subject);
+                self::assertNotSame('acct-p-succ', $subject);
                 self::assertMatchesRegularExpression('/\A[0-9a-f]{64}\z/D', $subject);
             }
         }
+    }
+
+    public function testD7ClosedFenceAndPendingSlotReleaseAcrossOneSupportedOuterRotation(): void
+    {
+        $cfg1 = $this->config('outer-s1', null, self::BINDING_1, null);
+        $r1 = $this->buildRuntime($cfg1, pendingLimit: 1);
+        self::assertInstanceOf(AdmissionFenceControlInterface::class, $r1);
+        $r1->openAdmissionFence('login');
+
+        $codec1 = AdmissionCredentialCodec::fromConfig($cfg1);
+        $cred1 = $codec1->encode(new AdmissionCredentialDTO('acct-rot1', 'acct-rot1', ['login'], 'inst-1', 'jti-1', self::NOW + 3600, self::NOW, 0));
+        $ctx1 = $this->context('acct-rot1', self::SOURCE, 'inst-1', $cred1);
+        $check1 = $r1->limit($ctx1, RateLimitCommand::checkOnly('login_protection'));
+        self::assertTrue($check1->isAllowed());
+        $permit1 = $check1->metadata?->permit;
+        self::assertNotNull($permit1);
+
+        // Supported single outer rotation (S1 -> S2/S1), then close fence via isolated test fixture control.
+        $cfg2 = $this->config('outer-s2', 'outer-s1', self::BINDING_1, null);
+        $r2 = $this->buildRuntime($cfg2, pendingLimit: 1);
+        $this->closeTestFenceKeys();
+
+        // Settle S1 permit under S2/S1 with closed fence: ppend slot under S1 (previousKeySecret) IS released!
+        $settled = $r2->limit($ctx1, new RateLimitCommand('login_protection', 1, false, false, true, $permit1));
+        self::assertNull($settled->metadata?->cause);
+        $dup = $r2->limit($ctx1, new RateLimitCommand('login_protection', 1, false, false, true, $permit1));
+        self::assertSame('permit_duplicate', $dup->metadata?->cause);
+
+        // Re-open fence under S2/S1 and verify a new P reservation on the same source succeeds (S1 ppend slot was freed!).
+        self::assertInstanceOf(AdmissionFenceControlInterface::class, $r2);
+        $r2->openAdmissionFence('login');
+        $cred2 = $codec1->encode(new AdmissionCredentialDTO('acct-rot2', 'acct-rot2', ['login'], 'inst-2', 'jti-2', self::NOW + 3600, self::NOW, 0));
+        self::assertTrue($r2->limit($this->context('acct-rot2', self::SOURCE, 'inst-2', $cred2), RateLimitCommand::checkOnly('login_protection'))->isAllowed());
+    }
+
+    private function closeTestFenceKeys(): void
+    {
+        foreach (array_keys($this->dump()) as $key) {
+            if (str_contains((string) $key, ':adm:a1:fence:')) {
+                $this->raw('DEL', (string) $key);
+            }
+        }
+    }
+
+    /**
+     * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $dump
+     * @return array<string, array{type: string, value: mixed, hasTtl: bool}>
+     */
+    private function admAndScoreDump(array $dump): array
+    {
+        return array_filter(
+            $dump,
+            static fn(string $key): bool => str_contains($key, ':adm:') || str_contains($key, ':score:'),
+            ARRAY_FILTER_USE_KEY,
+        );
+    }
+
+    /**
+     * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $dump
+     * @return array<string, string>
+     */
+    private function findPermitBySubject(array $dump, string $account): array
+    {
+        foreach ($dump as $key => $entry) {
+            if (str_contains((string) $key, ':adm:a1:permit:') && $entry['type'] === 'hash' && is_array($entry['value']) && ($entry['value']['state'] ?? '') === 'CLAIMED') {
+                $out = [];
+                foreach ($entry['value'] as $fk => $fv) {
+                    if (is_string($fk) && is_scalar($fv)) {
+                        $out[$fk] = (string) $fv;
+                    }
+                }
+
+                return $out;
+            }
+        }
+        unset($account);
+
+        return [];
+    }
+
+    /**
+     * @return array{counterMembers: int}
+     */
+    private function admKeysSummary(): array
+    {
+        $members = 0;
+        foreach ($this->dump() as $key => $entry) {
+            if (str_contains((string) $key, ':adm:a1:c:') && is_array($entry['value'])) {
+                $members += count($entry['value']);
+            }
+        }
+
+        return ['counterMembers' => $members];
+    }
+
+    /**
+     * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $dump
+     * @return list<string>
+     */
+    private function e1ScoreKeys(array $dump): array
+    {
+        return array_values(array_filter(array_keys($dump), static fn(string $k): bool => str_contains($k, ':e1:') && str_contains($k, ':score:')));
+    }
+
+    /**
+     * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $dump
+     * @return array<string, int>
+     */
+    private function admSetSizes(array $dump): array
+    {
+        $out = [];
+        foreach ($dump as $key => $entry) {
+            if (str_contains((string) $key, ':adm:a1:s:') && is_array($entry['value'])) {
+                $out[(string) $key] = count($entry['value']);
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $dump
+     * @return array<string, int>
+     */
+    private function bucketCredits(array $dump): array
+    {
+        $out = [];
+        foreach ($dump as $key => $entry) {
+            if (str_contains((string) $key, ':adm:a1:b:') && is_array($entry['value'])) {
+                $credit = $entry['value']['credit'] ?? 0;
+                $out[(string) $key] = is_numeric($credit) ? (int) $credit : 0;
+            }
+        }
+
+        return $out;
     }
 
     #[Group('php32')]

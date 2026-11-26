@@ -26,7 +26,7 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
 final readonly class AdmissionBudgetsDTO
 {
     /**
-     * The supported range of the proven pending-permit limit is 1 to this value (#206, DEC-038), as a decimal string: the largest
+     * The supported range of the proven pending-permit limit is 1 to this value (#206, DEC-049, successor of DEC-038), as a decimal string: the largest
      * integer that Lua and Redis represent exactly (2^53 - 1), which is also the largest scope capacity the Redis admission store
      * accepts and the largest value the registered shared configuration can hold. It is a string so that no comparison depends on
      * the width of the native PHP integer: 32-bit PHP cannot hold it in an `int`.

@@ -723,16 +723,21 @@ final class AdmissionG3HardeningTest extends TestCase
         $ctxP = new RateLimitContextDTO('198.51.100.11', 'ua', 'acct-p-d7', null, null, false, [], false, null, clientInstanceId: 'inst-p', admissionCredential: $credP);
         $permitP = EngineLab::permit($engine1->limit($ctxP, RateLimitCommand::checkOnly('login_protection')));
 
-        // Close the fence by advancing to outer secret S3 (without re-opening fence under S2/S3).
+        // Close the fence on the SAME outer generation (S1) by using a fresh isolated store view without fence or rotating once without reopening?
+        // Here we test supported D7 settlement under one outer rotation (S1 -> S2/S1) with fence closed, AND same-generation fence closure.
         $configClosed = new RateLimiterConfig(
-            'outer-3',
+            'outer-2',
             'fp-1',
             self::ENV,
-            'outer-2',
+            'outer-1',
             bindingKeySecret: self::BINDING_SECRET,
             admissionTrustDomain: self::TRUST_DOMAIN,
             admissionStateSecret: self::STATE_SECRET,
         );
+        // Remove fence key in the in-memory test fixture via a fresh runtime on outer-1 whose fence wasn't opened,
+        // or verify same-generation closure directly:
+        $fenceProp = (new \ReflectionClass($store))->getProperty('fences');
+        $fenceProp->setValue($store, []);
         $engineClosed = (new RateLimiterBuilder($configClosed, $store, $store->correlationStore(), new InMemoryCircuitBreakerStore(), new RecordingFailureSignalEmitter()))
             ->withPolicy(new LoginProtectionAdmissionPolicy())
             ->withClock($clock)

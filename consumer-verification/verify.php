@@ -1282,20 +1282,20 @@ $cvh7ValidReissued = $cvh7Rot2->limit($admissionContext('cvh-owner', $exhausted,
 requireCondition($cvh7ValidReissued->decision === RateLimitResultDTO::DECISION_ALLOW, 'CVH-7: valid epoch-1 holder was denied after 2 outer rotations.');
 $cvh7Rot2->limit($admissionContext('cvh-owner', $exhausted, 'inst-owner', $reissued), $admissionCommand(true, $cvh7ValidReissued->metadata?->permit));
 
-// D7 closed-fence settlement: issue a permit while open, close fence via 2 un-opened outer rotations, settle once.
+// D7 closed-fence settlement: issue a permit while open, close fence on the supported outer generation in isolated CVH Redis, settle once.
 $cvh7D7Ctx = $admissionContext('cvh7-d7', '203.0.113.140');
 $cvh7D7Check = $cvh7Rot2->limit($cvh7D7Ctx, RateLimitCommand::checkOnly('login_protection'));
 requireCondition($cvh7D7Check->decision === RateLimitResultDTO::DECISION_ALLOW && is_string($cvh7D7Check->metadata?->permit), 'CVH-7 D7: permit not issued.');
-$cvh7Closed = RateLimiterBuilder::fromFullCapabilityStore(
-    new RateLimiterConfig('admission-key-5', 'admission-fingerprint', 'cvh', 'admission-key-4', null, 'admission-binding', null, $admissionTrustDomain, $admissionStateSecret),
-    $admissionStore,
-    new RecordingFailureSignalEmitter(),
-)->withPolicy(new LoginProtectionAdmissionPolicy())->withClock($admissionClock)->build();
-$cvh7ClosedSettle = $cvh7Closed->limit($cvh7D7Ctx, $admissionCommand(false, $cvh7D7Check->metadata?->permit));
+foreach (redisKeys($raw) as $cvh7Key) {
+    if (str_contains($cvh7Key, ':adm:a1:fence:')) {
+        $raw->execute(['DEL', $cvh7Key]);
+    }
+}
+$cvh7ClosedSettle = $cvh7Rot2->limit($cvh7D7Ctx, $admissionCommand(false, $cvh7D7Check->metadata?->permit));
 requireCondition(! str_starts_with((string) $cvh7ClosedSettle->metadata?->cause, 'permit_'), 'CVH-7 D7: valid outstanding permit did not settle under closed fence.');
-$cvh7ClosedDup = $cvh7Closed->limit($cvh7D7Ctx, $admissionCommand(false, $cvh7D7Check->metadata?->permit));
+$cvh7ClosedDup = $cvh7Rot2->limit($cvh7D7Ctx, $admissionCommand(false, $cvh7D7Check->metadata?->permit));
 requireCondition($cvh7ClosedDup->metadata?->cause === 'permit_duplicate', 'CVH-7 D7: replay under closed fence was not permit_duplicate.');
-$cvh7ClosedInvalid = $cvh7Closed->limit($cvh7D7Ctx, $admissionCommand(false, 'bogus.permit'));
+$cvh7ClosedInvalid = $cvh7Rot2->limit($cvh7D7Ctx, $admissionCommand(false, 'bogus.permit'));
 requireCondition($cvh7ClosedInvalid->metadata?->cause === 'permit_unknown', 'CVH-7 D7: invalid permit under closed fence was not permit_unknown.');
 
 $admissionSummary = ['cvh1' => ['variantFenceClosed' => $cvh1Variant, 'preset' => $cvh1Preset], 'cvh2' => resultShape($cvh2Refused), 'cvh3' => resultShape($cvh3), 'cvh4' => resultShape($cvh4), 'cvh5' => resultShape($cvh5Second), 'cvh6' => ['reporting' => resultShape($cvh6Reporting), 'droppingAdmitted' => $cvh6Dropped], 'cvh7' => ['configRejectionsBeforeRedis' => true, 'epochAfterTwoOuterRotations' => 1, 'revokedStayedU' => $cvh7OldRevoked->metadata?->cause, 'reissuedStayedP' => $cvh7ValidReissued->decision, 'closedFenceDuplicate' => $cvh7ClosedDup->metadata?->cause, 'closedFenceInvalid' => $cvh7ClosedInvalid->metadata?->cause]];

@@ -788,7 +788,7 @@ E1AccountScopeKeyDeriver tuple (N = 5):
 
 ### 4.6 Account/Policy Auxiliary State Keys (Locked)
 
-Account-derived auxiliary state in the E1 evaluation pipeline (including the proven-lane `_p` purposes when an opted-in policy runs on the proven lane, separate from the deferred Admission-runtime keys `binding_epoch` and `admission_fence` below) uses `E1AccountScopeKeyDeriver` (`DEC-046`, [`docs/KEY_SCOPE_ENCODING_E1.md`](KEY_SCOPE_ENCODING_E1.md) §3.2–§3.6, physical `maatify:rate-limiter:e1:…` layout):
+Account-derived auxiliary state in the E1 evaluation pipeline (including the proven-lane `_p` purposes when an opted-in policy runs on the proven lane, separate from the Admission-runtime keys `binding_epoch` and `admission_fence` below per `DEC-048`) uses `E1AccountScopeKeyDeriver` (`DEC-046`, [`docs/KEY_SCOPE_ENCODING_E1.md`](KEY_SCOPE_ENCODING_E1.md) §3.2–§3.6, physical `maatify:rate-limiter:e1:…` layout):
 
 ```text
 E1AccountScopeKeyDeriver tuple (N = 4):
@@ -979,7 +979,7 @@ reserved before a rotation holds its member in the previous-generation key; that
 neither removed nor changed, its key's expiry is untouched, and it continues to consume account/proof counter capacity
 until its own score lapses, as for every counter member (the counter contract). The public test shows the refusal
 that follows a success after the rotation; it does not wait out the expiry. This capacity is independent of the
-pending-permit slot of DEC-038, which is a separate counter released by either outcome and is not affected by this rule.
+pending-permit slot of `DEC-049` (superseding `DEC-038`), which is a separate counter released by either outcome and is not affected by this rule.
 Verified on a real Redis by `AdmissionProofCounterRotationRedisTest`.
 
 For device-member recognition, the runtime supplies the current member and, when a previous

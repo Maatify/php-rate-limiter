@@ -64,7 +64,7 @@ final class CompositeRateLimiterRuntime implements CompositeRateLimiterRuntimeIn
         return $this->scoreRuntime->openAdmissionFence($budgetGroup);
     }
 
-    /** Reaches the score runtime's shared admission configuration control (DEC-038). */
+    /** Reaches the score runtime's shared admission configuration control (DEC-049, successor of DEC-038). */
     public function rebindAdmissionSharedConfig(string $budgetGroup): void
     {
         if (! $this->scoreRuntime instanceof AdmissionSharedConfigControlInterface) {

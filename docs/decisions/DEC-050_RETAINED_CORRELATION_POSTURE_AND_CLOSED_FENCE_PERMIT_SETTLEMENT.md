@@ -35,7 +35,7 @@ For a policy that opts in, while its fence is open, the correlation posture rema
 
 Previously (`RateLimiterEngine` lines 441–447 and 664–674 at `main@1d87036c`), when an opted policy's fleet fence was closed, **every** command—including an outcome carrying an explicit `$request->permit`—fell through directly to the S0 pipeline without inspecting the permit. That produced two contradictions with G3 `D6` (`DEC-048`):
 1. An old, v1, foreign, or tampered permit presented on an outcome while the fence was closed was silently scored in S0 instead of being rejected with `permit_*` and zero scoring.
-2. A valid outstanding permit issued just before the fence closed could not settle its prior reservation atomically within `D`/`G`.
+2. A valid outstanding permit issued just before the fence closed could not settle its prior reservation atomically before `D` (`30 s`, with `G = 600 s` retaining the record for `permit_late` / `permit_duplicate` / `permit_conflict` classification per `DEC-035`).
 
 Because Decision Governance Standard §9 prohibits partial supersession or editing `DEC-027` in place, `DEC-050` supersedes `DEC-027` in full while preserving every other rule of `DEC-027` and `DEC-019` verbatim.
 
@@ -74,15 +74,15 @@ are **not** production incident statistics):
 ### Narrow G3 D7 Boundary (added by DEC-050)
 
 1. **Healthy opted policy + explicit permit-bearing outcome:** When a registered policy declares `PolicyCapabilityEnum::ADMISSION_RESERVATION`, the circuit is healthy (not degraded/open/guard-violated), and an outcome command (`isFailure` or `isSuccess`) carries a non-null `$request->permit`, `RateLimiterEngine` **always** routes the call to the admission permit claim/settlement path (`AdmissionRuntime::applyOutcome()`), whether the budget group's fleet fence is open or closed.
-2. **Valid outstanding permit settles once:** A current, valid, outstanding v2 permit settles its prior reservation within `D`/`G` (30 s / 600 s) atomically and scores once on its recorded lane (`U` or `P`).
+2. **Valid outstanding permit settles once:** A current, valid, outstanding v2 permit settles its prior reservation **before `D` (`30 s`) only** and scores once on its recorded lane (`U` or `P`); `G` (`600 s`) is the retention window for classifying `permit_late`, `permit_duplicate`, and `permit_conflict`, never a window for new settlement (`DEC-035`).
 3. **Invalid, old, v1, foreign, or mismatched permit never scores S0:** Any permit that fails signature/version/cohort/context verification or store claim (`permit_unknown`, `permit_rejected`, `permit_late`, `permit_duplicate`, `permit_conflict`) returns `ALLOW` (`blockLevel = 0`, `scope = 'permit'`) with **no** S0 scoring and **no** store mutation.
 4. **Closed fence creates no new reservations and preserves S0 for permit-less requests:** When the fleet fence is closed, `checkOnly` and permit-less outcome commands (`permit === null`) execute the S0 pipeline verbatim as under `DEC-027`; no reservation is created and no permit is required.
 5. **Non-opted, degraded, and fail-open paths untouched:** Policies that do not opt into admission, and degraded / `FAIL_OPEN` paths of any policy, remain unchanged and perform no admission backend reads. S0/NAT/UA posture is unchanged.
 
-### Carried from DEC-027 (verbatim, read with the narrow D7 boundary above)
+### Carried from DEC-027 (verbatim)
 
 1. **Scope.** "Current production rate-limit enforcement" in the carried text means the enforcement of the policies in this
-   record's scope. A policy that opts in leaves it for as long as its fleet fence is open (and for explicit permit-bearing outcomes under the D7 boundary above).
+   record's scope. A policy that opts in leaves it for as long as its fleet fence is open.
 2. **API anti-evasion.** `API_OVERUSE` cannot be combined with the admission capability (DEC-025 8.4, now DEC-034 8.4), so every API policy stays
    here.
 3. **`checkOnly` limitations.** `pre` and `out` Hosts cannot opt in (DEC-023), so the carried `checkOnly` statements hold for
@@ -90,7 +90,9 @@ are **not** production incident statistics):
 4. **Custom policies under DEC-008.** A custom policy that does not declare the admission capability stays here.
 5. **Issues.** #97, #100 and #106 stay open for the policies in scope.
 6. **Compatibility.** The carried Decision 4 keeps holding in scope: the policies that do not opt in give today's results,
-   byte for byte (gate S0-PARITY of every 5-b stage and of PR #150), and a closed-fence opted policy gives the exact same S0 results for all `checkOnly` and permit-less outcome calls.
+   byte for byte (gate S0-PARITY of every 5-b stage and of PR #150).
+
+*(Scope clarification from `Narrow G3 D7 Boundary` above: for a healthy opted policy while its fleet fence is closed, `checkOnly` and permit-less outcomes stay in this S0 scope, while explicit permit-bearing outcomes follow the D7 boundary above.)*
 
 ### Carried from DEC-019 (verbatim)
 
@@ -130,12 +132,12 @@ are **not** production incident statistics):
 
 ## Rationale
 
-Routing explicit permit-bearing outcomes of a healthy opted policy through the admission claim path even after fence closure ensures two properties simultaneously: (a) an in-flight admission issued immediately before a fence closure can still settle cleanly once within `D`/`G`, and (b) stale, v1, foreign, or forged permits can never bypass permit validation into S0 scoring simply because a fence is closed. Carrying `DEC-019` and `DEC-027` verbatim preserves the entire interim S0 posture for non-opted policies and permit-less closed-fence traffic without partial supersession.
+Routing explicit permit-bearing outcomes of a healthy opted policy through the admission claim path even after fence closure ensures two properties simultaneously: (a) an in-flight admission issued immediately before a fence closure can still settle cleanly once before `D` (`30 s`, with `G = 600 s` retaining the record for `permit_late` / `permit_duplicate` / `permit_conflict` classification per `DEC-035`), and (b) stale, v1, foreign, or forged permits can never bypass permit validation into S0 scoring simply because a fence is closed. Carrying `DEC-019` and `DEC-027` verbatim preserves the entire interim S0 posture for non-opted policies and permit-less closed-fence traffic without partial supersession.
 
 ## Consequences
 
 - All S0 consequences of `DEC-019` and `DEC-027` remain unchanged for non-opted policies and permit-less closed-fence requests.
-- Closing a fleet fence stops new admission reservations immediately while allowing in-flight valid permits to settle within `D`/`G` and rejecting invalid/old/foreign permits without S0 scoring.
+- Closing a fleet fence stops new admission reservations immediately while allowing in-flight valid permits to settle before `D` (`30 s`) and rejecting late (`D .. D+G`), invalid, old, or foreign permits without S0 scoring.
 - Non-opted policies and degraded/fail-open paths incur zero additional backend calls.
 
 ## Relationship to Other Decisions

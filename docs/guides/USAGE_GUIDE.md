@@ -219,7 +219,7 @@ The returned <code>retryAfter</code> has four distinct contracts:
 - A budget result returns the remaining budget cooldown. Correlation, flood, credential-spray, and other non-score decisions retain their own existing retry rules.
 - A bounded local-fallback denial (<code>fallback_limit_exceeded</code>) returns the largest remaining fixed-window time among the fallback dimensions that denied the same evaluation. It is a wait hint, not an acceptance guarantee.
 
-Refused requests still count on K2 (API Heavy). In the API Heavy policy (<code>API_OVERUSE</code>), a request refused by a score-derived <code>SOFT_BLOCK</code> is still scored on K2, so the score-derived <code>retryAfter</code> grows with each refused attempt and has no upper bound while attempts continue (measured with a K2 threshold of 3: 180 seconds at the first refusal, then +180 per refused request, 1,980 seconds at the eleventh). This is intended behavior (#98, #183): counting refused attempts prevents probing. Hosts and clients must honor <code>retryAfter</code> and not retry before it. The same scoring path for other score keys and policies was not measured in #181. For policies that do not opt into admission, shared-key exposure behind NAT is the DEC-027 posture.
+Refused requests still count on K2 (API Heavy). In the API Heavy policy (<code>API_OVERUSE</code>), a request refused by a score-derived <code>SOFT_BLOCK</code> is still scored on K2, so the score-derived <code>retryAfter</code> grows with each refused attempt and has no upper bound while attempts continue (measured with a K2 threshold of 3: 180 seconds at the first refusal, then +180 per refused request, 1,980 seconds at the eleventh). This is intended behavior (#98, #183): counting refused attempts prevents probing. Hosts and clients must honor <code>retryAfter</code> and not retry before it. The same scoring path for other score keys and policies was not measured in #181. For policies that do not opt into admission, shared-key exposure behind NAT is the DEC-050 posture (superseding DEC-027).
 
 The response retry time is independent from persistence: score-derived results may use a decay wait while the persisted block continues to use the configured <code>PenaltyLadder</code> duration.
 
@@ -426,12 +426,10 @@ Outputs and duties:
   (`new RateLimitCommand(policyName: $policy, isFailure: $isFailure, isSuccess: $isSuccess, permit: $permit)`).
   An outcome without a permit for an opted policy while the fence is open violates the Host contract and raises
   `RateLimiterException`.
-* The outcome must be sent with **the exact same context** as the admission (same source address, account,
-  effective subject, client instance, operation, budget group, and credential): a mismatched context returns
-  `permit_rejected` before touching the store, scores nothing, and leaves the original permit claimable once.
+* The outcome must be sent with **the same admission context** as the pre-check: same canonical source (`IPv4` or `IPv6 /64` via `SourcePrefix`), account, effective subject, client instance, operation, budget group, and credential digest (`AdmissionKeyDeriver::permitContextCommitment()`). A mismatched commitment returns `permit_rejected` before touching the store, scores nothing, and leaves the original permit claimable once.
 * **Every admitted `checkOnly` on an opted policy is followed by an outcome command carrying its
-  permit**, using the outcome command above within the permit's deadline: 30 s after the
-  `checkOnly` (`D`, DEC-035). From 30 s to 630 s the claim is `permit_late`, after that
+  permit**, using the outcome command above **before** the permit's deadline: 30 s after the
+  `checkOnly` (`D`, DEC-035). From 30 s to 630 s (`G = 600 s` retention window) the claim is `permit_late`, after that
   `permit_unknown`; neither is scored, so a late outcome costs what a dropped one costs. This is a Host
   duty (`DEC-023` A-2) and the library does not compensate for it: an admission whose outcome never
   arrives is a tombstone and changes no bound (the success refund never happens and the failure is
