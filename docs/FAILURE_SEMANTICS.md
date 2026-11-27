@@ -320,27 +320,34 @@ The request save (`transactRequest()`, DEC-037) asks Redis for three different k
 * **What this does not guarantee.** The preflight answers the ACL question atomically with the writes. It is not a rollback: other Redis errors during the writes (memory limit, read-only replica, client limits) are not covered, and DEC-037's all-or-none claim is not extended to them.
 * **What was tested.** Redis 7.0.15, a single instance, `EVAL`, RESP2; two client shapes (the suite's RESP client and ext-redis 6.3.0 `rawCommand()`); PHP `PHP_INT_SIZE` 4 and 8; the request path (`transactRequest()`) and the engine path for the `login_protection` policy (`tests/Integration/Redis/RequestSaveAclRedisTest.php`). **Not tested in this study**: other Redis versions or Valkey, Cluster/Sentinel, RESP3, Predis, `EVALSHA`, and the recovery and admission paths. For direct expiry commands outside a request see the DEC-043 rules in §2.5.
 
-### 2.8 Direct outcome settlement and the Redis ACL (#282, DEC-036, DEC-018)
+### 2.8 Admission operations and the Redis ACL (#282, #281, DEC-036, DEC-018)
 
-The direct outcome settlement of the official store (`claimAdmissionPermitWithOutcome()`, `CLAIM_WITH_OUTCOME`) validates the permit and every scope it touches, then derives its **actual write plan**: the permit `HSET` and, per scope, the `ZREM` / `ZREMRANGEBYSCORE` / `ZADD` / `EXPIRE` / `HSET` / `DEL` commands the chosen outcome issues, in their execution order. Inside the same script, before the first write, the whole plan is checked with `redis.acl_check_cmd` (Redis 7.0), and only a plan that passed is executed.
+The admission store operations run on Redis 7.0+ (`redis.acl_check_cmd` is required by the package's supported Redis 7+ baseline). The three write paths (`CLAIM_WITH_OUTCOME`, `RESERVE`, and `OUTCOME`) validate all keys and fields first, derive their **actual write plan** in execution order, and check every planned write command with `redis.acl_check_cmd` before the first write. Request-overlay evaluation commits (`transactRequest()`, DEC-037 / DEC-042) are separate and documented in §2.7 (`NOPERM request commit: …`).
 
-* **Account.** Besides `+eval` and read/write access to the declared keys, the account needs the write commands of the branch each scope actually takes, and only those. Every settlement needs `+hset` (the permit write). Per scope kind and outcome:
+* **Atomic permit settlement (`claimAdmissionPermitWithOutcome()`, `CLAIM_WITH_OUTCOME`):**
+  Requires `+eval`, read/write access to declared keys, `+hset` (the permit claim write, which every settlement needs), plus the write commands of the branch each scope actually takes:
 
   | Scope and outcome | Write commands of the plan |
   | --- | --- |
   | Set-size scope, **failure** | `+zremrangebyscore`, `+zadd`, `+expire`; plus `+zrem` when the scope settles a pending member |
   | Set-size scope that settles pending members, **success** | `+zrem` on the set unless it keeps settled members; plus `+zrem` on the pending set only when that member's pending score is still in the future |
   | Set-size scope that does not settle pending members, **success** | `+zrem` on the set |
-  | Counter scope, **success** (or failure when the scope releases on failure) | `+zrem` when it has a member (the permit id by default) |
+  | Counter scope, **success** (or failure when the scope releases on failure) | `+zrem` when it has a member (in `CLAIM_WITH_OUTCOME`, the permit id by default; in direct `OUTCOME`, the permit id if present, otherwise no `ZREM`) |
   | Counter scope, **failure** that does not release | none |
   | Bucket scope, **success** with an existing bucket | `+del` when the refund fills it, otherwise `+hset` and `+expire`; a bucket that is absent needs nothing |
   | Bucket scope, **failure** | none |
 
-  A command no chosen branch issues is not required.
-* **A refusal** is a Redis error reply coded `NOPERM`, `NOPERM admission outcome settlement: the account may not run <COMMAND> (plan step <n> of <m>)`. It names the command and its position, never a key, a value or a permit id. It follows the server-error contract of DEC-018 (a `RateLimiterException` through an executor that raises it, the client's own exception through a native bridge), is not a `BackendFailureException`, and so raises no failure signal, circuit report or fallback consumption.
-* **State after a refusal.** Nothing was written: the permit stays `ISSUED` and every key, value and absolute expiry is as before, so the same outcome can be settled once the account is whole and the permit is still within its deadline. The repeat guard is unchanged (`duplicate` / `conflict` after a committed settlement).
-* **What this does not guarantee.** It answers the ACL question atomically with the writes. It is not a rollback for other Redis errors (memory limit, read-only replica). A server without `redis.acl_check_cmd` (before Redis 7.0) skips the check and keeps the earlier behaviour. The later evaluation path keeps its own contract (DEC-037, DEC-042).
-* **What was tested.** Redis 7.0.15, a single instance, `EVAL`, RESP2, PHP `PHP_INT_SIZE` 4 and 8 (`tests/Integration/Store/AdmissionOutcomeAclPreflightRedisTest.php`, group `admission-outcome-acl-282`, `php32`).
+  A command no chosen branch issues is not required. Refusal reply: `NOPERM admission outcome settlement: the account may not run <COMMAND> (plan step <n> of <m>)`.
+
+* **Direct reservation (`reserveAdmission()`, `RESERVE`):**
+  Requires `+eval`, read/write access to declared keys, and only the write commands of the branches actually taken: `+set` only when registering an unregistered shared configuration; `+zremrangebyscore`, `+zadd`, and `+expire` for counters, newly observed devices (an already-known device needs no write), and settling pending sets (`EXPIRE` on `pending` is omitted when a surviving member already has `TTL >= life`); `+hset` and `+expire` for buckets and issued permits. Gate refusals, `permit_exists`, and shared-configuration mismatches return before Phase 3 and require no write-command permissions (read and `EVAL` key-access permissions are still required). Refusal reply: `NOPERM admission reservation: the account may not run <COMMAND> (plan step <n> of <m>)`.
+
+* **Direct outcome (`applyAdmissionOutcome()`, `OUTCOME`):**
+  Does not claim a permit (no permit `+hset`), requires only the scope write commands of the branches actually taken (same scope table as above), and is **not idempotent**. Refusal reply: `NOPERM admission outcome: the account may not run <COMMAND> (plan step <n> of <m>)`.
+
+* **Provenance & state after a refusal.** Every actual-write-plan ACL preflight refusal (`redis.acl_check_cmd`) names only the command and its plan position (never a key, value, or permit id); `EVAL`/key-pattern ACLs still fail at `EVAL` (`NOPERM`) and read ACLs fail inside Lua (`ERR`). Every refusal follows the server-error contract of DEC-018 (a `RateLimiterException` through an executor that raises it such as `RespRedisCommandExecutor`, or the client's own native exception through a Host bridge such as `RedisException`), is **not** a `BackendFailureException`, and raises no failure signal, circuit report, or fallback consumption. Nothing was written: permits stay `ISSUED` (or untouched) and every key, value, and `PEXPIRETIME` remains unchanged, so a permit-bound settlement can be retried once the account is whole and the permit is still within its deadline, and the repeat guard remains intact (`duplicate` / `conflict` after a committed settlement).
+* **What this does not guarantee.** The preflight answers the ACL question atomically before the first write. It is **not** a rollback for other runtime Redis errors during execution (such as memory limits or a read-only replica).
+* **What was tested.** Redis 7.0.15, a single instance, `EVAL`, RESP2, PHP `PHP_INT_SIZE` 4 and 8 (`tests/Integration/Store/AdmissionOutcomeAclPreflightRedisTest.php` and `tests/Integration/Store/AdmissionReservationAclPreflightRedisTest.php`, group `php32`).
 
 ## 3. Failure Modes
 

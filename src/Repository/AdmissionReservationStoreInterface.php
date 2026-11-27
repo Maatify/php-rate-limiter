@@ -40,7 +40,10 @@ interface AdmissionReservationStoreInterface extends RateLimitStoreInterface
      * @throws \Maatify\RateLimiter\Exception\AdmissionConfigurationException when the carried shared configuration
      *         differs from the registered one; nothing is reserved
      * @throws \Maatify\RateLimiter\Exception\RateLimiterException when the request or `$now` is not valid or
-     *         representable, or stored state is malformed; raised before any write
+     *         representable, or (when raised by an executor such as `RespRedisCommandExecutor`) stored state is
+     *         malformed or a direct Redis ACL preflight refuses a planned write command (`NOPERM admission reservation: …`)
+     *         before any write; a Host executor whose native client throws on an error reply (e.g. `RedisException`)
+     *         propagates that native exception unchanged
      */
     public function reserveAdmission(AdmissionReservationRequestDTO $request, int $now): AdmissionReservationResultDTO;
 
@@ -51,10 +54,13 @@ interface AdmissionReservationStoreInterface extends RateLimitStoreInterface
      * counter scope refunds or releases its member as `AdmissionScopeDTO` describes. An outcome without scopes does
      * nothing. This method does not claim a permit: an outcome bound to a permit goes through
      * `AdmissionPermitStoreInterface::claimAdmissionPermit()` or the atomic claim of
-     * `AtomicAdmissionPermitStoreInterface`.
+     * `AtomicAdmissionPermitStoreInterface`. Direct `applyAdmissionOutcome` is not idempotent.
      *
      * @throws \Maatify\RateLimiter\Exception\RateLimiterException when a scope or `$now` is not valid or representable,
-     *         or stored state is malformed; raised before any write
+     *         or (when raised by an executor such as `RespRedisCommandExecutor`) stored state is malformed or a direct
+     *         Redis ACL preflight refuses a planned write command (`NOPERM admission outcome: …`) before any write; a
+     *         Host executor whose native client throws on an error reply (e.g. `RedisException`) propagates that native
+     *         exception unchanged
      */
     public function applyAdmissionOutcome(AdmissionOutcomeDTO $outcome, int $now): void;
 

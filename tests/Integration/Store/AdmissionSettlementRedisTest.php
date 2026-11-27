@@ -117,7 +117,7 @@ final class AdmissionSettlementRedisTest extends AdmissionRedisGateTestCase
     /** @return array<string, array{type: string, value: mixed, hasTtl: bool}> counter and bucket keys only */
     private function counterAndBucketDump(): array
     {
-        return array_filter($this->dump(), static fn(string $key): bool => str_contains($key, ':adm:c:') || str_contains($key, ':adm:b:'), ARRAY_FILTER_USE_KEY);
+        return array_filter($this->dump(), static fn(string $key): bool => str_contains($key, ':adm:a1:c:') || str_contains($key, ':adm:a1:b:'), ARRAY_FILTER_USE_KEY);
     }
 
     /** @return array{0: bool, 1: bool} whether a read-only pass left the whole dump unchanged, and the counters unchanged */
@@ -130,6 +130,9 @@ final class AdmissionSettlementRedisTest extends AdmissionRedisGateTestCase
         );
         $whole = $this->dump();
         $counters = $this->counterAndBucketDump();
+        $keys = array_keys($counters);
+        self::assertNotEmpty(array_filter($keys, static fn(string $k): bool => str_contains($k, ':adm:a1:c:')), 'readOnlyPass must observe seeded counter key');
+        self::assertNotEmpty(array_filter($keys, static fn(string $k): bool => str_contains($k, ':adm:a1:b:')), 'readOnlyPass must observe seeded bucket key');
         // The clock passes the deadline; refused reservations and a late claim only read.
         Sc::reserve($port, Sc::N + Sc::D + 1, Sc::member('s:ro', 'new-ro', 2));
         Sc::claim($port, Sc::N + Sc::D + 1, 'permit-ro', AdmissionOutcomeKindEnum::FAILURE);
@@ -166,23 +169,23 @@ final class AdmissionSettlementRedisTest extends AdmissionRedisGateTestCase
     public function testDetectorIgnoringTheKeepsSettledFlagFailsSettle2(): void
     {
         $port = $this->mutantPort([[
-            "if not s.keepsSettled then redis.call('ZREM', s.cur, s.member) end",
-            "redis.call('ZREM', s.cur, s.member)",
+            "if not s.keepsSettled then plan[#plan + 1] = {'ZREM', s.cur, s.member} end",
+            "plan[#plan + 1] = {'ZREM', s.cur, s.member}",
         ]]);
         self::assertNotSame(['settledKeptThenNew' => false, 'pendingCancelledThenNew' => true], Sc::keepsSettledFlag($port));
     }
 
     public function testDetectorASuccessThatRemovesADueMemberFailsSettle3(): void
     {
-        $port = $this->mutantPort([["if s.score ~= nil and s.score > now then redis.call('ZREM', s.pending, s.member) end", "redis.call('ZREM', s.pending, s.member)"]]);
+        $port = $this->mutantPort([["if s.score ~= nil and s.score > now then plan[#plan + 1] = {'ZREM', s.pending, s.member} end", "plan[#plan + 1] = {'ZREM', s.pending, s.member}"]]);
         self::assertNotSame(['dueSurvivesSuccess' => false], Sc::dueSurvivesSuccess($port));
     }
 
     public function testDetectorAPerReservationMemberCountsTwiceAndFailsSettle3(): void
     {
         $port = $this->mutantPort([[
-            "redis.call('ZADD', s.pending, 'LT', string.format('%d', s.deadline), s.member)",
-            "redis.call('ZADD', s.pending, 'LT', string.format('%d', s.deadline), s.member .. nowStr)",
+            "plan[#plan + 1] = {'ZADD', s.pending, 'LT', string.format('%d', s.deadline), s.member}",
+            "plan[#plan + 1] = {'ZADD', s.pending, 'LT', string.format('%d', s.deadline), s.member .. nowStr}",
         ]]);
         self::assertFalse(Sc::onceAndLate($port)['newAdmitted'], 'DETECTOR: a per-reservation member over-counts');
     }
