@@ -237,8 +237,6 @@ for i = 1, n do
       -- Every pending score enters the settled size and the membership test below.
       if not canonicalScores(prev) then return bad('pending member score is not a canonical non-negative integer') end
       s.pending = prev
-      s.pendingTtl = redis.call('TTL', prev)
-      s.pendingSurviving = redis.call('ZCOUNT', prev, '(' .. string.format('%d', now - ttl), '+inf')
       s.deadline = hasPermit and tonumber(ARGV[7]) or 0
       s.isMember = s.inSet or duePending(redis.call('ZSCORE', prev, s.member), now, ttl)
       s.card = settledSize(cur, prev, now, ttl)
@@ -342,9 +340,11 @@ for i = 1, n do
     if hasPermit and s.settles and not s.inSet then
       local life = s.deadline - now + s.ttl
       if life < 1 then life = 1 end
+      local pendingTtl = redis.call('TTL', s.pending)
+      local surviving = pendingTtl >= life and #redis.call('ZRANGEBYSCORE', s.pending, '(' .. string.format('%d', now - s.ttl), '+inf', 'LIMIT', 0, 1) > 0
       plan[#plan + 1] = {'ZREMRANGEBYSCORE', s.pending, '-inf', string.format('%d', now - s.ttl)}
       plan[#plan + 1] = {'ZADD', s.pending, 'LT', string.format('%d', s.deadline), s.member}
-      if s.pendingSurviving == 0 or s.pendingTtl < life then
+      if not surviving then
         plan[#plan + 1] = {'EXPIRE', s.pending, string.format('%d', life)}
       end
     end

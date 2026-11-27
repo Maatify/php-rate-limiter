@@ -117,7 +117,7 @@ final class AdmissionSettlementRedisTest extends AdmissionRedisGateTestCase
     /** @return array<string, array{type: string, value: mixed, hasTtl: bool}> counter and bucket keys only */
     private function counterAndBucketDump(): array
     {
-        return array_filter($this->dump(), static fn(string $key): bool => str_contains($key, ':adm:c:') || str_contains($key, ':adm:b:'), ARRAY_FILTER_USE_KEY);
+        return array_filter($this->dump(), static fn(string $key): bool => str_contains($key, ':adm:a1:c:') || str_contains($key, ':adm:a1:b:'), ARRAY_FILTER_USE_KEY);
     }
 
     /** @return array{0: bool, 1: bool} whether a read-only pass left the whole dump unchanged, and the counters unchanged */
@@ -130,6 +130,7 @@ final class AdmissionSettlementRedisTest extends AdmissionRedisGateTestCase
         );
         $whole = $this->dump();
         $counters = $this->counterAndBucketDump();
+        self::assertNotEmpty($counters, 'readOnlyPass must observe seeded counter and bucket keys');
         // The clock passes the deadline; refused reservations and a late claim only read.
         Sc::reserve($port, Sc::N + Sc::D + 1, Sc::member('s:ro', 'new-ro', 2));
         Sc::claim($port, Sc::N + Sc::D + 1, 'permit-ro', AdmissionOutcomeKindEnum::FAILURE);
