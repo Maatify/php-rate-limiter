@@ -177,8 +177,8 @@ final class AdmissionReservationAclPreflightRedisTest extends AdmissionRedisGate
             $message = $e->getMessage();
         }
 
-        self::assertSame('NOPERM admission outcome: the account may not run ZREM (plan step 2 of 2)', $message);
         self::assertSame($before, $this->observe(), 'Refused ZREM on counter (step 2/2) must not remove set member');
+        self::assertSame('NOPERM admission outcome: the account may not run ZREM (plan step 2 of 2)', $message);
 
         $this->store->applyAdmissionOutcome($outcome, self::NOW + 2);
         $this->assertOutcomeApplied('success_set_counter');
@@ -282,10 +282,18 @@ final class AdmissionReservationAclPreflightRedisTest extends AdmissionRedisGate
             ["(+zcount ~{$settledSetKey})", "(+hset ~{$settledPermitKey})", "(+expire ~{$settledPermitKey})"],
         ));
         $alreadySettledScope = new AdmissionScopeDTO('s', \Maatify\RateLimiter\Enum\AdmissionScopeKindEnum::SET_SIZE, 's:pend-already-settled', 4, 600, 's:pend-already-settled', 'm-settled', null, false, true);
+        self::assertArrayNotHasKey($settledPermitKey, $beforeAlreadySettled);
         self::assertTrue($alreadySettledAccount->reserveAdmission(S::withPermit(S::permit('p-pend-already-settled', self::NOW + 30), $alreadySettledScope), self::NOW)->admitted);
         $afterAlreadySettled = $this->observe();
-        $diffKeys = array_keys(array_diff_assoc($afterAlreadySettled, $beforeAlreadySettled));
-        self::assertSame([$settledPermitKey], $diffKeys, 'Already-settled permit reservation must write ONLY the permit key');
+        self::assertArrayHasKey($settledPermitKey, $afterAlreadySettled);
+        $afterWithoutPermit = $afterAlreadySettled;
+        unset($afterWithoutPermit[$settledPermitKey]);
+        self::assertSame($beforeAlreadySettled, $afterWithoutPermit, 'Already-settled permit reservation must leave every other key (including no deletions) identical');
+        self::assertSame(
+            ['ISSUED', 'U', 'acctT', 'login', (string) (self::NOW + 30), '600'],
+            $this->executor->execute(['HMGET', $settledPermitKey, 'state', 'lane', 'subject', 'operation', 'deadline', 'grace']),
+        );
+        self::assertSame(630, $this->executor->execute(['TTL', $settledPermitKey]));
 
         // (c) Gate refusal on settling scope (cap=1 with 1 settled member) and (d) permit_exists on settling scope:
         $fullSetKey = $this->keys->scopeKey(S::CLASS_NAME, \Maatify\RateLimiter\Enum\AdmissionScopeKindEnum::SET_SIZE, 's:pend-gate-full');
