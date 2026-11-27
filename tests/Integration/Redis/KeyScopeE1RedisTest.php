@@ -1430,7 +1430,9 @@ final class KeyScopeE1RedisTest extends TestCase
             $view->incrementAt($e1Key, 600, 1, self::NOW);
             $viewCopy->incrementAt($e1Key, 600, 2, self::NOW);
             self::assertSame(1, $viewCopy->bumpBindingEpoch($epochKey));
-            self::assertTrue($viewCopy->reserveAdmission($commitReq, self::NOW)->admitted);
+            $reservation = $viewCopy->reserveAdmission($commitReq, self::NOW);
+            self::assertInstanceOf(\Maatify\RateLimiter\DTO\AdmissionReservationResultDTO::class, $reservation);
+            self::assertTrue($reservation->admitted);
             self::assertSame($before, $this->snapshot());
         });
         $commits = array_values(array_filter(array_slice($trace, $traceStart), static fn(array $cmd): bool => OverlayWire::isCommit($cmd)));
