@@ -813,9 +813,10 @@ The admission layer adds the following purposes (LOCKED amendment under DEC-026,
 * The `_p` purposes of the proven (P) lane: `aux.known_device_allowance_p`, `aux.anti_equilibrium_device_p`,
   `aux.anti_equilibrium_p` and `budget_cooldown_p`, each registered in `E1AccountScopeKeyDeriver` (`KEY_SCOPE_ENCODING_E1.md` §3.4) with the same E1 framing and rotation rules, alongside `k4p` and `k5p` of §3.4 / §3.5.
   They are distinct names so the P family cannot collide with the unsuffixed family. The evaluation
-  pipeline derives them only for a call that carries the proven lane, which the engine passes for a
-  policy that opts in while its fence is open; a policy that did not opt in never reads or writes
-  them.
+  pipeline derives them only for a call that carries the proven (`P`) lane — passed by the engine
+  for an opted policy while its fleet fence is open, and also for explicit valid permit settlement
+  (`DEC-050` D7) even when the fleet fence is closed; a policy that did not opt in never reads or
+  writes them.
 
 The device Anti-Equilibrium watcher (DEC-021, now DEC-026, E1 encoding under DEC-046) uses the 5-field E1 tuple extending `(purpose, policy, env, account)` with the device `material`:
 
@@ -828,9 +829,12 @@ E1AccountScopeKeyDeriver tuple (N = 5):
 The removed historical colon-joined preimage (`{policy}:rate_limiter:aux:anti_equilibrium_device:v1:{env}:{accountId}:{fingerprintHash}`) is no longer emitted or read.
 
 It exists only for a non-ephemeral, fingerprinted, account-bound request under a
-budgeted, non-`API_OVERUSE` policy with K5 thresholds. Its previous
-generation uses `previousKeySecret ?? currentKeySecret` and
-`previousFingerprintHash ?? fingerprintHash`, exists only when either is present, and is
+budgeted, non-`API_OVERUSE` policy with K5 thresholds. For `material`, a lane-bearing evaluation call
+selects `deviceIdHash` when present and `fingerprintHash` otherwise; a call without a lane uses
+`fingerprintHash`. Its previous generation uses `previousKeySecret ?? currentKeySecret` paired with
+the corresponding previous material (`previousDeviceIdHash ?? deviceIdHash` when `deviceIdHash` is
+selected, otherwise `previousFingerprintHash ?? fingerprintHash`), exists only when `previousKeySecret`
+or the selected previous material is non-null (deduplicated when it aliases the current key), and is
 read-only.
 The raw `AccountID` exists only inside this preimage and MUST NOT cross either the
 `RateLimitStoreInterface` or `CorrelationStoreInterface` boundary. Policy, environment,

@@ -41,7 +41,7 @@ class DeviceIdentityResolver implements DeviceIdentityResolverInterface
         $previousHash = $this->previousHasher?->hash($rawString);
 
         // Instance-id component: hashed here with the same two generations, never rebuilt by a consumer.
-        // It is produced for every request that carries an id and consumed by no path yet.
+        // Produced whenever a request carries an id, and consumed only for K5 material on lane-bearing admission calls.
         $instanceId = $context->clientInstanceId ?? '';
         $idRawString = $instanceId !== '' ? "id1|{$instanceId}" : null;
 

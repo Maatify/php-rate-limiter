@@ -92,7 +92,7 @@ are **not** production incident statistics):
 6. **Compatibility.** The carried Decision 4 keeps holding in scope: the policies that do not opt in give today's results,
    byte for byte (gate S0-PARITY of every 5-b stage and of PR #150).
 
-*(Scope clarification from `Narrow G3 D7 Boundary` above: for a healthy opted policy while its fleet fence is closed, `checkOnly` and permit-less outcomes stay in this S0 scope, while explicit permit-bearing outcomes follow the D7 boundary above.)*
+*(Scope clarification from `Narrow G3 D7 Boundary` above: for a healthy opted policy while its fleet fence is closed, `checkOnly` and permit-less outcomes stay in this S0 scope, while explicit permit-bearing outcomes follow the D7 boundary above. Historical-status note (2026-11-27): issues #97, #100, and #106 were closed as `completed` on 2026-11-03 prior to DEC-050; the carried verbatim text above and below preserves the historical wording, while the underlying S0 shared-NAT/UA availability harm remains unresolved for policies in scope.)*
 
 ### Carried from DEC-019 (verbatim)
 
