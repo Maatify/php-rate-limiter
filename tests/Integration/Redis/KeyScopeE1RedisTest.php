@@ -1231,11 +1231,15 @@ final class KeyScopeE1RedisTest extends TestCase
             $copyAfterCommit = clone $original;
         });
         self::assertInstanceOf(RedisFullCapabilityStore::class, $copyAfterCommit);
-        self::assertSame(2, $copyAfterCommit->get('active-orig-commit')?->value);
+        $stateAfterCommit = $copyAfterCommit->get('active-orig-commit');
+        self::assertNotNull($stateAfterCommit);
+        self::assertSame(2, $stateAfterCommit->value);
         $copyAfterCommit->transactRequest(static function () use ($copyAfterCommit): void {
             $copyAfterCommit->incrementAt('active-orig-commit', 600, 3, self::NOW);
         });
-        self::assertSame(5, $copyAfterCommit->get('active-orig-commit')->value);
+        $stateAfterIncrement = $copyAfterCommit->get('active-orig-commit');
+        self::assertNotNull($stateAfterIncrement);
+        self::assertSame(5, $stateAfterIncrement->value);
 
         // 3. Backend failure state on active original does not poison a clone created during the failed request.
         $copyAfterFailure = null;
