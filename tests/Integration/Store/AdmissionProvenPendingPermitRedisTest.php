@@ -16,6 +16,7 @@ use Maatify\RateLimiter\Service\AdmissionKeyDeriver;
 use Maatify\RateLimiter\Service\AdmissionScopePurpose;
 use Maatify\RateLimiter\Service\CompositeRateLimiterRuntimeInterface;
 use Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver;
+use Maatify\RateLimiter\Service\NonAccountScopeKeyDeriver;
 use Maatify\RateLimiter\Service\SourcePrefix;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceRunner;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceSpec;
@@ -306,9 +307,9 @@ final class AdmissionProvenPendingPermitRedisTest extends AdmissionRedisGateTest
                 }
             }
             self::assertSame(
-                $this->e1Snapshot($snapBeforeSettle),
-                $this->e1Snapshot($snapAfterSettle),
-                'Success must not write or re-expire any E1 score/budget key',
+                $this->scoreSnapshotExcluding($snapBeforeSettle),
+                $this->scoreSnapshotExcluding($snapAfterSettle),
+                'Success must not write or re-expire any score key',
             );
         } else {
             $ppendKey = $aArtifacts['namedCounterKeys'][AdmissionScopePurpose::PPEND];
@@ -325,9 +326,20 @@ final class AdmissionProvenPendingPermitRedisTest extends AdmissionRedisGateTest
             $expectedFailMembers[$pFailMember] = (string) (self::NOW + 600);
             self::assertSame($expectedFailMembers, $this->zsetMembers($afterSettle, $pFailSetKey), 'Failure must add only expected member with NOW+600 expiry to pfail');
 
+            $k1Key = $this->deriveK1ScoreKey(self::SOURCE_A, 'redis-gate-key');
+            $ctrlK1Key = $this->deriveK1ScoreKey(self::SOURCE_B, 'redis-gate-key');
+            self::assertNotSame($k1Key, $ctrlK1Key, 'Target K1 score key must be distinct from control K1 score key');
+
             $k4pKey = $this->deriveE1ScoreKey('k4p', 'acct-a', 'redis-gate-key');
             $k4WrongKey = $this->deriveE1ScoreKey('k4', 'acct-a', 'redis-gate-key');
             $ctrlK4pKey = $this->deriveE1ScoreKey('k4p', 'acct-ctrl', 'redis-gate-key');
+
+            $beforeK1Raw = is_array($beforeSettle[$k1Key]['value'] ?? null) ? ($beforeSettle[$k1Key]['value']['value'] ?? 0) : 0;
+            $afterK1Raw = is_array($afterSettle[$k1Key]['value'] ?? null) ? ($afterSettle[$k1Key]['value']['value'] ?? 0) : 0;
+            $beforeK1 = is_numeric($beforeK1Raw) ? (int) $beforeK1Raw : 0;
+            $afterK1 = is_numeric($afterK1Raw) ? (int) $afterK1Raw : 0;
+            self::assertSame(5, $afterK1 - $beforeK1, 'Failure must increment K1 by exact delta 5');
+
             $beforeRaw = is_array($beforeSettle[$k4pKey]['value'] ?? null) ? ($beforeSettle[$k4pKey]['value']['value'] ?? 0) : 0;
             $afterRaw = is_array($afterSettle[$k4pKey]['value'] ?? null) ? ($afterSettle[$k4pKey]['value']['value'] ?? 0) : 0;
             $beforeScore = is_numeric($beforeRaw) ? (int) $beforeRaw : 0;
@@ -335,6 +347,12 @@ final class AdmissionProvenPendingPermitRedisTest extends AdmissionRedisGateTest
             self::assertSame(3, $afterScore - $beforeScore, 'Failure must increment K4P by exact delta 3');
             self::assertSame($snapBeforeSettle[$k4WrongKey] ?? null, $snapAfterSettle[$k4WrongKey] ?? null, 'Wrong-lane K4 must remain untouched');
             self::assertSame($snapBeforeSettle[$ctrlK4pKey] ?? null, $snapAfterSettle[$ctrlK4pKey] ?? null, 'Control account K4P must remain untouched');
+            self::assertSame($snapBeforeSettle[$ctrlK1Key] ?? null, $snapAfterSettle[$ctrlK1Key] ?? null, 'Control source K1 must remain untouched');
+            self::assertSame(
+                $this->scoreSnapshotExcluding($snapBeforeSettle, [$k1Key, $k4pKey]),
+                $this->scoreSnapshotExcluding($snapAfterSettle, [$k1Key, $k4pKey]),
+                'Failure must not write or re-expire any other score key',
+            );
         }
 
         // New slot on SOURCE_A is now available for a fresh reservation.
@@ -571,6 +589,17 @@ final class AdmissionProvenPendingPermitRedisTest extends AdmissionRedisGateTest
         return 'maatify:rate-limiter:e1:' . hash('sha256', self::NAMESPACE) . ':score:' . hash('sha256', $logical);
     }
 
+    private function deriveK1ScoreKey(string $ip, string $outerSecret): string
+    {
+        $logical = (new NonAccountScopeKeyDeriver(PublicRedisAdmissionFixture::ENV))->deriveK1(
+            self::POLICY,
+            SourcePrefix::of($ip),
+            $outerSecret,
+        );
+
+        return 'maatify:rate-limiter:v1:' . hash('sha256', self::NAMESPACE) . ':score:' . hash('sha256', $logical);
+    }
+
     /**
      * @param array<string, string> $snapshot
      * @param list<string> $excludedKeys
@@ -587,13 +616,14 @@ final class AdmissionProvenPendingPermitRedisTest extends AdmissionRedisGateTest
 
     /**
      * @param array<string, string> $snapshot
+     * @param list<string> $excludedKeys
      * @return array<string, string>
      */
-    private function e1Snapshot(array $snapshot): array
+    private function scoreSnapshotExcluding(array $snapshot, array $excludedKeys = []): array
     {
         return array_filter(
             $snapshot,
-            static fn(string $k): bool => str_contains($k, ':e1:'),
+            static fn(string $k): bool => str_contains($k, ':score:') && ! in_array($k, $excludedKeys, true),
             ARRAY_FILTER_USE_KEY,
         );
     }
