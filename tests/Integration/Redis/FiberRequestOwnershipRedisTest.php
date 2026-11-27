@@ -1012,6 +1012,25 @@ final class FiberRequestOwnershipRedisTest extends TestCase
         self::assertSame(1, $reader->readSimpleThrottle('checkout', 'subject-1')->count, 'And so does the reader.');
     }
 
+    /**
+     * @return array<string, string>
+     */
+    private function rawHash(string $physicalKey): array
+    {
+        $raw = $this->oracle->execute(['HGETALL', $physicalKey]);
+        self::assertIsArray($raw);
+        $out = [];
+        for ($i = 0, $n = count($raw); $i + 1 < $n; $i += 2) {
+            $field = $raw[$i];
+            $val = $raw[$i + 1];
+            self::assertTrue(is_string($field) || is_int($field));
+            self::assertTrue(is_string($val) || is_int($val));
+            $out[(string) $field] = (string) $val;
+        }
+
+        return $out;
+    }
+
     public function testWarmCloneOwnershipForAdmissionAndOutcomeHelpers(): void
     {
         $original = $this->standaloneStore();
@@ -1023,22 +1042,29 @@ final class FiberRequestOwnershipRedisTest extends TestCase
             $original->claimAdmissionPermitWithOutcome('U', 'subj', 'login', new AdmissionOutcomeDTO('login', AdmissionOutcomeKindEnum::SUCCESS, [], 'p-warm-probe'), self::T0),
         );
 
-        // Seed two real ISSUED permits for B3.
+        // Seed real ISSUED permits for B2 (copy2 claim while original is suspended) and B3.
+        $b2CopyScope = new AdmissionScopeDTO('src', AdmissionScopeKindEnum::COUNTER, 'c-b2-copy2', 5, 600, null, 'p-b2-copy2');
+        self::assertTrue($original->reserveAdmission(new AdmissionReservationRequestDTO('login', [$b2CopyScope], new AdmissionPermitDTO('p-b2-copy2', 'U', 'subj-b2', 'login', self::T0 + 30, 600)), self::T0)->admitted);
         $b3Scope = new AdmissionScopeDTO('src', AdmissionScopeKindEnum::COUNTER, 'c-b3', 5, 600, null, 'p-claim-b3');
         self::assertTrue($original->reserveAdmission(new AdmissionReservationRequestDTO('login', [$b3Scope], new AdmissionPermitDTO('p-claim-b3', 'U', 'subj-b3', 'login', self::T0 + 30, 600)), self::T0)->admitted);
         $b3Dec037Scope = new AdmissionScopeDTO('src', AdmissionScopeKindEnum::COUNTER, 'c-b3-2', 5, 600, null, 'p-claim-b3-dec037');
         self::assertTrue($original->reserveAdmission(new AdmissionReservationRequestDTO('login', [$b3Dec037Scope], new AdmissionPermitDTO('p-claim-b3-dec037', 'U', 'subj-b3', 'login', self::T0 + 30, 600)), self::T0)->admitted);
 
         $copy = clone $original;
-        $other = new Fiber(static fn(): null => null);
         $commands = 0;
+        $countMain = static function (array $command, string $phase) use (&$commands): void {
+            if ($phase === 'before' && Fiber::getCurrent() === null) {
+                $commands++;
+            }
+        };
 
-        // B1: copy owns a suspended transactRequest; independent calls on copy's warm admission/outcome helpers are refused before Redis.
+        // B1: copy owns a suspended transactRequest; independent calls from main on copy's warm admission/outcome helpers are refused before Redis.
         $fCopy = new Fiber(static fn() => $copy->transactRequest(static fn() => $copy->incrementAt('copy-held-b1', 600, 1, self::T0)));
-        $this->hooks($this->suspendAfterTheFirstHeldEvaluation($fCopy, 'copy-held-b1'), $this->countCommandsOf($other, $commands));
+        $this->hooks($this->suspendAfterTheFirstHeldEvaluation($fCopy, 'copy-held-b1'), $countMain);
         $fCopy->start();
         self::assertTrue($fCopy->isSuspended());
         $beforeB1 = $this->snapshot();
+        $commands = 0;
 
         $b1Scope = new AdmissionScopeDTO('src', AdmissionScopeKindEnum::COUNTER, 'c-b1', 5, 600, null, 'p-b1');
         $this->assertRefused(static fn() => $copy->reserveAdmission(new AdmissionReservationRequestDTO('login', [$b1Scope]), self::T0));
@@ -1047,94 +1073,153 @@ final class FiberRequestOwnershipRedisTest extends TestCase
         $this->assertRefused(static fn() => $copy->readBindingEpoch('e-b1'));
         $this->assertRefused(static fn() => $copy->bumpBindingEpoch('e-b1'));
         $this->assertRefused(static fn() => $copy->claimAdmissionPermitWithOutcome('U', 'subj-b3', 'login', new AdmissionOutcomeDTO('login', AdmissionOutcomeKindEnum::SUCCESS, [$b3Scope], 'p-claim-b3'), self::T0));
-        self::assertSame(0, $commands);
+        self::assertSame(0, $commands, 'Refused calls from main must not reach Redis');
         self::assertSame($beforeB1, $this->snapshot());
 
-        // Idle original can still run direct operations while copy is suspended.
+        // Idle original can still run direct operations while copy is suspended (also positive control for main command counter).
         self::assertSame(0, $original->readBindingEpoch('e-orig-idle'));
+        self::assertGreaterThan(0, $commands, 'Positive control: legitimate main call must increment the command counter');
         self::assertTrue($original->acquireProbeLease('orig-idle', self::T0, 120));
 
         $this->hook = null;
         $fCopy->resume();
-        self::assertSame(1, $copy->get('copy-held-b1')?->value);
+        $v1Prefix = 'maatify:rate-limiter:v1:' . hash('sha256', 'fiber-260') . ':';
+        $admOps = new \Maatify\RateLimiter\Repository\Redis\RedisAdmissionOperations($this->oracle, 'fiber-260');
+        self::assertSame('1', $this->rawHash($v1Prefix . 'score:' . hash('sha256', 'copy-held-b1'))['value'] ?? null);
 
-        // B2: original owns a suspended cancelled transactRequest; independent copy2 commits cleanly and survives original's cancel.
+        // B2: original owns a suspended cancelled transactRequest; copy2 runs score+epoch transaction AND outcome claim BEFORE original unwinds.
         $copy2 = clone $original;
-        $fOrig = new Fiber(static function () use ($original): void {
-            $original->transactRequest(static function () use ($original): void {
+        $sentinelB2 = new \LogicException('cancel-orig-b2');
+        $fOrig = new Fiber(static function () use ($original, $sentinelB2): void {
+            $original->transactRequest(static function () use ($original, $sentinelB2): void {
                 $original->incrementAt('orig-b2-cancel', 600, 1, self::T0);
 
-                throw new \LogicException('cancel-orig-b2');
+                throw $sentinelB2;
             });
         });
         $this->hook = $this->suspendAfterTheFirstHeldEvaluation($fOrig, 'orig-b2');
         $fOrig->start();
         self::assertTrue($fOrig->isSuspended());
 
-        $fCopy2 = new Fiber(static fn() => $copy2->transactRequest(static fn() => $copy2->incrementAt('copy2-b2-keep', 600, 1, self::T0)));
+        $fCopy2 = new Fiber(static function () use ($copy2, $b2CopyScope): void {
+            $copy2->transactRequest(static function () use ($copy2): void {
+                $copy2->incrementAt('copy2-b2-keep', 600, 1, self::T0);
+                self::assertSame(1, $copy2->bumpBindingEpoch('e-copy2-b2'));
+            });
+            self::assertSame(
+                AdmissionPermitClaimEnum::ACCEPTED,
+                $copy2->claimAdmissionPermitWithOutcome('U', 'subj-b2', 'login', new AdmissionOutcomeDTO('login', AdmissionOutcomeKindEnum::SUCCESS, [$b2CopyScope], 'p-b2-copy2'), self::T0),
+            );
+        });
         $fCopy2->start();
         self::assertTrue($fCopy2->isTerminated());
-        self::assertSame(1, $copy2->bumpBindingEpoch('e-copy2-b2'));
 
         $this->hook = null;
+        $caughtB2 = null;
         try {
             $fOrig->resume();
-            self::fail('Expected LogicException');
-        } catch (\LogicException $e) {
-            self::assertSame('cancel-orig-b2', $e->getMessage());
+        } catch (\Throwable $e) {
+            $caughtB2 = $e;
         }
+        self::assertSame($sentinelB2, $caughtB2);
         self::assertNull($original->get('orig-b2-cancel'));
-        self::assertSame(1, $copy2->get('copy2-b2-keep')?->value);
-        self::assertSame(1, $copy2->readBindingEpoch('e-copy2-b2'));
+        self::assertNotContains($v1Prefix . 'score:' . hash('sha256', 'orig-b2-cancel'), $this->keyNames());
+        self::assertSame('1', $this->rawHash($v1Prefix . 'score:' . hash('sha256', 'copy2-b2-keep'))['value'] ?? null);
+        self::assertSame('1', $this->oracle->execute(['GET', $admOps->epochKey('e-copy2-b2')]));
+        $b2PermitFields = $this->rawHash($admOps->permitKey('p-b2-copy2'));
+        self::assertSame('CLAIMED', $b2PermitFields['state'] ?? null);
+        self::assertSame('success', $b2PermitFields['outcome'] ?? null);
+        self::assertNull($this->oracle->execute(['ZSCORE', $admOps->scopeKey('login', AdmissionScopeKindEnum::COUNTER, 'c-b2-copy2'), 'p-b2-copy2']));
 
-        // B3: legitimate claim on copy2 succeeds once, replays DUPLICATE/CONFLICT without mutation, and DEC-036/037 keeps claim on cancelled scoring transaction.
-        self::assertSame(
-            AdmissionPermitClaimEnum::ACCEPTED,
-            $copy2->claimAdmissionPermitWithOutcome('U', 'subj-b3', 'login', new AdmissionOutcomeDTO('login', AdmissionOutcomeKindEnum::SUCCESS, [$b3Scope], 'p-claim-b3'), self::T0),
-        );
-        $afterB3 = $this->snapshot();
-        self::assertSame(
-            AdmissionPermitClaimEnum::DUPLICATE,
-            $copy2->claimAdmissionPermitWithOutcome('U', 'subj-b3', 'login', new AdmissionOutcomeDTO('login', AdmissionOutcomeKindEnum::SUCCESS, [$b3Scope], 'p-claim-b3'), self::T0),
-        );
-        self::assertSame(
-            AdmissionPermitClaimEnum::CONFLICT,
-            $copy2->claimAdmissionPermitWithOutcome('U', 'subj-b3', 'login', new AdmissionOutcomeDTO('login', AdmissionOutcomeKindEnum::FAILURE, [$b3Scope], 'p-claim-b3'), self::T0),
-        );
-        self::assertSame($afterB3, $this->snapshot());
+        // B3: DEC-036/037 claim on copy2 persists atomically inside a cancelled scoring transaction; all unrelated keys stay intact.
+        $physPermitB3 = $admOps->permitKey('p-claim-b3-dec037');
+        $physCounterB3 = $admOps->scopeKey('login', AdmissionScopeKindEnum::COUNTER, 'c-b3-2');
+        $beforeB3Permit = $this->rawHash($physPermitB3);
+        self::assertSame('ISSUED', $beforeB3Permit['state'] ?? null);
+        self::assertNotNull($this->oracle->execute(['ZSCORE', $physCounterB3, 'p-claim-b3-dec037']));
+        $beforeB3Snap = $this->snapshot();
 
+        $sentinelB3 = new \LogicException('cancel-scoring-b3');
+        $caughtB3 = null;
         try {
-            $copy2->transactRequest(static function () use ($copy2, $b3Dec037Scope): void {
+            $copy2->transactRequest(static function () use ($copy2, $b3Dec037Scope, $sentinelB3): void {
                 $copy2->incrementAt('held-b3-cancel', 600, 1, self::T0);
                 self::assertSame(
                     AdmissionPermitClaimEnum::ACCEPTED,
                     $copy2->claimAdmissionPermitWithOutcome('U', 'subj-b3', 'login', new AdmissionOutcomeDTO('login', AdmissionOutcomeKindEnum::SUCCESS, [$b3Dec037Scope], 'p-claim-b3-dec037'), self::T0),
                 );
 
-                throw new \LogicException('cancel-scoring-b3');
+                throw $sentinelB3;
             });
         } catch (\Throwable $e) {
-            self::assertInstanceOf(\LogicException::class, $e);
-            self::assertSame('cancel-scoring-b3', $e->getMessage());
+            $caughtB3 = $e;
         }
+        self::assertSame($sentinelB3, $caughtB3);
         self::assertNull($copy2->get('held-b3-cancel'));
+        self::assertNotContains($v1Prefix . 'score:' . hash('sha256', 'held-b3-cancel'), $this->keyNames());
+
+        $afterB3Permit = $this->rawHash($physPermitB3);
+        self::assertSame('CLAIMED', $afterB3Permit['state'] ?? null);
+        self::assertSame('success', $afterB3Permit['outcome'] ?? null);
+        self::assertSame($beforeB3Permit['lane'], $afterB3Permit['lane'] ?? null);
+        self::assertSame($beforeB3Permit['subject'], $afterB3Permit['subject'] ?? null);
+        self::assertSame($beforeB3Permit['operation'], $afterB3Permit['operation'] ?? null);
+        self::assertSame($beforeB3Permit['deadline'], $afterB3Permit['deadline'] ?? null);
+        self::assertSame($beforeB3Permit['grace'], $afterB3Permit['grace'] ?? null);
+        $b3PermitPttl = $this->oracle->execute(['PTTL', $physPermitB3]);
+        self::assertIsInt($b3PermitPttl);
+        self::assertGreaterThan(0, $b3PermitPttl);
+        self::assertNull($this->oracle->execute(['ZSCORE', $physCounterB3, 'p-claim-b3-dec037']), 'Pending counter member must be released on claim');
+
+        $afterB3Snap = $this->snapshot();
+        $beforeUntouched = $beforeB3Snap;
+        $afterUntouched = $afterB3Snap;
+        unset($beforeUntouched[$physPermitB3], $beforeUntouched[$physCounterB3], $afterUntouched[$physPermitB3], $afterUntouched[$physCounterB3]);
+        self::assertSame($beforeUntouched, $afterUntouched, 'Every unrelated key DUMP+PEXPIRETIME must remain identical');
+
         self::assertSame(
             AdmissionPermitClaimEnum::DUPLICATE,
             $copy2->claimAdmissionPermitWithOutcome('U', 'subj-b3', 'login', new AdmissionOutcomeDTO('login', AdmissionOutcomeKindEnum::SUCCESS, [$b3Dec037Scope], 'p-claim-b3-dec037'), self::T0),
         );
+        self::assertSame($afterB3Snap, $this->snapshot());
+        self::assertSame(
+            AdmissionPermitClaimEnum::CONFLICT,
+            $copy2->claimAdmissionPermitWithOutcome('U', 'subj-b3', 'login', new AdmissionOutcomeDTO('login', AdmissionOutcomeKindEnum::FAILURE, [$b3Dec037Scope], 'p-claim-b3-dec037'), self::T0),
+        );
+        self::assertSame($afterB3Snap, $this->snapshot());
 
-        // D: Fiber overlap across root, view, and copy of view is refused with zero Redis commands.
+        // D: Fiber overlap across root, warm view, and copy of view is refused with zero Redis commands on actual main caller.
         $view = $original->e1Keyspace();
+        self::assertSame(0, $view->readBindingEpoch('e-view-warm'));
+        self::assertSame(
+            AdmissionPermitClaimEnum::UNKNOWN,
+            $view->claimAdmissionPermitWithOutcome('U', 'subj-d', 'login', new AdmissionOutcomeDTO('login', AdmissionOutcomeKindEnum::SUCCESS, [], 'p-d-warm'), self::T0),
+        );
         $viewCopy = clone $view;
+
         $fRoot = new Fiber(static fn() => $original->transactRequest(static fn() => $original->incrementAt('root-view-overlap', 600, 1, self::T0)));
         $commands = 0;
-        $this->hooks($this->suspendAfterTheFirstHeldEvaluation($fRoot, 'root-view-overlap'), $this->countCommandsOf($other, $commands));
+        $this->hooks($this->suspendAfterTheFirstHeldEvaluation($fRoot, 'root-view-overlap'), $countMain);
         $fRoot->start();
         self::assertTrue($fRoot->isSuspended());
+        $beforeD = $this->snapshot();
+        $commands = 0;
+
+        $dScope = new AdmissionScopeDTO('src', AdmissionScopeKindEnum::COUNTER, 'c-d-overlap', 5, 600, null, 'p-d-overlap');
         $this->assertRefused(static fn() => $view->get('e1.' . str_repeat('a', 64)));
+        $this->assertRefused(static fn() => $view->reserveAdmission(new AdmissionReservationRequestDTO('login', [$dScope]), self::T0));
+        $this->assertRefused(static fn() => $view->claimAdmissionPermitWithOutcome('U', 'subj-b3', 'login', new AdmissionOutcomeDTO('login', AdmissionOutcomeKindEnum::SUCCESS, [$b3Scope], 'p-claim-b3'), self::T0));
         $this->assertRefused(static fn() => $viewCopy->get('e1.' . str_repeat('a', 64)));
-        self::assertSame(0, $commands);
-        $this->hook = null;
+        $this->assertRefused(static fn() => $viewCopy->reserveAdmission(new AdmissionReservationRequestDTO('login', [$dScope]), self::T0));
+        $this->assertRefused(static fn() => $viewCopy->readBindingEpoch('e-d-overlap'));
+        $this->assertRefused(static fn() => $viewCopy->claimAdmissionPermitWithOutcome('U', 'subj-b3', 'login', new AdmissionOutcomeDTO('login', AdmissionOutcomeKindEnum::SUCCESS, [$b3Scope], 'p-claim-b3'), self::T0));
+        self::assertSame(0, $commands, 'Refused calls on view and viewCopy from main must send zero Redis commands');
+        self::assertSame($beforeD, $this->snapshot());
+
+        // Resume root, then positive control read on viewCopy increments main command counter.
         $fRoot->resume();
+        self::assertNull($viewCopy->get('e1.' . str_repeat('a', 64)));
+        self::assertGreaterThan(0, $commands, 'Positive control: legitimate main call after root unwind must increment command counter');
+        $this->hook = null;
     }
 }

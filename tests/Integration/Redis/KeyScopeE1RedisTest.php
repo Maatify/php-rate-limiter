@@ -1099,6 +1099,25 @@ final class KeyScopeE1RedisTest extends TestCase
         return (string) $expiry;
     }
 
+    /**
+     * @return array<string, string>
+     */
+    private function rawHash(string $physicalKey): array
+    {
+        $raw = $this->admin->execute(['HGETALL', $physicalKey]);
+        self::assertIsArray($raw);
+        $out = [];
+        for ($i = 0, $n = count($raw); $i + 1 < $n; $i += 2) {
+            $field = $raw[$i];
+            $val = $raw[$i + 1];
+            self::assertTrue(is_string($field) || is_int($field));
+            self::assertTrue(is_string($val) || is_int($val));
+            $out[(string) $field] = (string) $val;
+        }
+
+        return $out;
+    }
+
     public function testWarmRootCopyAtomicSaveAndCancelIsolateE1ScoreAndAdmissionState(): void
     {
         $trace = [];
@@ -1125,8 +1144,10 @@ final class KeyScopeE1RedisTest extends TestCase
         // 1. Cancelled transaction on warm copy: E1 score, epoch bump, and reservation must all leave Redis unchanged.
         $cancelScope = new AdmissionScopeDTO('src', AdmissionScopeKindEnum::COUNTER, 'c-warm-cancel', 5, 600, null, 'p-warm-cancel');
         $cancelReq = new AdmissionReservationRequestDTO('login', [$cancelScope], new AdmissionPermitDTO('p-warm-cancel', 'U', 'subj-warm', 'login', self::NOW + 30, 600));
+        $sentinel1 = new \RuntimeException('sentinel-warm-cancel');
+        $caught1 = null;
         try {
-            $copy->transactRequest(function () use ($copy, $copyView, $e1Key, $epochKey, $cancelReq): int {
+            $copy->transactRequest(function () use ($copy, $copyView, $e1Key, $epochKey, $cancelReq, $sentinel1): int {
                 $copyView->incrementAt($e1Key, 600, 1, self::NOW);
                 self::assertSame(1, $copyView->get($e1Key)?->value);
                 self::assertSame(1, $copy->bumpBindingEpoch($epochKey));
@@ -1135,51 +1156,104 @@ final class KeyScopeE1RedisTest extends TestCase
                 // Oracle outside transaction sees nothing yet.
                 self::assertSame([], $this->keys());
 
-                throw new \RuntimeException('sentinel-warm-cancel');
+                throw $sentinel1;
             });
         } catch (\RuntimeException $e) {
-            self::assertSame('sentinel-warm-cancel', $e->getMessage());
+            $caught1 = $e;
         }
+        self::assertSame($sentinel1, $caught1, 'Exact sentinel exception must escape cancelled transaction');
         self::assertSame($before, $this->snapshot(), 'Cancelled warm-copy transaction must leave Redis DUMP+PEXPIRETIME unchanged');
         self::assertSame(0, $copy->readBindingEpoch($epochKey));
 
-        // 2. Non-cancelled transaction on warm copy: E1 score, epoch bump, and reservation commit cleanly (1 overlay commit).
+        // 2. Non-cancelled transaction on warm copy: E1 score, epoch bump, and reservation commit atomically in 1 commit.
+        $beforeSuccess = $this->snapshot();
         $traceStart = count($trace);
         $commitScope = new AdmissionScopeDTO('src', AdmissionScopeKindEnum::COUNTER, 'c-warm-commit', 5, 600, null, 'p-warm-commit');
         $commitReq = new AdmissionReservationRequestDTO('login', [$commitScope], new AdmissionPermitDTO('p-warm-commit', 'U', 'subj-warm', 'login', self::NOW + 30, 600));
-        $copy->transactRequest(function () use ($copy, $copyView, $e1Key, $epochKey, $commitReq): void {
+        $copy->transactRequest(function () use ($copy, $copyView, $e1Key, $epochKey, $commitReq, $beforeSuccess): void {
             $copyView->incrementAt($e1Key, 600, 1, self::NOW);
             self::assertSame(1, $copy->bumpBindingEpoch($epochKey));
             self::assertTrue($copy->reserveAdmission($commitReq, self::NOW)->admitted);
+            // Independent oracle sees no early writes before commit.
+            self::assertSame($beforeSuccess, $this->snapshot());
         });
         $commits = array_values(array_filter(array_slice($trace, $traceStart), static fn(array $cmd): bool => OverlayWire::isCommit($cmd)));
         self::assertCount(1, $commits, 'Overlay must commit once for the transaction');
+
+        $admOps = new \Maatify\RateLimiter\Repository\Redis\RedisAdmissionOperations($this->admin, self::NAMESPACE);
+        $physE1Score = self::e1Prefix() . 'score:' . hash('sha256', $e1Key);
+        $physEpoch = $admOps->epochKey($epochKey);
+        $physPermit = $admOps->permitKey('p-warm-commit');
+        $physCounter = $admOps->scopeKey('login', AdmissionScopeKindEnum::COUNTER, 'c-warm-commit');
+
+        $commitKeys = OverlayWire::keys($commits[0]);
+        self::assertContains($physE1Score, $commitKeys);
+        self::assertContains($physEpoch, $commitKeys);
+        self::assertContains($physPermit, $commitKeys);
+        self::assertContains($physCounter, $commitKeys);
+
+        $expectedKeys = [$physE1Score, $physEpoch, $physPermit, $physCounter];
+        sort($expectedKeys);
+        $actualKeys = $this->keys();
+        sort($actualKeys);
+        self::assertSame($expectedKeys, $actualKeys, 'Oracle must see exactly the four expected physical keys and no extra keys');
+
+        self::assertSame(['value' => '1', 'updatedAt' => (string) self::NOW], $this->rawHash($physE1Score));
+        $scorePttl = $this->admin->execute(['PTTL', $physE1Score]);
+        self::assertIsInt($scorePttl);
+        self::assertGreaterThan(0, $scorePttl);
+        self::assertLessThanOrEqual(600_000, $scorePttl);
+
+        self::assertSame('1', $this->admin->execute(['GET', $physEpoch]));
+
+        $permitFields = $this->rawHash($physPermit);
+        self::assertSame('ISSUED', $permitFields['state'] ?? null);
+        self::assertSame('U', $permitFields['lane'] ?? null);
+        self::assertSame('subj-warm', $permitFields['subject'] ?? null);
+        self::assertSame('login', $permitFields['operation'] ?? null);
+        self::assertSame((string) (self::NOW + 30), $permitFields['deadline'] ?? null);
+        self::assertSame('600', $permitFields['grace'] ?? null);
+        $permitPttl = $this->admin->execute(['PTTL', $physPermit]);
+        self::assertIsInt($permitPttl);
+        self::assertGreaterThan(0, $permitPttl);
+        self::assertLessThanOrEqual(630_000, $permitPttl);
+
+        self::assertSame(['p-warm-commit'], $this->admin->execute(['ZRANGE', $physCounter, '0', '-1']));
+        $counterPttl = $this->admin->execute(['PTTL', $physCounter]);
+        self::assertIsInt($counterPttl);
+        self::assertGreaterThan(0, $counterPttl);
+        self::assertLessThanOrEqual(600_000, $counterPttl);
+
         self::assertSame(1, $copyView->get($e1Key)?->value);
         self::assertSame(1, $copy->readBindingEpoch($epochKey));
-        self::assertContains(self::e1Prefix() . 'score:' . hash('sha256', $e1Key), $this->keys());
 
         // 3. Subsequent independent cancel on the same warm copy leaves the committed state unchanged.
         $afterCommit = $this->snapshot();
+        $sentinel2 = new \RuntimeException('sentinel-warm-cancel-2');
+        $caught2 = null;
         try {
-            $copy->transactRequest(static function () use ($copy, $copyView, $e1Key, $epochKey): void {
+            $copy->transactRequest(static function () use ($copy, $copyView, $e1Key, $epochKey, $sentinel2): void {
                 $copyView->incrementAt($e1Key, 600, 2, self::NOW);
                 $copy->bumpBindingEpoch($epochKey);
 
-                throw new \RuntimeException('sentinel-warm-cancel-2');
+                throw $sentinel2;
             });
         } catch (\RuntimeException $e) {
-            self::assertSame('sentinel-warm-cancel-2', $e->getMessage());
+            $caught2 = $e;
         }
+        self::assertSame($sentinel2, $caught2);
         self::assertSame($afterCommit, $this->snapshot());
         self::assertSame(1, $copy->readBindingEpoch($epochKey));
     }
 
     public function testActiveRootCopyNeverInheritsOverlayOrBackendFailureState(): void
     {
+        $trace = [];
         $failureSwitch = new class {
             public bool $fail = false;
         };
-        $executor = new CallableRedisCommandExecutor(function (array $command) use ($failureSwitch): mixed {
+        $executor = new CallableRedisCommandExecutor(function (array $command) use (&$trace, $failureSwitch): mixed {
+            $trace[] = $command;
             if ($failureSwitch->fail) {
                 throw new BackendFailureException('synthetic backend failure');
             }
@@ -1188,115 +1262,202 @@ final class KeyScopeE1RedisTest extends TestCase
         });
         $original = new RedisFullCapabilityStore($executor, self::NAMESPACE);
 
-        // 1. Clone during active held write, then cancel original: copy must not see stale overlay.
+        // 1. Clone during active held write, then cancel original: copy must not see stale overlay and commits independently to Redis.
         $copyAfterCancel = null;
         $before = $this->snapshot();
+        $sentinelC1 = new \LogicException('sentinel-orig-cancel');
+        $caughtC1 = null;
         try {
-            $original->transactRequest(function () use ($original, &$copyAfterCancel): void {
+            $original->transactRequest(function () use ($original, &$copyAfterCancel, $sentinelC1): void {
                 $original->incrementAt('active-orig-cancel', 600, 1, self::NOW);
                 $copyAfterCancel = clone $original;
 
-                throw new \LogicException('sentinel-orig-cancel');
+                throw $sentinelC1;
             });
         } catch (\Throwable $e) {
-            self::assertInstanceOf(\LogicException::class, $e);
-            self::assertSame('sentinel-orig-cancel', $e->getMessage());
+            $caughtC1 = $e;
         }
+        self::assertSame($sentinelC1, $caughtC1);
         self::assertInstanceOf(RedisFullCapabilityStore::class, $copyAfterCancel);
         self::assertSame($before, $this->snapshot());
         self::assertNull($copyAfterCancel->get('active-orig-cancel'));
+        self::assertNotContains(self::v1Prefix() . 'score:' . hash('sha256', 'active-orig-cancel'), $this->keys());
 
+        $traceStartC1 = count($trace);
         $copyAfterCancel->transactRequest(static function () use ($copyAfterCancel): void {
             $copyAfterCancel->incrementAt('copy-independent-commit', 600, 1, self::NOW);
         });
-        $independentState = $copyAfterCancel->get('copy-independent-commit');
-        self::assertInstanceOf(\Maatify\RateLimiter\DTO\RateLimitStateDTO::class, $independentState);
-        self::assertSame(1, $independentState->value);
+        $c1Commits = array_values(array_filter(array_slice($trace, $traceStartC1), static fn(array $cmd): bool => OverlayWire::isCommit($cmd)));
+        self::assertCount(1, $c1Commits);
+        $physCopyCommit = self::v1Prefix() . 'score:' . hash('sha256', 'copy-independent-commit');
+        self::assertContains($physCopyCommit, OverlayWire::keys($c1Commits[0]));
+        self::assertSame(['value' => '1', 'updatedAt' => (string) self::NOW], $this->rawHash($physCopyCommit));
         self::assertNull($copyAfterCancel->get('active-orig-cancel'));
 
         $snapBeforeCopyCancel = $this->snapshot();
+        $sentinelCopyCancel = new \RuntimeException('sentinel-copy-cancel');
+        $caughtCopyCancel = null;
         try {
-            $copyAfterCancel->transactRequest(static function () use ($copyAfterCancel): void {
+            $copyAfterCancel->transactRequest(static function () use ($copyAfterCancel, $sentinelCopyCancel): void {
                 $copyAfterCancel->incrementAt('copy-independent-commit', 600, 2, self::NOW);
 
-                throw new \RuntimeException('sentinel-copy-cancel');
+                throw $sentinelCopyCancel;
             });
         } catch (\RuntimeException $e) {
-            self::assertSame('sentinel-copy-cancel', $e->getMessage());
+            $caughtCopyCancel = $e;
         }
+        self::assertSame($sentinelCopyCancel, $caughtCopyCancel);
         self::assertSame($snapBeforeCopyCancel, $this->snapshot());
 
-        // 2. Clone during active held write, then commit original: copy must see real committed state (not frozen array).
+        // 2. Clone during active held write, then commit original: copy must see real committed state in Redis (not frozen array).
         $copyAfterCommit = null;
         $original->transactRequest(function () use ($original, &$copyAfterCommit): void {
             $original->incrementAt('active-orig-commit', 600, 2, self::NOW);
             $copyAfterCommit = clone $original;
         });
+        $physActiveCommit = self::v1Prefix() . 'score:' . hash('sha256', 'active-orig-commit');
+        self::assertSame(['value' => '2', 'updatedAt' => (string) self::NOW], $this->rawHash($physActiveCommit));
         self::assertInstanceOf(RedisFullCapabilityStore::class, $copyAfterCommit);
-        $stateAfterCommit = $copyAfterCommit->get('active-orig-commit');
-        self::assertNotNull($stateAfterCommit);
-        self::assertSame(2, $stateAfterCommit->value);
+
+        $traceStartC2 = count($trace);
         $copyAfterCommit->transactRequest(static function () use ($copyAfterCommit): void {
             $copyAfterCommit->incrementAt('active-orig-commit', 600, 3, self::NOW);
         });
-        $stateAfterIncrement = $copyAfterCommit->get('active-orig-commit');
-        self::assertNotNull($stateAfterIncrement);
-        self::assertSame(5, $stateAfterIncrement->value);
+        $c2Commits = array_values(array_filter(array_slice($trace, $traceStartC2), static fn(array $cmd): bool => OverlayWire::isCommit($cmd)));
+        self::assertCount(1, $c2Commits);
+        self::assertContains($physActiveCommit, OverlayWire::keys($c2Commits[0]));
+        self::assertSame(['value' => '5', 'updatedAt' => (string) self::NOW], $this->rawHash($physActiveCommit));
 
-        // 3. Backend failure state on active original does not poison a clone created during the failed request.
+        // 3. Backend failure recorded on active original's requestState before clone does not poison the clone.
         $copyAfterFailure = null;
+        $beforeFailure = $this->snapshot();
+        $caughtFailure = null;
         try {
             $original->transactRequest(function () use ($original, $failureSwitch, &$copyAfterFailure): void {
-                $copyAfterFailure = clone $original;
+                $original->incrementAt('orig-before-fail', 600, 1, self::NOW);
                 $failureSwitch->fail = true;
-                $original->incrementAt('fail-key', 600, 1, self::NOW);
+                $caughtInner = null;
+                try {
+                    $original->incrementAt('fail-key', 600, 1, self::NOW);
+                } catch (BackendFailureException $e) {
+                    $caughtInner = $e;
+                } finally {
+                    $failureSwitch->fail = false;
+                }
+                self::assertInstanceOf(BackendFailureException::class, $caughtInner);
+                // requestBackendFailure is now recorded on $original before cloning.
+                $copyAfterFailure = clone $original;
             });
         } catch (\Throwable $e) {
-            self::assertInstanceOf(BackendFailureException::class, $e);
-        } finally {
-            $failureSwitch->fail = false;
+            $caughtFailure = $e;
         }
+        self::assertInstanceOf(BackendFailureException::class, $caughtFailure);
+        self::assertSame($beforeFailure, $this->snapshot(), 'Failed original request must leave Redis unchanged');
         self::assertInstanceOf(RedisFullCapabilityStore::class, $copyAfterFailure);
+        self::assertNull($copyAfterFailure->get('orig-before-fail'));
+
+        $traceStartC3 = count($trace);
         $copyAfterFailure->transactRequest(static function () use ($copyAfterFailure): void {
             $copyAfterFailure->incrementAt('copy-after-failure', 600, 1, self::NOW);
         });
-        self::assertSame(1, $copyAfterFailure->get('copy-after-failure')?->value);
+        $c3Commits = array_values(array_filter(array_slice($trace, $traceStartC3), static fn(array $cmd): bool => OverlayWire::isCommit($cmd)));
+        self::assertCount(1, $c3Commits);
+        $physCopyAfterFailure = self::v1Prefix() . 'score:' . hash('sha256', 'copy-after-failure');
+        self::assertContains($physCopyAfterFailure, OverlayWire::keys($c3Commits[0]));
+        self::assertSame(['value' => '1', 'updatedAt' => (string) self::NOW], $this->rawHash($physCopyAfterFailure));
     }
 
     public function testE1ViewSharingInvariantAcrossRootViewAndCopyOfView(): void
     {
-        $original = new RedisFullCapabilityStore($this->admin, self::NAMESPACE);
-        $view = $original->e1Keyspace();
-        $viewCopy = clone $view;
-        $rootCopy = clone $original;
-        $rootCopyView = $rootCopy->e1Keyspace();
+        $trace = [];
+        $traced = new CallableRedisCommandExecutor(function (array $command) use (&$trace): mixed {
+            $trace[] = $command;
+
+            return $this->admin->execute($command);
+        });
+        $original = new RedisFullCapabilityStore($traced, self::NAMESPACE);
         $e1Key = E1AccountScopeKeyDeriver::key(self::SECRET, ['k4', self::POLICY, self::ENV, self::ACCOUNT]);
+        $epochKey = 'a1.epoch.' . str_repeat('d', 64);
 
-        self::assertNotSame($view, $viewCopy);
-        self::assertSame([$original], $viewCopy->ownedResources(), 'Copy of a view must remain bound to the same root');
-        self::assertSame([$rootCopy], $rootCopyView->ownedResources(), 'View of a root copy must be bound to the root copy');
+        // Warm admission/outcome helpers on root WITHOUT caching e1View yet.
+        self::assertSame(0, $original->readBindingEpoch($epochKey));
+        self::assertSame(
+            AdmissionPermitClaimEnum::UNKNOWN,
+            $original->claimAdmissionPermitWithOutcome('U', 'subj-d', 'login', new AdmissionOutcomeDTO('login', AdmissionOutcomeKindEnum::SUCCESS, [], 'p-d-probe'), self::NOW),
+        );
 
+        // 1. First e1Keyspace() created DURING a held request on the warm root, cloned into $viewCopy, then cancelled.
         $before = $this->snapshot();
+        $view = null;
+        $viewCopy = null;
+        $sentinelD = new \RuntimeException('sentinel-view-cancel');
+        $caughtD = null;
+        $cancelScope = new AdmissionScopeDTO('src', AdmissionScopeKindEnum::COUNTER, 'c-view-cancel', 5, 600, null, 'p-view-cancel');
+        $cancelReq = new AdmissionReservationRequestDTO('login', [$cancelScope], new AdmissionPermitDTO('p-view-cancel', 'U', 'subj-d', 'login', self::NOW + 30, 600));
         try {
-            $original->transactRequest(static function () use ($original, $view, $viewCopy, $e1Key): void {
-                $viewDuringHeld = $original->e1Keyspace();
-                self::assertSame($view, $viewDuringHeld);
-                $original->incrementAt('v1-shared-cancel', 600, 1, self::NOW);
-                $viewCopy->incrementAt($e1Key, 600, 1, self::NOW);
+            $original->transactRequest(function () use ($original, $e1Key, $epochKey, $cancelReq, $before, $sentinelD, &$view, &$viewCopy): void {
+                $view = $original->e1Keyspace();
+                $viewCopy = clone $view;
+                self::assertSame($view, $original->e1Keyspace());
+                self::assertNotSame($view, $viewCopy);
+                self::assertSame([$original], $viewCopy->ownedResources(), 'Copy of a view must remain bound to the same root');
 
-                throw new \RuntimeException('sentinel-view-cancel');
+                // Nested held writes across root, view, and copy of view + warm admission helpers.
+                $original->incrementAt('v1-shared-cancel', 600, 1, self::NOW);
+                $view->incrementAt($e1Key, 600, 1, self::NOW);
+                $viewCopy->incrementAt($e1Key, 600, 2, self::NOW);
+                self::assertSame(3, $view->get($e1Key)?->value);
+                self::assertSame(1, $viewCopy->bumpBindingEpoch($epochKey));
+                self::assertTrue($viewCopy->reserveAdmission($cancelReq, self::NOW)->admitted);
+                self::assertSame($before, $this->snapshot(), 'Oracle sees no early writes before commit');
+
+                throw $sentinelD;
             });
         } catch (\RuntimeException $e) {
-            self::assertSame('sentinel-view-cancel', $e->getMessage());
+            $caughtD = $e;
         }
+        self::assertSame($sentinelD, $caughtD);
         self::assertSame($before, $this->snapshot());
+        self::assertInstanceOf(RedisFullCapabilityStore::class, $view);
+        self::assertInstanceOf(RedisFullCapabilityStore::class, $viewCopy);
 
-        $original->transactRequest(static function () use ($original, $viewCopy, $e1Key): void {
+        // 2. Committing one transaction across root, view, and copy of view saves atomically in 1 commit.
+        $traceStart = count($trace);
+        $commitScope = new AdmissionScopeDTO('src', AdmissionScopeKindEnum::COUNTER, 'c-view-commit', 5, 600, null, 'p-view-commit');
+        $commitReq = new AdmissionReservationRequestDTO('login', [$commitScope], new AdmissionPermitDTO('p-view-commit', 'U', 'subj-d', 'login', self::NOW + 30, 600));
+        $original->transactRequest(function () use ($original, $view, $viewCopy, $e1Key, $epochKey, $commitReq, $before): void {
             $original->incrementAt('v1-shared-commit', 600, 1, self::NOW);
-            $viewCopy->incrementAt($e1Key, 600, 1, self::NOW);
+            $view->incrementAt($e1Key, 600, 1, self::NOW);
+            $viewCopy->incrementAt($e1Key, 600, 2, self::NOW);
+            self::assertSame(1, $viewCopy->bumpBindingEpoch($epochKey));
+            self::assertTrue($viewCopy->reserveAdmission($commitReq, self::NOW)->admitted);
+            self::assertSame($before, $this->snapshot());
         });
-        self::assertSame(1, $original->get('v1-shared-commit')?->value);
-        self::assertSame(1, $view->get($e1Key)?->value);
+        $commits = array_values(array_filter(array_slice($trace, $traceStart), static fn(array $cmd): bool => OverlayWire::isCommit($cmd)));
+        self::assertCount(1, $commits, 'Root, view, and copy of view must share one atomic commit');
+
+        $admOps = new \Maatify\RateLimiter\Repository\Redis\RedisAdmissionOperations($this->admin, self::NAMESPACE);
+        $physV1 = self::v1Prefix() . 'score:' . hash('sha256', 'v1-shared-commit');
+        $physE1 = self::e1Prefix() . 'score:' . hash('sha256', $e1Key);
+        $physEpoch = $admOps->epochKey($epochKey);
+        $physPermit = $admOps->permitKey('p-view-commit');
+        $physCounter = $admOps->scopeKey('login', AdmissionScopeKindEnum::COUNTER, 'c-view-commit');
+        $commitKeys = OverlayWire::keys($commits[0]);
+        self::assertContains($physV1, $commitKeys);
+        self::assertContains($physE1, $commitKeys);
+        self::assertContains($physEpoch, $commitKeys);
+        self::assertContains($physPermit, $commitKeys);
+        self::assertContains($physCounter, $commitKeys);
+
+        self::assertSame(['value' => '1', 'updatedAt' => (string) self::NOW], $this->rawHash($physV1));
+        self::assertSame(['value' => '3', 'updatedAt' => (string) self::NOW], $this->rawHash($physE1));
+        self::assertSame('1', $this->admin->execute(['GET', $physEpoch]));
+        self::assertSame('ISSUED', $this->rawHash($physPermit)['state'] ?? null);
+        self::assertSame(['p-view-commit'], $this->admin->execute(['ZRANGE', $physCounter, '0', '-1']));
+
+        $rootCopy = clone $original;
+        $rootCopyView = $rootCopy->e1Keyspace();
+        self::assertSame([$rootCopy], $rootCopyView->ownedResources(), 'View of a root copy must be bound to the root copy');
         self::assertNull($rootCopyView->get('e1.' . str_repeat('b', 64)));
     }
 }
