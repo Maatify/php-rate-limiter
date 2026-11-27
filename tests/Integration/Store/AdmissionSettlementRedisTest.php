@@ -166,23 +166,23 @@ final class AdmissionSettlementRedisTest extends AdmissionRedisGateTestCase
     public function testDetectorIgnoringTheKeepsSettledFlagFailsSettle2(): void
     {
         $port = $this->mutantPort([[
-            "if not s.keepsSettled then redis.call('ZREM', s.cur, s.member) end",
-            "redis.call('ZREM', s.cur, s.member)",
+            "if not s.keepsSettled then plan[#plan + 1] = {'ZREM', s.cur, s.member} end",
+            "plan[#plan + 1] = {'ZREM', s.cur, s.member}",
         ]]);
         self::assertNotSame(['settledKeptThenNew' => false, 'pendingCancelledThenNew' => true], Sc::keepsSettledFlag($port));
     }
 
     public function testDetectorASuccessThatRemovesADueMemberFailsSettle3(): void
     {
-        $port = $this->mutantPort([["if s.score ~= nil and s.score > now then redis.call('ZREM', s.pending, s.member) end", "redis.call('ZREM', s.pending, s.member)"]]);
+        $port = $this->mutantPort([["if s.score ~= nil and s.score > now then plan[#plan + 1] = {'ZREM', s.pending, s.member} end", "plan[#plan + 1] = {'ZREM', s.pending, s.member}"]]);
         self::assertNotSame(['dueSurvivesSuccess' => false], Sc::dueSurvivesSuccess($port));
     }
 
     public function testDetectorAPerReservationMemberCountsTwiceAndFailsSettle3(): void
     {
         $port = $this->mutantPort([[
-            "redis.call('ZADD', s.pending, 'LT', string.format('%d', s.deadline), s.member)",
-            "redis.call('ZADD', s.pending, 'LT', string.format('%d', s.deadline), s.member .. nowStr)",
+            "plan[#plan + 1] = {'ZADD', s.pending, 'LT', string.format('%d', s.deadline), s.member}",
+            "plan[#plan + 1] = {'ZADD', s.pending, 'LT', string.format('%d', s.deadline), s.member .. nowStr}",
         ]]);
         self::assertFalse(Sc::onceAndLate($port)['newAdmitted'], 'DETECTOR: a per-reservation member over-counts');
     }
