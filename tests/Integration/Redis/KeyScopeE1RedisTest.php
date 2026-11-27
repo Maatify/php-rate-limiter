@@ -1209,7 +1209,9 @@ final class KeyScopeE1RedisTest extends TestCase
         $copyAfterCancel->transactRequest(static function () use ($copyAfterCancel): void {
             $copyAfterCancel->incrementAt('copy-independent-commit', 600, 1, self::NOW);
         });
-        self::assertSame(1, $copyAfterCancel->get('copy-independent-commit')?->value);
+        $independentState = $copyAfterCancel->get('copy-independent-commit');
+        self::assertInstanceOf(\Maatify\RateLimiter\DTO\RateLimitStateDTO::class, $independentState);
+        self::assertSame(1, $independentState->value);
         self::assertNull($copyAfterCancel->get('active-orig-cancel'));
 
         $snapBeforeCopyCancel = $this->snapshot();
