@@ -40,7 +40,8 @@ interface AdmissionReservationStoreInterface extends RateLimitStoreInterface
      * @throws \Maatify\RateLimiter\Exception\AdmissionConfigurationException when the carried shared configuration
      *         differs from the registered one; nothing is reserved
      * @throws \Maatify\RateLimiter\Exception\RateLimiterException when the request or `$now` is not valid or
-     *         representable, or stored state is malformed; raised before any write
+     *         representable, stored state is malformed, or a direct Redis ACL preflight refuses a planned write command
+     *         (`NOPERM admission reservation: …`); raised before any write
      */
     public function reserveAdmission(AdmissionReservationRequestDTO $request, int $now): AdmissionReservationResultDTO;
 

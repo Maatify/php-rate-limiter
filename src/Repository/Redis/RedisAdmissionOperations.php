@@ -237,6 +237,8 @@ for i = 1, n do
       -- Every pending score enters the settled size and the membership test below.
       if not canonicalScores(prev) then return bad('pending member score is not a canonical non-negative integer') end
       s.pending = prev
+      s.pendingTtl = redis.call('TTL', prev)
+      s.pendingSurviving = redis.call('ZCOUNT', prev, '(' .. string.format('%d', now - ttl), '+inf')
       s.deadline = hasPermit and tonumber(ARGV[7]) or 0
       s.isMember = s.inSet or duePending(redis.call('ZSCORE', prev, s.member), now, ttl)
       s.card = settledSize(cur, prev, now, ttl)
@@ -318,42 +320,56 @@ for i = 1, n do
 end
 if firstRefusal then return {0, firstRefusal, longestRetry} end
 if permitExists then return {0, 0, 0} end
--- Phase 3: writes, only reached when every gate admitted.
-if cfgRegister ~= nil then redis.call('SET', cfgKey, cfgRegister) end
+-- Phase 3: derive the exact write plan from validated state, check every planned write command against the account's ACL
+-- before the first write (DEC-042 pattern), and then execute the plan in order.
+local plan = {}
+if cfgRegister ~= nil then
+  plan[#plan + 1] = {'SET', cfgKey, cfgRegister}
+end
 for i = 1, n do
   local s = sc[i]
   if s.kind == 'c' then
-    redis.call('ZREMRANGEBYSCORE', s.cur, '-inf', nowStr)
-    redis.call('ZADD', s.cur, string.format('%d', now + s.ttl), s.member)
-    redis.call('EXPIRE', s.cur, s.ttl)
+    plan[#plan + 1] = {'ZREMRANGEBYSCORE', s.cur, '-inf', nowStr}
+    plan[#plan + 1] = {'ZADD', s.cur, string.format('%d', now + s.ttl), s.member}
+    plan[#plan + 1] = {'EXPIRE', s.cur, s.ttl}
   elseif s.kind == 'd' then
     if not s.exists then
-      redis.call('ZREMRANGEBYSCORE', s.cur, '-inf', nowStr)
-      redis.call('ZADD', s.cur, string.format('%d', now + s.ttl), s.member)
-      redis.call('EXPIRE', s.cur, s.ttl)
+      plan[#plan + 1] = {'ZREMRANGEBYSCORE', s.cur, '-inf', nowStr}
+      plan[#plan + 1] = {'ZADD', s.cur, string.format('%d', now + s.ttl), s.member}
+      plan[#plan + 1] = {'EXPIRE', s.cur, s.ttl}
     end
   elseif s.kind == 's' then
     if hasPermit and s.settles and not s.inSet then
-      redis.call('ZREMRANGEBYSCORE', s.pending, '-inf', string.format('%d', now - s.ttl))
-      redis.call('ZADD', s.pending, 'LT', string.format('%d', s.deadline), s.member)
       local life = s.deadline - now + s.ttl
       if life < 1 then life = 1 end
-      if redis.call('TTL', s.pending) < life then redis.call('EXPIRE', s.pending, string.format('%d', life)) end
+      plan[#plan + 1] = {'ZREMRANGEBYSCORE', s.pending, '-inf', string.format('%d', now - s.ttl)}
+      plan[#plan + 1] = {'ZADD', s.pending, 'LT', string.format('%d', s.deadline), s.member}
+      if s.pendingSurviving == 0 or s.pendingTtl < life then
+        plan[#plan + 1] = {'EXPIRE', s.pending, string.format('%d', life)}
+      end
     end
   elseif s.kind == 'b' then
     local remaining = s.credit - s.ttl
-    redis.call('HSET', s.cur, 'credit', string.format('%d', remaining), 'last', nowStr)
+    plan[#plan + 1] = {'HSET', s.cur, 'credit', string.format('%d', remaining), 'last', nowStr}
     local untilFull = s.full - remaining
     if untilFull < 1 then untilFull = 1 end
-    redis.call('EXPIRE', s.cur, string.format('%d', untilFull))
+    plan[#plan + 1] = {'EXPIRE', s.cur, string.format('%d', untilFull)}
   end
 end
 if hasPermit then
-  redis.call('HSET', permitKey, 'state', 'ISSUED', 'lane', ARGV[4], 'subject', ARGV[5], 'operation', ARGV[6], 'deadline', ARGV[7], 'grace', ARGV[8])
+  plan[#plan + 1] = {'HSET', permitKey, 'state', 'ISSUED', 'lane', ARGV[4], 'subject', ARGV[5], 'operation', ARGV[6], 'deadline', ARGV[7], 'grace', ARGV[8]}
   local life = tonumber(ARGV[7]) + tonumber(ARGV[8]) - now
   if life < 1 then life = 1 end
-  redis.call('EXPIRE', permitKey, string.format('%d', life))
+  plan[#plan + 1] = {'EXPIRE', permitKey, string.format('%d', life)}
 end
+if redis.acl_check_cmd then
+  for index, op in ipairs(plan) do
+    if not redis.acl_check_cmd(unpack(op)) then
+      return redis.error_reply('NOPERM admission reservation: the account may not run ' .. op[1] .. ' (plan step ' .. index .. ' of ' .. #plan .. ')')
+    end
+  end
+end
+for _, op in ipairs(plan) do redis.call(unpack(op)) end
 return {1, 0, 0}
 LUA;
 
@@ -398,37 +414,48 @@ for i = 1, n do
   end
   sc[i] = s
 end
--- Phase 2: apply. A failure settles its member; a success cancels a pending member that is not yet due, removes a settled
--- one unless the scope keeps it, and refunds counters and the bucket. A success never removes a due pending member.
+-- Phase 2: derive the exact write plan from validated state, check every planned write command against the account's ACL
+-- before the first write (DEC-042 pattern), and then execute the plan in order. A failure settles its member; a success
+-- cancels a pending member that is not yet due, removes a settled one unless the scope keeps it, and refunds counters and
+-- the bucket. A success never removes a due pending member.
+local plan = {}
 for i = 1, n do
   local s = sc[i]
   if s.kind == 's' then
     if success then
       if s.settlesOut then
-        if not s.keepsSettled then redis.call('ZREM', s.cur, s.member) end
-        if s.score ~= nil and s.score > now then redis.call('ZREM', s.pending, s.member) end
+        if not s.keepsSettled then plan[#plan + 1] = {'ZREM', s.cur, s.member} end
+        if s.score ~= nil and s.score > now then plan[#plan + 1] = {'ZREM', s.pending, s.member} end
       else
-        redis.call('ZREM', s.cur, s.member)
+        plan[#plan + 1] = {'ZREM', s.cur, s.member}
       end
     else
-      redis.call('ZREMRANGEBYSCORE', s.cur, '-inf', nowStr)
-      redis.call('ZADD', s.cur, string.format('%d', now + s.ttl), s.member)
-      redis.call('EXPIRE', s.cur, s.ttl)
-      if s.settlesOut then redis.call('ZREM', s.pending, s.member) end
+      plan[#plan + 1] = {'ZREMRANGEBYSCORE', s.cur, '-inf', nowStr}
+      plan[#plan + 1] = {'ZADD', s.cur, string.format('%d', now + s.ttl), s.member}
+      plan[#plan + 1] = {'EXPIRE', s.cur, string.format('%d', s.ttl)}
+      if s.settlesOut then plan[#plan + 1] = {'ZREM', s.pending, s.member} end
     end
   elseif s.kind == 'c' and (success or s.keepsSettled) then
     -- For a counter the flag slot is `releasesOnFailure`: the pending-permit slot is freed by either outcome (#206).
-    if s.member ~= '' then redis.call('ZREM', s.cur, s.member) end
+    if s.member ~= '' then plan[#plan + 1] = {'ZREM', s.cur, s.member} end
   elseif s.kind == 'b' and success and s.present then
     local credit = s.credit + s.ttl
     if credit >= s.full then
-      redis.call('DEL', s.cur)
+      plan[#plan + 1] = {'DEL', s.cur}
     else
-      redis.call('HSET', s.cur, 'credit', string.format('%d', credit), 'last', nowStr)
-      redis.call('EXPIRE', s.cur, string.format('%d', s.full - credit))
+      plan[#plan + 1] = {'HSET', s.cur, 'credit', string.format('%d', credit), 'last', nowStr}
+      plan[#plan + 1] = {'EXPIRE', s.cur, string.format('%d', s.full - credit)}
     end
   end
 end
+if redis.acl_check_cmd then
+  for index, op in ipairs(plan) do
+    if not redis.acl_check_cmd(unpack(op)) then
+      return redis.error_reply('NOPERM admission outcome: the account may not run ' .. op[1] .. ' (plan step ' .. index .. ' of ' .. #plan .. ')')
+    end
+  end
+end
+for _, op in ipairs(plan) do redis.call(unpack(op)) end
 return 1
 LUA;
 
