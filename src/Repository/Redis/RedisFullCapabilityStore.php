@@ -1961,11 +1961,20 @@ LUA;
     }
 
     /**
-     * F295-01: a copy of a store is its own store, so it never inherits the E1 view of the original (that view writes through the original's
-     * request state). A copy of a view stays a view of the same root.
+     * F295-01 / F-G4-05: a copy of a store is its own store, so it never inherits the E1 view
+     * or any transient request state or lazy request-bound helpers (`$admission`,
+     * `$outcomeAdmission`, `$requestState`, `$requestBackendFailure`) of the original.
+     *
+     * A copy of an E1 view stays a view of the same root (`$this->root !== null` keeps
+     * `$this->e1View` cleared only on root copies). Sharing the underlying Redis executor
+     * does not provide an independent Redis connection or support interleaved connection I/O.
      */
     public function __clone()
     {
+        $this->admission = null;
+        $this->outcomeAdmission = null;
+        $this->requestState = null;
+        $this->requestBackendFailure = null;
         if ($this->root === null) {
             $this->e1View = null;
         }

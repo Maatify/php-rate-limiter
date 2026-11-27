@@ -299,6 +299,13 @@ D-4 approved **(a)**, the **view bound to the E1 layout of the same store instan
 with a new method surface, because the existing methods accept `string` under `strict_types`. AC-9 verifies the shared
 transaction and ownership on the accepted view.
 
+Cloning a root store produces an independent store instance: `__clone()` resets its E1 view cache (`e1View`), transient
+request state (`requestState`, `requestBackendFailure`), and lazy request-bound helpers (`admission`, `outcomeAdmission`)
+so the copy owns its own request lifecycle and never inherits an active overlay or ownership from the original. Cloning
+an E1 view keeps it bound to the same root (`root !== null`). Sharing the underlying Redis executor between a store and
+its clone does not combine them into one transaction or provide an independent Redis connection or support interleaved
+connection I/O.
+
 Consequences checked across E1 and G2 (`DEC-047`): every Set A key exists only under `…:e1:…` and never under `…:v1:…`;
 non-account `f1` keys (`K1–K3`, correlation, adaptive IPv6, and Set B outer keys under `DEC-047`) stay under `…:v1:…`;
 simple fixed-window keys keep byte-identical `v1:budget` keys; and a direct-call differential (invariant 1) shows that
