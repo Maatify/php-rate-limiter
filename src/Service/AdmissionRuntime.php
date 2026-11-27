@@ -63,6 +63,15 @@ final class AdmissionRuntime implements OwnedResources
 
     private readonly AdmissionKeyDeriver $keys;
 
+    /**
+     * Construct the internal admission runtime for a policy opting into `ADMISSION_RESERVATION`.
+     *
+     * Requires a non-blank `$keySecret`, an optional non-blank `$previousKeySecret`, and a valid trust context
+     * (`$envScope`, `$admissionTrustDomain`, `$admissionStateSecret` >= 32 bytes) whose derived `cohort()` matches
+     * `$codec->cohort()`.
+     *
+     * @throws RateLimiterException when a key secret is blank, the trust context/state secret is invalid, or `$codec` cohort mismatches.
+     */
     public function __construct(
         private readonly AtomicAdmissionPermitStoreInterface $store,
         private readonly AdmissionCredentialCodec $codec,
@@ -392,10 +401,12 @@ final class AdmissionRuntime implements OwnedResources
     }
 
     /**
-     * The scopes that free the pending-permit slot of an accepted outcome, whichever outcome it is (#206, DEC-049). A permit
-     * reserved before an outer key-secret rotation holds its member under the previous outer secret's key, where the outcome's
-     * current-generation scope does not look: with a previous outer secret configured the same slot is also released under that
-     * key.
+     * The scopes that free the pending-permit slot of an accepted outcome, whichever outcome it is (#206, DEC-049).
+     *
+     * Invariant: release once per distinct derived key. A permit reserved before an outer key-secret rotation holds its
+     * member under the previous outer secret's derived key, where the current-generation scope does not look; when
+     * `previousKey` is null or aliases `current->key` (for example identical or HMAC-equivalent NUL-padded secrets),
+     * only the current scope is returned so the outcome script never names the same scope key twice.
      *
      * @return list<AdmissionScopeDTO>
      */
@@ -405,7 +416,8 @@ final class AdmissionRuntime implements OwnedResources
         if ($current === null) {
             return [];
         }
-        if ($this->previousKeySecret === null) {
+        $previousKey = $current->previousKey;
+        if ($previousKey === null || $previousKey === $current->key) {
             return [$current];
         }
 
@@ -414,7 +426,7 @@ final class AdmissionRuntime implements OwnedResources
             new AdmissionScopeDTO(
                 $current->name,
                 AdmissionScopeKindEnum::COUNTER,
-                $this->key($group, AdmissionScopePurpose::PPEND, SourcePrefix::of($context->ip), '', $this->previousKeySecret),
+                $previousKey,
                 $current->capacity,
                 $current->ttlSeconds,
                 null,

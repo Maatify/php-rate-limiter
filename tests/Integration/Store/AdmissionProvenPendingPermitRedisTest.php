@@ -12,12 +12,16 @@ use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Service\AdmissionCredentialCodec;
 use Maatify\RateLimiter\Service\AdmissionFenceControlInterface;
+use Maatify\RateLimiter\Service\AdmissionKeyDeriver;
+use Maatify\RateLimiter\Service\AdmissionScopePurpose;
 use Maatify\RateLimiter\Service\CompositeRateLimiterRuntimeInterface;
+use Maatify\RateLimiter\Service\SourcePrefix;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceRunner;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceSpec;
 use Maatify\RateLimiter\Tests\Support\Admission\PublicRedisAdmissionFixture;
 use Maatify\RateLimiter\Tests\Support\Admission\ReplyValue;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
+use Maatify\RateLimiter\Tests\Support\Redis\StateSnapshot;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -198,6 +202,84 @@ final class AdmissionProvenPendingPermitRedisTest extends AdmissionRedisGateTest
         }
         self::assertSame(3, $this->pendingMembers(), 'source A holds nothing, source B still holds its three');
         self::assertTrue($this->check($runtime, 'a4', self::SOURCE_A)->isAllowed(), 'three recorded failures + the refused a4 attempt do not exhaust the cap of 4');
+    }
+
+    /** @return iterable<string, array{0: string, 1: bool}> */
+    public static function aliasCases(): iterable
+    {
+        yield 'identical previous key secret, success' => ['redis-gate-key', true];
+        yield 'identical previous key secret, failure' => ['redis-gate-key', false];
+        yield 'NUL-padded HMAC-equivalent previous key secret, success' => ["redis-gate-key\0", true];
+        yield 'NUL-padded HMAC-equivalent previous key secret, failure' => ["redis-gate-key\0", false];
+    }
+
+    #[DataProvider('aliasCases')]
+    #[Group('php32')]
+    public function testCurrentAndPreviousAliasReleasesPendingSlotOnceOnSettlement(string $previousKeySecret, bool $success): void
+    {
+        // Independent assertion: current and previous secrets derive the exact same ppend key.
+        $deriver = new AdmissionKeyDeriver(
+            PublicRedisAdmissionFixture::ENV,
+            PublicRedisAdmissionFixture::TRUST_DOMAIN,
+            PublicRedisAdmissionFixture::STATE_SECRET,
+        );
+        $sourceKey = SourcePrefix::of(self::SOURCE_A);
+        $currentDerived = $deriver->scopeKey('login', AdmissionScopePurpose::PPEND, $sourceKey, '', 'redis-gate-key');
+        $previousDerived = $deriver->scopeKey('login', AdmissionScopePurpose::PPEND, $sourceKey, '', $previousKeySecret);
+        self::assertSame($currentDerived, $previousDerived, 'Fixture current/previous secrets must derive the same ppend key');
+
+        $config = new RateLimiterConfig(
+            'redis-gate-key',
+            'redis-gate-fingerprint',
+            PublicRedisAdmissionFixture::ENV,
+            $previousKeySecret,
+            bindingKeySecret: PublicRedisAdmissionFixture::BINDING_SECRET,
+            admissionTrustDomain: PublicRedisAdmissionFixture::TRUST_DOMAIN,
+            admissionStateSecret: PublicRedisAdmissionFixture::STATE_SECRET,
+        );
+        $runtime = PublicRedisAdmissionFixture::build($this->executor, self::NAMESPACE, self::NOW, 500, 1, $this->clock, $config);
+        $this->open($runtime);
+
+        $a = $this->check($runtime, 'acct-a');
+        self::assertTrue($a->isAllowed());
+        self::assertNotNull($a->metadata?->permit);
+        self::assertSame(1, $this->pendingMembers());
+
+        $beforeRefusal = StateSnapshot::all($this->executor);
+        $refused = $this->check($runtime, 'acct-b');
+        self::assertFalse($refused->isAllowed());
+        self::assertSame(self::CAUSE, self::causeOf($refused));
+        self::assertSame($beforeRefusal, StateSnapshot::all($this->executor), 'Refused second slot must leave Redis unchanged');
+
+        $settled = $this->settle($runtime, 'acct-a', $a, $success);
+        self::assertTrue($settled->isAllowed(), 'Valid permit P before deadline must settle cleanly even with alias previousKeySecret');
+        self::assertSame(0, $this->pendingMembers(), 'Target pending member must be released');
+
+        $dumpAfterSettle = $this->dump();
+        $permitKeys = array_values(array_filter(array_keys($dumpAfterSettle), static fn(string $k): bool => str_contains((string) $k, ':adm:a1:permit:')));
+        self::assertCount(1, $permitKeys);
+        $permitKey = (string) $permitKeys[0];
+        self::assertSame('CLAIMED', $this->raw('HGET', $permitKey, 'state'));
+        self::assertSame($success ? 'success' : 'failure', $this->raw('HGET', $permitKey, 'outcome'));
+        $failureSetKeys = array_values(array_filter(array_keys($dumpAfterSettle), static fn(string $k): bool => str_contains((string) $k, ':adm:a1:s:')));
+        if ($success) {
+            self::assertSame([], $failureSetKeys);
+        } else {
+            self::assertNotEmpty($failureSetKeys);
+        }
+
+        // New slot is now available for a fresh reservation.
+        $b = $this->check($runtime, 'acct-b');
+        self::assertTrue($b->isAllowed(), 'Freed slot must admit a new reservation');
+        self::assertSame(1, $this->pendingMembers());
+
+        // Replaying same and conflicting outcomes must not free a slot or mutate Redis.
+        $beforeReplay = StateSnapshot::all($this->executor);
+        self::assertSame('permit_duplicate', self::causeOf($this->settle($runtime, 'acct-a', $a, $success)));
+        self::assertSame($beforeReplay, StateSnapshot::all($this->executor));
+        self::assertSame('permit_conflict', self::causeOf($this->settle($runtime, 'acct-a', $a, ! $success)));
+        self::assertSame($beforeReplay, StateSnapshot::all($this->executor));
+        self::assertSame(1, $this->pendingMembers());
     }
 
     /** The refusal or permit cause of a result; read through one helper so the nullability is the declared one on every PHPStan version. */
