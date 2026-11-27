@@ -1135,6 +1135,9 @@ final class FiberRequestOwnershipRedisTest extends TestCase
         $physPermitB3 = $admOps->permitKey('p-claim-b3-dec037');
         $physCounterB3 = $admOps->scopeKey('login', AdmissionScopeKindEnum::COUNTER, 'c-b3-2');
         $beforeB3Permit = $this->rawHash($physPermitB3);
+        $beforeB3PermitPexpiretime = $this->oracle->execute(['PEXPIRETIME', $physPermitB3]);
+        self::assertTrue(is_int($beforeB3PermitPexpiretime) || is_string($beforeB3PermitPexpiretime));
+        self::assertGreaterThan(0, (float) $beforeB3PermitPexpiretime);
         self::assertSame('ISSUED', $beforeB3Permit['state'] ?? null);
         self::assertNotNull($this->oracle->execute(['ZSCORE', $physCounterB3, 'p-claim-b3-dec037']));
         $beforeB3Snap = $this->snapshot();
@@ -1159,17 +1162,15 @@ final class FiberRequestOwnershipRedisTest extends TestCase
         self::assertNotContains($v1Prefix . 'score:' . hash('sha256', 'held-b3-cancel'), $this->keyNames());
 
         $afterB3Permit = $this->rawHash($physPermitB3);
-        self::assertSame('CLAIMED', $afterB3Permit['state'] ?? null);
-        self::assertSame('success', $afterB3Permit['outcome'] ?? null);
-        self::assertSame($beforeB3Permit['lane'], $afterB3Permit['lane'] ?? null);
-        self::assertSame($beforeB3Permit['subject'], $afterB3Permit['subject'] ?? null);
-        self::assertSame($beforeB3Permit['operation'], $afterB3Permit['operation'] ?? null);
-        self::assertSame($beforeB3Permit['deadline'], $afterB3Permit['deadline'] ?? null);
-        self::assertSame($beforeB3Permit['grace'], $afterB3Permit['grace'] ?? null);
-        $b3PermitPttl = $this->oracle->execute(['PTTL', $physPermitB3]);
-        self::assertIsInt($b3PermitPttl);
-        self::assertGreaterThan(0, $b3PermitPttl);
+        $expectedAfterB3Permit = $beforeB3Permit;
+        $expectedAfterB3Permit['state'] = 'CLAIMED';
+        $expectedAfterB3Permit['outcome'] = 'success';
+        ksort($expectedAfterB3Permit);
+        ksort($afterB3Permit);
+        self::assertSame($expectedAfterB3Permit, $afterB3Permit);
+        self::assertSame($beforeB3PermitPexpiretime, $this->oracle->execute(['PEXPIRETIME', $physPermitB3]), 'Permit PEXPIRETIME must be preserved exactly on settlement');
         self::assertNull($this->oracle->execute(['ZSCORE', $physCounterB3, 'p-claim-b3-dec037']), 'Pending counter member must be released on claim');
+        self::assertSame(0, $this->oracle->execute(['EXISTS', $physCounterB3]), 'Counter key with sole member must disappear after release');
 
         $afterB3Snap = $this->snapshot();
         $beforeUntouched = $beforeB3Snap;

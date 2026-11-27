@@ -1219,6 +1219,7 @@ final class KeyScopeE1RedisTest extends TestCase
         self::assertLessThanOrEqual(630_000, $permitPttl);
 
         self::assertSame(['p-warm-commit'], $this->admin->execute(['ZRANGE', $physCounter, '0', '-1']));
+        self::assertSame((string) (self::NOW + 600), $this->admin->execute(['ZSCORE', $physCounter, 'p-warm-commit']));
         $counterPttl = $this->admin->execute(['PTTL', $physCounter]);
         self::assertIsInt($counterPttl);
         self::assertGreaterThan(0, $counterPttl);
@@ -1249,13 +1250,14 @@ final class KeyScopeE1RedisTest extends TestCase
     public function testActiveRootCopyNeverInheritsOverlayOrBackendFailureState(): void
     {
         $trace = [];
+        $backendFailureSentinel = new BackendFailureException('synthetic backend failure');
         $failureSwitch = new class {
             public bool $fail = false;
         };
-        $executor = new CallableRedisCommandExecutor(function (array $command) use (&$trace, $failureSwitch): mixed {
+        $executor = new CallableRedisCommandExecutor(function (array $command) use (&$trace, $failureSwitch, $backendFailureSentinel): mixed {
             $trace[] = $command;
             if ($failureSwitch->fail) {
-                throw new BackendFailureException('synthetic backend failure');
+                throw $backendFailureSentinel;
             }
 
             return $this->admin->execute($command);
@@ -1333,7 +1335,7 @@ final class KeyScopeE1RedisTest extends TestCase
         $beforeFailure = $this->snapshot();
         $caughtFailure = null;
         try {
-            $original->transactRequest(function () use ($original, $failureSwitch, &$copyAfterFailure): void {
+            $original->transactRequest(function () use ($original, $failureSwitch, $backendFailureSentinel, &$copyAfterFailure): void {
                 $original->incrementAt('orig-before-fail', 600, 1, self::NOW);
                 $failureSwitch->fail = true;
                 $caughtInner = null;
@@ -1344,14 +1346,14 @@ final class KeyScopeE1RedisTest extends TestCase
                 } finally {
                     $failureSwitch->fail = false;
                 }
-                self::assertInstanceOf(BackendFailureException::class, $caughtInner);
+                self::assertSame($backendFailureSentinel, $caughtInner);
                 // requestBackendFailure is now recorded on $original before cloning.
                 $copyAfterFailure = clone $original;
             });
         } catch (\Throwable $e) {
             $caughtFailure = $e;
         }
-        self::assertInstanceOf(BackendFailureException::class, $caughtFailure);
+        self::assertSame($backendFailureSentinel, $caughtFailure);
         self::assertSame($beforeFailure, $this->snapshot(), 'Failed original request must leave Redis unchanged');
         self::assertInstanceOf(RedisFullCapabilityStore::class, $copyAfterFailure);
         self::assertNull($copyAfterFailure->get('orig-before-fail'));
@@ -1456,6 +1458,7 @@ final class KeyScopeE1RedisTest extends TestCase
         self::assertSame('1', $this->admin->execute(['GET', $physEpoch]));
         self::assertSame('ISSUED', $this->rawHash($physPermit)['state'] ?? null);
         self::assertSame(['p-view-commit'], $this->admin->execute(['ZRANGE', $physCounter, '0', '-1']));
+        self::assertSame((string) (self::NOW + 600), $this->admin->execute(['ZSCORE', $physCounter, 'p-view-commit']));
 
         $rootCopy = clone $original;
         $rootCopyView = $rootCopy->e1Keyspace();
