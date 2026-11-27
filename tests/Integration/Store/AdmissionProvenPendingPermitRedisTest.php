@@ -19,7 +19,6 @@ use Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver;
 use Maatify\RateLimiter\Service\SourcePrefix;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceRunner;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceSpec;
-use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRedisDump;
 use Maatify\RateLimiter\Tests\Support\Admission\PublicRedisAdmissionFixture;
 use Maatify\RateLimiter\Tests\Support\Admission\ReplyValue;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
@@ -264,14 +263,12 @@ final class AdmissionProvenPendingPermitRedisTest extends AdmissionRedisGateTest
 
         $beforeSettle = $this->dump();
         $snapBeforeSettle = StateSnapshot::all($this->executor);
-        $pttlBefore = AdmissionRedisDump::pttl($this->executor);
         $settled = $this->settle($runtime, 'acct-a', $a, $success);
         self::assertTrue($settled->isAllowed(), 'Valid permit P before deadline must settle cleanly even with alias previousKeySecret');
         $afterSettle = $this->dump();
         $snapAfterSettle = StateSnapshot::all($this->executor);
-        $pttlAfter = AdmissionRedisDump::pttl($this->executor);
 
-        // Exact permit claimed; unrelated control permit remains ISSUED and unchanged.
+        // Exact permit claimed: only `state` and `outcome` change, and PEXPIRETIME is preserved.
         $beforePermitVal = $beforeSettle[$aArtifacts['permitKey']]['value'];
         $afterPermitVal = $afterSettle[$aArtifacts['permitKey']]['value'];
         self::assertIsArray($beforePermitVal);
@@ -279,43 +276,65 @@ final class AdmissionProvenPendingPermitRedisTest extends AdmissionRedisGateTest
         self::assertSame('ISSUED', $beforePermitVal['state'] ?? null);
         self::assertSame('CLAIMED', $afterPermitVal['state'] ?? null);
         self::assertSame($success ? 'success' : 'failure', $afterPermitVal['outcome'] ?? null);
-        self::assertSame($snapBeforeSettle[$ctrlArtifacts['permitKey']], $snapAfterSettle[$ctrlArtifacts['permitKey']], 'Control permit must not be mutated');
-        foreach ($ctrlArtifacts['namedCounterKeys'] as $ctrlPurpose => $ctrlKey) {
-            self::assertSame($snapBeforeSettle[$ctrlKey], $snapAfterSettle[$ctrlKey], "Control counter {$ctrlPurpose} must not be mutated");
-        }
+        unset($beforePermitVal['state'], $afterPermitVal['state'], $afterPermitVal['outcome']);
+        self::assertSame($beforePermitVal, $afterPermitVal, 'Permit fields other than state/outcome must remain unchanged');
+        self::assertSame(
+            $this->snapshotPexpire($snapBeforeSettle[$aArtifacts['permitKey']]),
+            $this->snapshotPexpire($snapAfterSettle[$aArtifacts['permitKey']]),
+            'Claimed permit PEXPIRETIME must remain unchanged',
+        );
+
+        $pFailSetKey = $this->deriveAdmSetKey(AdmissionScopePurpose::PFAIL, self::SOURCE_A, 'redis-gate-key');
+        $allowedAdmChanges = $success
+            ? array_merge([$aArtifacts['permitKey']], array_values($aArtifacts['namedCounterKeys']))
+            : [$aArtifacts['permitKey'], $aArtifacts['namedCounterKeys'][AdmissionScopePurpose::PPEND], $pFailSetKey];
+
+        self::assertSame(
+            $this->admSnapshotExcluding($snapBeforeSettle, $allowedAdmChanges),
+            $this->admSnapshotExcluding($snapAfterSettle, $allowedAdmChanges),
+            'Every other :adm:a1: key (including control PDEV, cfg, fence, and preserved proof counters) must keep identical DUMP and PEXPIRETIME',
+        );
 
         if ($success) {
             foreach ($aArtifacts['namedCounterKeys'] as $purpose => $counterKey) {
-                self::assertArrayHasKey($aArtifacts['memberId'], $this->zsetMembers($beforeSettle, $counterKey));
-                self::assertArrayNotHasKey($aArtifacts['memberId'], $this->zsetMembers($afterSettle, $counterKey), "Success must remove target member from {$purpose}");
+                $expectedMembers = $this->zsetMembers($beforeSettle, $counterKey);
+                self::assertArrayHasKey($aArtifacts['memberId'], $expectedMembers);
+                unset($expectedMembers[$aArtifacts['memberId']]);
+                self::assertSame($expectedMembers, $this->zsetMembers($afterSettle, $counterKey), "Success must remove only target member from {$purpose}");
+                if ($expectedMembers === []) {
+                    self::assertArrayNotHasKey($counterKey, $afterSettle, "Empty {$purpose} ZSET key must be removed");
+                }
             }
-            self::assertSame($this->admSetKeys($beforeSettle), $this->admSetKeys($afterSettle), 'Success must not mutate failure sets');
-            self::assertSame($this->e1ScoreKeys($beforeSettle), $this->e1ScoreKeys($afterSettle), 'Success must not write E1 scores');
+            self::assertSame(
+                $this->e1Snapshot($snapBeforeSettle),
+                $this->e1Snapshot($snapAfterSettle),
+                'Success must not write or re-expire any E1 score/budget key',
+            );
         } else {
             $ppendKey = $aArtifacts['namedCounterKeys'][AdmissionScopePurpose::PPEND];
-            self::assertArrayNotHasKey($aArtifacts['memberId'], $this->zsetMembers($afterSettle, $ppendKey), 'Failure must remove target member from ppend');
-            foreach ([AdmissionScopePurpose::PACCT, AdmissionScopePurpose::PACCTD, AdmissionScopePurpose::PPROOF, AdmissionScopePurpose::PPROOFD] as $proofPurpose) {
-                $proofKey = $aArtifacts['namedCounterKeys'][$proofPurpose];
-                self::assertArrayHasKey($aArtifacts['memberId'], $this->zsetMembers($afterSettle, $proofKey), "Failure must preserve member in {$proofPurpose}");
-                self::assertSame($snapBeforeSettle[$proofKey], $snapAfterSettle[$proofKey], "Failure must preserve {$proofPurpose} DUMP and PEXPIRETIME");
-                self::assertLessThanOrEqual($pttlBefore[$proofKey], $pttlAfter[$proofKey]);
+            $expectedPpendMembers = $this->zsetMembers($beforeSettle, $ppendKey);
+            self::assertArrayHasKey($aArtifacts['memberId'], $expectedPpendMembers);
+            unset($expectedPpendMembers[$aArtifacts['memberId']]);
+            self::assertSame($expectedPpendMembers, $this->zsetMembers($afterSettle, $ppendKey), 'Failure must remove only target member from ppend');
+            if ($expectedPpendMembers === []) {
+                self::assertArrayNotHasKey($ppendKey, $afterSettle, 'Empty ppend ZSET key must be removed');
             }
 
-            $pFailSetKey = $this->deriveAdmSetKey(AdmissionScopePurpose::PFAIL, self::SOURCE_A, 'redis-gate-key');
             $pFailMember = $this->deriveAdmMember('acct-a', 'redis-gate-key');
-            $afterFailMembers = $this->zsetMembers($afterSettle, $pFailSetKey);
-            self::assertArrayHasKey($pFailMember, $afterFailMembers);
-            self::assertIsScalar($afterFailMembers[$pFailMember]);
-            self::assertSame((string) (self::NOW + 600), (string) $afterFailMembers[$pFailMember]);
+            $expectedFailMembers = $this->zsetMembers($beforeSettle, $pFailSetKey);
+            $expectedFailMembers[$pFailMember] = (string) (self::NOW + 600);
+            self::assertSame($expectedFailMembers, $this->zsetMembers($afterSettle, $pFailSetKey), 'Failure must add only expected member with NOW+600 expiry to pfail');
 
             $k4pKey = $this->deriveE1ScoreKey('k4p', 'acct-a', 'redis-gate-key');
             $k4WrongKey = $this->deriveE1ScoreKey('k4', 'acct-a', 'redis-gate-key');
+            $ctrlK4pKey = $this->deriveE1ScoreKey('k4p', 'acct-ctrl', 'redis-gate-key');
             $beforeRaw = is_array($beforeSettle[$k4pKey]['value'] ?? null) ? ($beforeSettle[$k4pKey]['value']['value'] ?? 0) : 0;
             $afterRaw = is_array($afterSettle[$k4pKey]['value'] ?? null) ? ($afterSettle[$k4pKey]['value']['value'] ?? 0) : 0;
             $beforeScore = is_numeric($beforeRaw) ? (int) $beforeRaw : 0;
             $afterScore = is_numeric($afterRaw) ? (int) $afterRaw : 0;
             self::assertSame(3, $afterScore - $beforeScore, 'Failure must increment K4P by exact delta 3');
-            self::assertSame($beforeSettle[$k4WrongKey] ?? null, $afterSettle[$k4WrongKey] ?? null, 'Wrong-lane K4 must remain untouched');
+            self::assertSame($snapBeforeSettle[$k4WrongKey] ?? null, $snapAfterSettle[$k4WrongKey] ?? null, 'Wrong-lane K4 must remain untouched');
+            self::assertSame($snapBeforeSettle[$ctrlK4pKey] ?? null, $snapAfterSettle[$ctrlK4pKey] ?? null, 'Control account K4P must remain untouched');
         }
 
         // New slot on SOURCE_A is now available for a fresh reservation.
@@ -553,20 +572,37 @@ final class AdmissionProvenPendingPermitRedisTest extends AdmissionRedisGateTest
     }
 
     /**
-     * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $dump
-     * @return array<string, array{type: string, value: mixed, hasTtl: bool}>
+     * @param array<string, string> $snapshot
+     * @param list<string> $excludedKeys
+     * @return array<string, string>
      */
-    private function admSetKeys(array $dump): array
+    private function admSnapshotExcluding(array $snapshot, array $excludedKeys): array
     {
-        return array_filter($dump, static fn(string $k): bool => str_contains($k, ':adm:a1:s:'), ARRAY_FILTER_USE_KEY);
+        return array_filter(
+            $snapshot,
+            static fn(string $k): bool => str_contains($k, ':adm:a1:') && ! in_array($k, $excludedKeys, true),
+            ARRAY_FILTER_USE_KEY,
+        );
     }
 
     /**
-     * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $dump
-     * @return array<string, array{type: string, value: mixed, hasTtl: bool}>
+     * @param array<string, string> $snapshot
+     * @return array<string, string>
      */
-    private function e1ScoreKeys(array $dump): array
+    private function e1Snapshot(array $snapshot): array
     {
-        return array_filter($dump, static fn(string $k): bool => str_contains($k, ':score:'), ARRAY_FILTER_USE_KEY);
+        return array_filter(
+            $snapshot,
+            static fn(string $k): bool => str_contains($k, ':e1:'),
+            ARRAY_FILTER_USE_KEY,
+        );
+    }
+
+    private function snapshotPexpire(string $snapshotValue): string
+    {
+        $pos = strrpos($snapshotValue, '@');
+        self::assertNotFalse($pos);
+
+        return substr($snapshotValue, $pos + 1);
     }
 }
