@@ -831,11 +831,12 @@ The removed historical colon-joined preimage (`{policy}:rate_limiter:aux:anti_eq
 It exists only for a non-ephemeral, fingerprinted, account-bound request under a
 budgeted, non-`API_OVERUSE` policy with K5 thresholds. For `material`, a lane-bearing evaluation call
 selects `deviceIdHash` when present and `fingerprintHash` otherwise; a call without a lane uses
-`fingerprintHash`. Its previous generation uses `previousKeySecret ?? currentKeySecret` paired with
-the corresponding previous material (`previousDeviceIdHash ?? deviceIdHash` when `deviceIdHash` is
-selected, otherwise `previousFingerprintHash ?? fingerprintHash`), exists only when `previousKeySecret`
-or the selected previous material is non-null (deduplicated when it aliases the current key), and is
-read-only.
+`fingerprintHash`. Whether a previous generation exists is gated solely by `previousKeySecret !== null
+|| previousFingerprintHash !== null` (not by `previousDeviceIdHash` alone); when that gate holds, the
+previous generation pairs `previousKeySecret ?? currentKeySecret` with the selected previous material
+(`previousDeviceIdHash ?? deviceIdHash` when `deviceIdHash` is selected, otherwise
+`previousFingerprintHash ?? fingerprintHash`), is omitted if the derived key equals the current key,
+and is read-only.
 The raw `AccountID` exists only inside this preimage and MUST NOT cross either the
 `RateLimitStoreInterface` or `CorrelationStoreInterface` boundary. Policy, environment,
 module, purpose, and algorithm namespace version are all part of the derivation, so Login,

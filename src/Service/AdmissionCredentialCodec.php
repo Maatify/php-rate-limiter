@@ -43,7 +43,8 @@ final class AdmissionCredentialCodec
      * Public issuer/verifier constructor (DEC-048 D1).
      *
      * Requires a non-blank `$bindingKey`, an optional non-blank `$previousBindingKey`, and a valid trust context
-     * (`$environmentScope`, `$admissionTrustDomain`, and `$admissionStateSecret` >= 32 bytes via `AdmissionKeyDeriver`).
+     * (non-blank `$environmentScope` and `$admissionTrustDomain`, plus a durable `$admissionStateSecret` of at least 32 bytes
+     * under DEC-048, via `AdmissionKeyDeriver`).
      *
      * @throws RateLimiterException when any binding key is blank/whitespace-only or the trust context/state secret is invalid.
      */

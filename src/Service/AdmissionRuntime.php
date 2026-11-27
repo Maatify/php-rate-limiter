@@ -67,8 +67,8 @@ final class AdmissionRuntime implements OwnedResources
      * Construct the internal admission runtime for a policy opting into `ADMISSION_RESERVATION`.
      *
      * Requires a non-blank `$keySecret`, an optional non-blank `$previousKeySecret`, and a valid trust context
-     * (`$envScope`, `$admissionTrustDomain`, `$admissionStateSecret` >= 32 bytes) whose derived `cohort()` matches
-     * `$codec->cohort()`.
+     * (non-blank `$envScope` and `$admissionTrustDomain`, plus a durable `$admissionStateSecret` of at least 32 bytes
+     * under DEC-048) whose derived `cohort()` matches `$codec->cohort()`.
      *
      * @throws RateLimiterException when a key secret is blank, the trust context/state secret is invalid, or `$codec` cohort mismatches.
      */
@@ -406,7 +406,7 @@ final class AdmissionRuntime implements OwnedResources
      * Invariant: release once per distinct derived key. A permit reserved before an outer key-secret rotation holds its
      * member under the previous outer secret's derived key, where the current-generation scope does not look; when
      * `previousKey` is null or aliases `current->key` (for example identical or HMAC-equivalent NUL-padded secrets),
-     * only the current scope is returned so the outcome script never names the same scope key twice.
+     * only the current scope is returned so PHP-side `assertScopes()` before `EVAL` never rejects a duplicate key.
      *
      * @return list<AdmissionScopeDTO>
      */
