@@ -3315,7 +3315,6 @@ class EvaluationPipeline
             default => 'ip',
         };
     }
-    // ... other helpers identical to previous turn ...
 
     /**
      * @return array<string, string|null>

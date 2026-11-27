@@ -355,9 +355,9 @@ recombined across generations.
 the current and (when configured) the previous hasher, exactly like the fingerprint. The id is an
 untrusted continuity hint: the component **never raises `confidence`** and never sets
 `isTrustedSession` or `isDevicePreviouslyVerifiedForAccount`. Only an evaluation call that carries
-an admission lane (a policy that declared the admission capability, such as
-`LoginProtectionAdmissionPolicy`, while its fleet fence is open)
-consumes it, and only for the K5 family (K5 score, K5 micro-cap, device Anti-Equilibrium watcher):
+an admission lane (passed for an opted policy such as `LoginProtectionAdmissionPolicy` while its
+fleet fence is open, or for explicit valid permit settlement under `DEC-050` D7 even when the fence
+is closed) consumes it, and only for the K5 family (K5 score, K5 micro-cap, device Anti-Equilibrium watcher):
 the pipeline **selects** `deviceIdHash` when present and `fingerprintHash` otherwise, and never
 re-hashes either. The previous generation of the id material is the same material hashed by the
 previous hasher and keyed by the previous outer secret; a device that starts sending an id changes

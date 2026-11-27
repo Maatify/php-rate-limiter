@@ -486,8 +486,8 @@ For every policy that does not opt into the admission reservation (§7.2), and f
 permit-less outcomes of an opted policy while its fleet fence is closed, these rules remain the shipped
 behavior under the Owner-approved interim Security-first posture, recorded in
 [DEC-050](decisions/DEC-050_RETAINED_CORRELATION_POSTURE_AND_CLOSED_FENCE_PERMIT_SETTLEMENT.md) (superseding DEC-027, while explicit permit-bearing outcomes of a healthy opted policy still settle through permit verification/claim).
-That posture is not a fix: issues #97, #100, and #106 remain OPEN for those policies, and
-shared-NAT false positives are unresolved. No rule or threshold changes. A policy that opts in
+That posture is not a fix: although tracking issues #97, #100, and #106 were closed as `completed` on 2026-11-03,
+the underlying S0 shared-NAT/UA false-positive harm remains unresolved for those policies. No rule or threshold changes. A policy that opts in
 follows `DECISION_MATRIX.md` §12, DEC-022, and DEC-048.
 
 ---

@@ -564,8 +564,8 @@ signal remains `HARD_BLOCK` L2 but is persisted against K2, never K3.
 > does not opt into the admission reservation, and for `checkOnly` / permit-less outcomes of an opted policy while its fleet fence is
 > closed, the correlation rules in this section remain the shipped behavior under the
 > Owner-approved interim Security-first posture (while explicit permit-bearing outcomes of a healthy opted policy still settle through permit verification/claim under DEC-050). That posture
-> is not a fix: issues #97 (LOW passive-UA), #100 (K2 shared-NAT churn), and #106 (K1 spray
-> on shared NAT) remain OPEN for those policies, and legitimate shared-NAT users can still be
+> is not a fix: although tracking issues #97 (LOW passive-UA), #100 (K2 shared-NAT churn), and #106 (K1 spray
+> on shared NAT) were closed as `completed` on 2026-11-03, the underlying S0 shared-NAT/UA availability harm and limits remain unresolved for those policies, and legitimate shared-NAT users can still be
 > denied. A policy that opts in follows §12, DEC-022, and DEC-048 instead. This note changes no rule,
 > threshold, or table.
 

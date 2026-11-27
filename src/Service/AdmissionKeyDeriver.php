@@ -118,6 +118,8 @@ final class AdmissionKeyDeriver
      * Derive a logical key for one of the 12 registered Admission scope/member purposes under an outer key secret.
      *
      * Logical form: `a1.scope.{purpose}.{64 lowercase hex}`.
+     *
+     * @throws RateLimiterException when `$purpose`/`$label` violates `AdmissionScopePurpose::assertShape()`, `$outerSecret` is blank/whitespace-only, or tuple framing overflows.
      */
     public function scopeKey(
         string $budgetGroup,
@@ -147,6 +149,8 @@ final class AdmissionKeyDeriver
      * Derive the logical fleet-fence key for `$budgetGroup` under an outer key secret (current or previous).
      *
      * Logical form: `a1.fence.{64 lowercase hex}`.
+     *
+     * @throws RateLimiterException when `$outerSecret` is blank/whitespace-only or tuple framing overflows.
      */
     public function fenceKey(string $budgetGroup, #[\SensitiveParameter] string $outerSecret): string
     {

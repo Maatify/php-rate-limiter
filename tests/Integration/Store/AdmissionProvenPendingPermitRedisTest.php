@@ -12,12 +12,18 @@ use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Service\AdmissionCredentialCodec;
 use Maatify\RateLimiter\Service\AdmissionFenceControlInterface;
+use Maatify\RateLimiter\Service\AdmissionKeyDeriver;
+use Maatify\RateLimiter\Service\AdmissionScopePurpose;
 use Maatify\RateLimiter\Service\CompositeRateLimiterRuntimeInterface;
+use Maatify\RateLimiter\Service\E1AccountScopeKeyDeriver;
+use Maatify\RateLimiter\Service\NonAccountScopeKeyDeriver;
+use Maatify\RateLimiter\Service\SourcePrefix;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceRunner;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceSpec;
 use Maatify\RateLimiter\Tests\Support\Admission\PublicRedisAdmissionFixture;
 use Maatify\RateLimiter\Tests\Support\Admission\ReplyValue;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
+use Maatify\RateLimiter\Tests\Support\Redis\StateSnapshot;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -200,6 +206,168 @@ final class AdmissionProvenPendingPermitRedisTest extends AdmissionRedisGateTest
         self::assertTrue($this->check($runtime, 'a4', self::SOURCE_A)->isAllowed(), 'three recorded failures + the refused a4 attempt do not exhaust the cap of 4');
     }
 
+    /** @return iterable<string, array{0: string, 1: bool}> */
+    public static function aliasCases(): iterable
+    {
+        yield 'identical previous key secret, success' => ['redis-gate-key', true];
+        yield 'identical previous key secret, failure' => ['redis-gate-key', false];
+        yield 'NUL-padded HMAC-equivalent previous key secret, success' => ["redis-gate-key\0", true];
+        yield 'NUL-padded HMAC-equivalent previous key secret, failure' => ["redis-gate-key\0", false];
+    }
+
+    #[DataProvider('aliasCases')]
+    #[Group('php32')]
+    public function testCurrentAndPreviousAliasReleasesPendingSlotOnceOnSettlement(string $previousKeySecret, bool $success): void
+    {
+        // Independent assertion: current and previous secrets derive the exact same ppend key.
+        $deriver = new AdmissionKeyDeriver(
+            PublicRedisAdmissionFixture::ENV,
+            PublicRedisAdmissionFixture::TRUST_DOMAIN,
+            PublicRedisAdmissionFixture::STATE_SECRET,
+        );
+        $sourceKey = SourcePrefix::of(self::SOURCE_A);
+        $currentDerived = $deriver->scopeKey('login', AdmissionScopePurpose::PPEND, $sourceKey, '', 'redis-gate-key');
+        $previousDerived = $deriver->scopeKey('login', AdmissionScopePurpose::PPEND, $sourceKey, '', $previousKeySecret);
+        self::assertSame($currentDerived, $previousDerived, 'Fixture current/previous secrets must derive the same ppend key');
+
+        $config = new RateLimiterConfig(
+            'redis-gate-key',
+            'redis-gate-fingerprint',
+            PublicRedisAdmissionFixture::ENV,
+            $previousKeySecret,
+            bindingKeySecret: PublicRedisAdmissionFixture::BINDING_SECRET,
+            admissionTrustDomain: PublicRedisAdmissionFixture::TRUST_DOMAIN,
+            admissionStateSecret: PublicRedisAdmissionFixture::STATE_SECRET,
+        );
+        $runtime = PublicRedisAdmissionFixture::build($this->executor, self::NAMESPACE, self::NOW, 500, 1, $this->clock, $config);
+        $this->open($runtime);
+
+        // Independent control on SOURCE_B: must remain untouched across all SOURCE_A operations.
+        $ctxCtrl = $this->context('acct-ctrl', self::SOURCE_B);
+        $beforeCtrl = $this->dump();
+        $ctrl = $runtime->limit($ctxCtrl, RateLimitCommand::checkOnly(self::POLICY));
+        self::assertTrue($ctrl->isAllowed());
+        $ctrlArtifacts = $this->capturePreCheckArtifacts($beforeCtrl, $this->dump(), $ctxCtrl, 'redis-gate-key', 'jti-acct-ctrl');
+
+        $ctxA = $this->context('acct-a', self::SOURCE_A);
+        $beforeA = $this->dump();
+        $a = $runtime->limit($ctxA, RateLimitCommand::checkOnly(self::POLICY));
+        self::assertTrue($a->isAllowed());
+        self::assertNotNull($a->metadata?->permit);
+        $aArtifacts = $this->capturePreCheckArtifacts($beforeA, $this->dump(), $ctxA, 'redis-gate-key', 'jti-acct-a');
+
+        $beforeRefusal = StateSnapshot::all($this->executor);
+        $refused = $this->check($runtime, 'acct-b');
+        self::assertFalse($refused->isAllowed());
+        self::assertSame(self::CAUSE, self::causeOf($refused));
+        self::assertSame($beforeRefusal, StateSnapshot::all($this->executor), 'Refused second slot must leave Redis unchanged');
+
+        $beforeSettle = $this->dump();
+        $snapBeforeSettle = StateSnapshot::all($this->executor);
+        $settled = $this->settle($runtime, 'acct-a', $a, $success);
+        self::assertTrue($settled->isAllowed(), 'Valid permit P before deadline must settle cleanly even with alias previousKeySecret');
+        $afterSettle = $this->dump();
+        $snapAfterSettle = StateSnapshot::all($this->executor);
+
+        // Exact permit claimed: only `state` and `outcome` change, and PEXPIRETIME is preserved.
+        $beforePermitVal = $beforeSettle[$aArtifacts['permitKey']]['value'];
+        $afterPermitVal = $afterSettle[$aArtifacts['permitKey']]['value'];
+        self::assertIsArray($beforePermitVal);
+        self::assertIsArray($afterPermitVal);
+        self::assertSame('ISSUED', $beforePermitVal['state'] ?? null);
+        self::assertSame('CLAIMED', $afterPermitVal['state'] ?? null);
+        self::assertSame($success ? 'success' : 'failure', $afterPermitVal['outcome'] ?? null);
+        unset($beforePermitVal['state'], $afterPermitVal['state'], $afterPermitVal['outcome']);
+        self::assertSame($beforePermitVal, $afterPermitVal, 'Permit fields other than state/outcome must remain unchanged');
+        self::assertSame(
+            $this->snapshotPexpire($snapBeforeSettle[$aArtifacts['permitKey']]),
+            $this->snapshotPexpire($snapAfterSettle[$aArtifacts['permitKey']]),
+            'Claimed permit PEXPIRETIME must remain unchanged',
+        );
+
+        $pFailSetKey = $this->deriveAdmSetKey(AdmissionScopePurpose::PFAIL, self::SOURCE_A, 'redis-gate-key');
+        $allowedAdmChanges = $success
+            ? array_merge([$aArtifacts['permitKey']], array_values($aArtifacts['namedCounterKeys']))
+            : [$aArtifacts['permitKey'], $aArtifacts['namedCounterKeys'][AdmissionScopePurpose::PPEND], $pFailSetKey];
+
+        self::assertSame(
+            $this->admSnapshotExcluding($snapBeforeSettle, $allowedAdmChanges),
+            $this->admSnapshotExcluding($snapAfterSettle, $allowedAdmChanges),
+            'Every other :adm:a1: key (including control PDEV, cfg, fence, and preserved proof counters) must keep identical DUMP and PEXPIRETIME',
+        );
+
+        if ($success) {
+            foreach ($aArtifacts['namedCounterKeys'] as $purpose => $counterKey) {
+                $expectedMembers = $this->zsetMembers($beforeSettle, $counterKey);
+                self::assertArrayHasKey($aArtifacts['memberId'], $expectedMembers);
+                unset($expectedMembers[$aArtifacts['memberId']]);
+                self::assertSame($expectedMembers, $this->zsetMembers($afterSettle, $counterKey), "Success must remove only target member from {$purpose}");
+                if ($expectedMembers === []) {
+                    self::assertArrayNotHasKey($counterKey, $afterSettle, "Empty {$purpose} ZSET key must be removed");
+                }
+            }
+            self::assertSame(
+                $this->scoreSnapshotExcluding($snapBeforeSettle),
+                $this->scoreSnapshotExcluding($snapAfterSettle),
+                'Success must not write or re-expire any score key',
+            );
+        } else {
+            $ppendKey = $aArtifacts['namedCounterKeys'][AdmissionScopePurpose::PPEND];
+            $expectedPpendMembers = $this->zsetMembers($beforeSettle, $ppendKey);
+            self::assertArrayHasKey($aArtifacts['memberId'], $expectedPpendMembers);
+            unset($expectedPpendMembers[$aArtifacts['memberId']]);
+            self::assertSame($expectedPpendMembers, $this->zsetMembers($afterSettle, $ppendKey), 'Failure must remove only target member from ppend');
+            if ($expectedPpendMembers === []) {
+                self::assertArrayNotHasKey($ppendKey, $afterSettle, 'Empty ppend ZSET key must be removed');
+            }
+
+            $pFailMember = $this->deriveAdmMember('acct-a', 'redis-gate-key');
+            $expectedFailMembers = $this->zsetMembers($beforeSettle, $pFailSetKey);
+            $expectedFailMembers[$pFailMember] = (string) (self::NOW + 600);
+            self::assertSame($expectedFailMembers, $this->zsetMembers($afterSettle, $pFailSetKey), 'Failure must add only expected member with NOW+600 expiry to pfail');
+
+            $k1Key = $this->deriveK1ScoreKey(self::SOURCE_A, 'redis-gate-key');
+            $ctrlK1Key = $this->deriveK1ScoreKey(self::SOURCE_B, 'redis-gate-key');
+            self::assertNotSame($k1Key, $ctrlK1Key, 'Target K1 score key must be distinct from control K1 score key');
+
+            $k4pKey = $this->deriveE1ScoreKey('k4p', 'acct-a', 'redis-gate-key');
+            $k4WrongKey = $this->deriveE1ScoreKey('k4', 'acct-a', 'redis-gate-key');
+            $ctrlK4pKey = $this->deriveE1ScoreKey('k4p', 'acct-ctrl', 'redis-gate-key');
+
+            $beforeK1Raw = is_array($beforeSettle[$k1Key]['value'] ?? null) ? ($beforeSettle[$k1Key]['value']['value'] ?? 0) : 0;
+            $afterK1Raw = is_array($afterSettle[$k1Key]['value'] ?? null) ? ($afterSettle[$k1Key]['value']['value'] ?? 0) : 0;
+            $beforeK1 = is_numeric($beforeK1Raw) ? (int) $beforeK1Raw : 0;
+            $afterK1 = is_numeric($afterK1Raw) ? (int) $afterK1Raw : 0;
+            self::assertSame(5, $afterK1 - $beforeK1, 'Failure must increment K1 by exact delta 5');
+
+            $beforeRaw = is_array($beforeSettle[$k4pKey]['value'] ?? null) ? ($beforeSettle[$k4pKey]['value']['value'] ?? 0) : 0;
+            $afterRaw = is_array($afterSettle[$k4pKey]['value'] ?? null) ? ($afterSettle[$k4pKey]['value']['value'] ?? 0) : 0;
+            $beforeScore = is_numeric($beforeRaw) ? (int) $beforeRaw : 0;
+            $afterScore = is_numeric($afterRaw) ? (int) $afterRaw : 0;
+            self::assertSame(3, $afterScore - $beforeScore, 'Failure must increment K4P by exact delta 3');
+            self::assertSame($snapBeforeSettle[$k4WrongKey] ?? null, $snapAfterSettle[$k4WrongKey] ?? null, 'Wrong-lane K4 must remain untouched');
+            self::assertSame($snapBeforeSettle[$ctrlK4pKey] ?? null, $snapAfterSettle[$ctrlK4pKey] ?? null, 'Control account K4P must remain untouched');
+            self::assertSame($snapBeforeSettle[$ctrlK1Key] ?? null, $snapAfterSettle[$ctrlK1Key] ?? null, 'Control source K1 must remain untouched');
+            self::assertSame(
+                $this->scoreSnapshotExcluding($snapBeforeSettle, [$k1Key, $k4pKey]),
+                $this->scoreSnapshotExcluding($snapAfterSettle, [$k1Key, $k4pKey]),
+                'Failure must not write or re-expire any other score key',
+            );
+        }
+
+        // New slot on SOURCE_A is now available for a fresh reservation.
+        $b = $this->check($runtime, 'acct-b');
+        self::assertTrue($b->isAllowed(), 'Freed slot must admit a new reservation');
+        self::assertArrayHasKey($aArtifacts['namedCounterKeys'][AdmissionScopePurpose::PPEND], $this->dump());
+
+        // Replaying same and conflicting outcomes must not free a slot or mutate Redis.
+        $beforeReplay = StateSnapshot::all($this->executor);
+        self::assertSame('permit_duplicate', self::causeOf($this->settle($runtime, 'acct-a', $a, $success)));
+        self::assertSame($beforeReplay, StateSnapshot::all($this->executor));
+        self::assertSame('permit_conflict', self::causeOf($this->settle($runtime, 'acct-a', $a, ! $success)));
+        self::assertSame($beforeReplay, StateSnapshot::all($this->executor));
+    }
+
     /** The refusal or permit cause of a result; read through one helper so the nullability is the declared one on every PHPStan version. */
     private static function causeOf(RateLimitResultDTO $result): ?string
     {
@@ -278,5 +446,193 @@ final class AdmissionProvenPendingPermitRedisTest extends AdmissionRedisGateTest
         }
 
         return $live;
+    }
+
+    /**
+     * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $before
+     * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $after
+     * @return array{permitKey: string, memberId: string, namedCounterKeys: array<string, string>}
+     */
+    private function capturePreCheckArtifacts(
+        array $before,
+        array $after,
+        RateLimitContextDTO $context,
+        string $outerSecret,
+        string $jti,
+    ): array {
+        $deriver = new AdmissionKeyDeriver(
+            PublicRedisAdmissionFixture::ENV,
+            PublicRedisAdmissionFixture::TRUST_DOMAIN,
+            PublicRedisAdmissionFixture::STATE_SECRET,
+        );
+        $expectedSubject = $deriver->permitContextCommitment('login', self::POLICY, $context);
+        $permitKey = null;
+        $counterKeys = [];
+        $memberId = null;
+
+        foreach ($after as $key => $entry) {
+            $keyStr = (string) $key;
+            if (str_contains($keyStr, ':adm:a1:permit:') && ! array_key_exists($keyStr, $before)) {
+                self::assertNull($permitKey);
+                self::assertIsArray($entry['value']);
+                self::assertSame('ISSUED', $entry['value']['state'] ?? null);
+                self::assertSame($expectedSubject, $entry['value']['subject'] ?? null);
+                $permitKey = $keyStr;
+            }
+            if (str_contains($keyStr, ':adm:a1:c:') && $entry['type'] === 'zset' && is_array($entry['value'])) {
+                $prevMembers = $this->zsetMembers($before, $keyStr);
+                $diff = array_diff(array_keys($entry['value']), array_keys($prevMembers));
+                if ($diff !== []) {
+                    $counterKeys[] = $keyStr;
+                    $first = (string) reset($diff);
+                    $memberId ??= $first;
+                    self::assertSame($memberId, $first);
+                }
+            }
+        }
+
+        self::assertNotNull($permitKey);
+        self::assertNotNull($memberId);
+        self::assertSame($this->derivePermitKey($memberId), $permitKey);
+
+        $account = (string) $context->accountId;
+        $proof = substr(hash('sha256', $jti), 0, 32);
+        $namedCounterKeys = [
+            AdmissionScopePurpose::PACCT => $this->deriveAdmCounterKey(AdmissionScopePurpose::PACCT, $account, $outerSecret),
+            AdmissionScopePurpose::PACCTD => $this->deriveAdmCounterKey(AdmissionScopePurpose::PACCTD, $account, $outerSecret),
+            AdmissionScopePurpose::PPROOF => $this->deriveAdmCounterKey(AdmissionScopePurpose::PPROOF, $proof, $outerSecret),
+            AdmissionScopePurpose::PPROOFD => $this->deriveAdmCounterKey(AdmissionScopePurpose::PPROOFD, $proof, $outerSecret),
+            AdmissionScopePurpose::PPEND => $this->deriveAdmCounterKey(AdmissionScopePurpose::PPEND, $context->ip, $outerSecret),
+        ];
+        foreach ($namedCounterKeys as $purpose => $expectedKey) {
+            self::assertContains($expectedKey, $counterKeys, "Missing expected {$purpose} counter key");
+        }
+
+        return [
+            'permitKey' => $permitKey,
+            'memberId' => $memberId,
+            'namedCounterKeys' => $namedCounterKeys,
+        ];
+    }
+
+    /**
+     * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $dump
+     * @return array<string, mixed>
+     */
+    private function zsetMembers(array $dump, string $key): array
+    {
+        if (! array_key_exists($key, $dump)) {
+            return [];
+        }
+        self::assertSame('zset', $dump[$key]['type']);
+        self::assertIsArray($dump[$key]['value']);
+        $out = [];
+        foreach ($dump[$key]['value'] as $member => $score) {
+            $out[(string) $member] = $score;
+        }
+
+        return $out;
+    }
+
+    private function deriveAdmCounterKey(string $purpose, string $value, string $outerSecret): string
+    {
+        $deriver = new AdmissionKeyDeriver(
+            PublicRedisAdmissionFixture::ENV,
+            PublicRedisAdmissionFixture::TRUST_DOMAIN,
+            PublicRedisAdmissionFixture::STATE_SECRET,
+        );
+        $logical = $deriver->scopeKey('login', $purpose, $value, '', $outerSecret);
+        $preimage = "maatify.rate-limiter.redis.adm.a1.scope.c\0"
+            . pack('N', 2)
+            . pack('N', strlen('login')) . 'login'
+            . pack('N', strlen($logical)) . $logical;
+
+        return 'maatify:rate-limiter:v1:{' . hash('sha256', self::NAMESPACE) . '}:adm:a1:c:' . hash('sha256', $preimage);
+    }
+
+    private function deriveAdmSetKey(string $purpose, string $value, string $outerSecret): string
+    {
+        $deriver = new AdmissionKeyDeriver(
+            PublicRedisAdmissionFixture::ENV,
+            PublicRedisAdmissionFixture::TRUST_DOMAIN,
+            PublicRedisAdmissionFixture::STATE_SECRET,
+        );
+        $logical = $deriver->scopeKey('login', $purpose, $value, '', $outerSecret);
+        $preimage = "maatify.rate-limiter.redis.adm.a1.scope.s\0"
+            . pack('N', 2)
+            . pack('N', strlen('login')) . 'login'
+            . pack('N', strlen($logical)) . $logical;
+
+        return 'maatify:rate-limiter:v1:{' . hash('sha256', self::NAMESPACE) . '}:adm:a1:s:' . hash('sha256', $preimage);
+    }
+
+    private function deriveAdmMember(string $account, string $outerSecret): string
+    {
+        $deriver = new AdmissionKeyDeriver(
+            PublicRedisAdmissionFixture::ENV,
+            PublicRedisAdmissionFixture::TRUST_DOMAIN,
+            PublicRedisAdmissionFixture::STATE_SECRET,
+        );
+
+        return $deriver->scopeKey('login', AdmissionScopePurpose::MEMBER, $account, '', $outerSecret);
+    }
+
+    private function derivePermitKey(string $memberId): string
+    {
+        return 'maatify:rate-limiter:v1:{' . hash('sha256', self::NAMESPACE) . '}:adm:a1:permit:' . hash('sha256', $memberId);
+    }
+
+    private function deriveE1ScoreKey(string $purpose, string $account, string $outerSecret): string
+    {
+        $logical = (new E1AccountScopeKeyDeriver(PublicRedisAdmissionFixture::ENV))->derive($purpose, self::POLICY, $account, $outerSecret);
+
+        return 'maatify:rate-limiter:e1:' . hash('sha256', self::NAMESPACE) . ':score:' . hash('sha256', $logical);
+    }
+
+    private function deriveK1ScoreKey(string $ip, string $outerSecret): string
+    {
+        $logical = (new NonAccountScopeKeyDeriver(PublicRedisAdmissionFixture::ENV))->deriveK1(
+            self::POLICY,
+            SourcePrefix::of($ip),
+            $outerSecret,
+        );
+
+        return 'maatify:rate-limiter:v1:' . hash('sha256', self::NAMESPACE) . ':score:' . hash('sha256', $logical);
+    }
+
+    /**
+     * @param array<string, string> $snapshot
+     * @param list<string> $excludedKeys
+     * @return array<string, string>
+     */
+    private function admSnapshotExcluding(array $snapshot, array $excludedKeys): array
+    {
+        return array_filter(
+            $snapshot,
+            static fn(string $k): bool => str_contains($k, ':adm:a1:') && ! in_array($k, $excludedKeys, true),
+            ARRAY_FILTER_USE_KEY,
+        );
+    }
+
+    /**
+     * @param array<string, string> $snapshot
+     * @param list<string> $excludedKeys
+     * @return array<string, string>
+     */
+    private function scoreSnapshotExcluding(array $snapshot, array $excludedKeys = []): array
+    {
+        return array_filter(
+            $snapshot,
+            static fn(string $k): bool => str_contains($k, ':score:') && ! in_array($k, $excludedKeys, true),
+            ARRAY_FILTER_USE_KEY,
+        );
+    }
+
+    private function snapshotPexpire(string $snapshotValue): string
+    {
+        $pos = strrpos($snapshotValue, '@');
+        self::assertNotFalse($pos);
+
+        return substr($snapshotValue, $pos + 1);
     }
 }

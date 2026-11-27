@@ -28,7 +28,11 @@ final class E1AccountScopeKeyDeriver
         private readonly ?\Closure $count = null,
     ) {}
 
-    /** Derive a registered purpose from opaque policy/environment/account bytes and its required material shape. */
+    /**
+     * Derive a registered purpose from opaque policy/environment/account bytes and its required material shape.
+     *
+     * @throws RateLimiterException when `$purpose` is unregistered, `$material` violates the purpose's shape, or tuple framing fails.
+     */
     public function derive(string $purpose, string $policy, string $account, string $secret, ?string $material = null): string
     {
         AccountScopePurpose::assertShape($purpose, $material);
@@ -54,9 +58,12 @@ final class E1AccountScopeKeyDeriver
     }
 
     /**
+     * Compute an E1 HMAC key from framed `$fields` under `$secret` (without independent purpose-registry or secret-blankness checks).
+     *
      * @param list<string> $fields
      * @param ?\Closure(string): int $length
      * @param ?\Closure(list<string>): int $count
+     * @throws RateLimiterException when `preimage()` fails because a field length or count is outside 0..2^32 - 1.
      */
     public static function key(string $secret, array $fields, ?\Closure $length = null, ?\Closure $count = null): string
     {

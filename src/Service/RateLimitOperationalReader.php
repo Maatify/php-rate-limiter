@@ -106,10 +106,12 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
      *
      * The optional admission lane selects the key family and K5 material the
      * state was written under by the evaluation pipeline (K4P / K5p and the
-     * `_p` budget cooldown on the proven lane; the instance-id material when
-     * the device carries one). `null` is today's read. This concrete method
-     * only: the public reader interface is unchanged, so no Host can ask for a
-     * lane before the admission runtime exists.
+     * `_p` budget cooldown on the proven lane; `k4` / `k5` on the unproven
+     * lane; the instance-id material when the device carries one). `null` is
+     * today's read. This parameter exists on the concrete reader only: the
+     * public `RateLimitOperationalReaderInterface` is unchanged, and this
+     * concrete method does not itself enforce the pipeline's admission
+     * capability guard.
      */
     public function read(
         RateLimitContextDTO $context,

@@ -39,6 +39,15 @@ final class AdmissionCredentialCodec
 
     private readonly ?string $previousKeyId;
 
+    /**
+     * Public issuer/verifier constructor (DEC-048 D1).
+     *
+     * Requires a non-blank `$bindingKey`, an optional non-blank `$previousBindingKey`, and a valid trust context
+     * (non-blank `$environmentScope` and `$admissionTrustDomain`, plus a durable `$admissionStateSecret` of at least 32 bytes
+     * under DEC-048, via `AdmissionKeyDeriver`).
+     *
+     * @throws RateLimiterException when any binding key is blank/whitespace-only or the trust context/state secret is invalid.
+     */
     public function __construct(
         #[\SensitiveParameter]
         private readonly string $bindingKey,
