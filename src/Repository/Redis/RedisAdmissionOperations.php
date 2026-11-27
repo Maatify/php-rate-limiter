@@ -23,7 +23,11 @@ use Maatify\RateLimiter\Service\KeyPreimageFraming;
  *
  * One Lua script per operation. Every script takes the caller's `now` and relative TTLs and never calls `TIME` (DEC-016).
  * Every script reads and validates the type and the fields (of a sorted set, every score) of every key it is going to
- * touch before its first write, because Redis does not roll back the writes of a script that fails half way. Malformed
+ * touch before its first write, because Redis does not roll back the writes of a script that fails half way. On Redis 7.0+,
+ * the write paths (`RESERVE`, `OUTCOME`, and `CLAIM_WITH_OUTCOME`) derive their exact write plan in execution order and
+ * check every planned write command with `redis.acl_check_cmd` before the first write (`NOPERM …` naming only the command
+ * and plan position, never keys, values, or permit ids); an ACL preflight refusal writes nothing (it is not a rollback for
+ * other runtime Redis errors). Request-overlay commits (`RedisRequestOverlay`, DEC-037 / DEC-042) are separate. Malformed
  * stored state is a Lua error reply `malformed admission state: …`, returned before any write. The reference test executor
  * (`RespRedisCommandExecutor`) raises it as `RateLimiterException`; a Host executor whose client throws on an error reply
  * (phpredis: `RedisException`) propagates that exception unchanged, as `RedisCommandExecutorInterface` requires. It is

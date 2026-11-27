@@ -130,7 +130,9 @@ final class AdmissionSettlementRedisTest extends AdmissionRedisGateTestCase
         );
         $whole = $this->dump();
         $counters = $this->counterAndBucketDump();
-        self::assertNotEmpty($counters, 'readOnlyPass must observe seeded counter and bucket keys');
+        $keys = array_keys($counters);
+        self::assertNotEmpty(array_filter($keys, static fn(string $k): bool => str_contains($k, ':adm:a1:c:')), 'readOnlyPass must observe seeded counter key');
+        self::assertNotEmpty(array_filter($keys, static fn(string $k): bool => str_contains($k, ':adm:a1:b:')), 'readOnlyPass must observe seeded bucket key');
         // The clock passes the deadline; refused reservations and a late claim only read.
         Sc::reserve($port, Sc::N + Sc::D + 1, Sc::member('s:ro', 'new-ro', 2));
         Sc::claim($port, Sc::N + Sc::D + 1, 'permit-ro', AdmissionOutcomeKindEnum::FAILURE);

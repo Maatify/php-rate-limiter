@@ -161,6 +161,29 @@ final class AdmissionReservationAclPreflightRedisTest extends AdmissionRedisGate
         $this->assertOutcomeApplied($case);
     }
 
+    public function testDirectOutcomeSuccessPartialZremRefusalLeavesSetAndCounterUnchanged(): void
+    {
+        $scopes = $this->arrangeOutcomeScopes('success_set_counter');
+        $outcome = new AdmissionOutcomeDTO(S::CLASS_NAME, AdmissionOutcomeKindEnum::SUCCESS, $scopes);
+        $setKey = $this->keys->scopeKey(S::CLASS_NAME, \Maatify\RateLimiter\Enum\AdmissionScopeKindEnum::SET_SIZE, 's:g4-out-succ');
+        $before = $this->observe();
+
+        // Allow ZREM on setKey, deny ZREM only on counterKey (plan step 2 of 2).
+        $restricted = $this->storeOf($this->accountWithSelectors('out-partial-zrem', ['ZREM'], ["(+zrem ~{$setKey})"]));
+        $message = null;
+        try {
+            $restricted->applyAdmissionOutcome($outcome, self::NOW + 1);
+        } catch (RateLimiterException $e) {
+            $message = $e->getMessage();
+        }
+
+        self::assertSame('NOPERM admission outcome: the account may not run ZREM (plan step 2 of 2)', $message);
+        self::assertSame($before, $this->observe(), 'Refused ZREM on counter (step 2/2) must not remove set member');
+
+        $this->store->applyAdmissionOutcome($outcome, self::NOW + 2);
+        $this->assertOutcomeApplied('success_set_counter');
+    }
+
     public function testUnusedCommandsAreNotRequiredAndPendingExpireBranchMatchesState(): void
     {
         // 1. Registered shared cfg: SET is not in RESERVE plan, so an account denied SET still succeeds.
@@ -230,39 +253,82 @@ final class AdmissionReservationAclPreflightRedisTest extends AdmissionRedisGate
         self::assertTrue(is_int($recreatedPexpireTime) || is_string($recreatedPexpireTime));
         self::assertNotSame($origRecreatePexpireTime, $recreatedPexpireTime);
 
-        // 5. F304-01: no-permit and already-settled settling scopes do not require pending TTL/ZCOUNT or any writes on pending.
-        $noWriteSettling = $this->storeOf($this->account('no-write-no-zcount', ['SET', 'ZREMRANGEBYSCORE', 'ZADD', 'HSET', 'EXPIRE', 'DEL']));
-        // No-permit settling scope with only ZCOUNT allowed on setKey (or denied on pendingKey) — here denied on pendingKey, and all writes denied for empty/no-write branches:
+        // 5. F304-01: isolate all 4 non-writing settling branches (ZCOUNT on pending denied, unused writes denied):
+        // (a) hasPermit=false, inSet=false on settling scope: no writes at all, exact snapshot unchanged.
+        $noPermitSetKey = $this->keys->scopeKey(S::CLASS_NAME, \Maatify\RateLimiter\Enum\AdmissionScopeKindEnum::SET_SIZE, 's:pend-no-permit');
+        $noPermitAccount = $this->storeOf($this->accountWithSelectors(
+            'no-permit-restricted',
+            ['SET', 'ZREMRANGEBYSCORE', 'ZADD', 'HSET', 'EXPIRE', 'DEL', 'ZCOUNT'],
+            ["(+zcount ~{$noPermitSetKey})"],
+        ));
+        $noPermitScope = new AdmissionScopeDTO('s', \Maatify\RateLimiter\Enum\AdmissionScopeKindEnum::SET_SIZE, 's:pend-no-permit', 4, 600, 's:pend-no-permit', 'm-no-permit', null, false, true);
+        $beforeNoPermit = $this->observe();
+        self::assertTrue($noPermitAccount->reserveAdmission(new AdmissionReservationRequestDTO(S::CLASS_NAME, [$noPermitScope]), self::NOW)->admitted);
+        self::assertSame($beforeNoPermit, $this->observe());
+
+        // (b) hasPermit=true, inSet=true (already settled): pending writes and ZCOUNT on pending denied; only permitKey is written.
         $settledSetKey = $this->keys->scopeKey(S::CLASS_NAME, \Maatify\RateLimiter\Enum\AdmissionScopeKindEnum::SET_SIZE, 's:pend-already-settled');
         $settledPendingKey = $this->keys->pendingKey(S::CLASS_NAME, 's:pend-already-settled');
+        $settledPermitKey = $this->keys->permitKey('p-pend-already-settled');
         $this->executor->execute(['ZADD', $settledSetKey, (string) (self::NOW + 500), 'm-settled']);
         $this->executor->execute(['EXPIRE', $settledSetKey, '500']);
         $this->executor->execute(['ZADD', $settledPendingKey, (string) (self::NOW + 100), 'other-pend']);
         $this->executor->execute(['EXPIRE', $settledPendingKey, '500']);
+        $beforeAlreadySettled = $this->observe();
 
         $alreadySettledAccount = $this->storeOf($this->accountWithSelectors(
             'already-settled-restricted',
-            ['ZREMRANGEBYSCORE', 'ZADD', 'EXPIRE', 'ZCOUNT'],
-            ["(+zcount ~{$settledSetKey})"],
+            ['SET', 'ZREMRANGEBYSCORE', 'ZADD', 'HSET', 'EXPIRE', 'DEL', 'ZCOUNT'],
+            ["(+zcount ~{$settledSetKey})", "(+hset ~{$settledPermitKey})", "(+expire ~{$settledPermitKey})"],
         ));
         $alreadySettledScope = new AdmissionScopeDTO('s', \Maatify\RateLimiter\Enum\AdmissionScopeKindEnum::SET_SIZE, 's:pend-already-settled', 4, 600, 's:pend-already-settled', 'm-settled', null, false, true);
-        // With hasPermit=false, s.kind=='s' writes nothing; ZCOUNT on pending and writes are not needed.
-        self::assertTrue($alreadySettledAccount->reserveAdmission(new AdmissionReservationRequestDTO(S::CLASS_NAME, [$alreadySettledScope]), self::NOW)->admitted);
+        self::assertTrue($alreadySettledAccount->reserveAdmission(S::withPermit(S::permit('p-pend-already-settled', self::NOW + 30), $alreadySettledScope), self::NOW)->admitted);
+        $afterAlreadySettled = $this->observe();
+        $diffKeys = array_keys(array_diff_assoc($afterAlreadySettled, $beforeAlreadySettled));
+        self::assertSame([$settledPermitKey], $diffKeys, 'Already-settled permit reservation must write ONLY the permit key');
 
-        // 6. OUTCOME unused-command controls:
+        // (c) Gate refusal on settling scope (cap=1 with 1 settled member) and (d) permit_exists on settling scope:
+        $fullSetKey = $this->keys->scopeKey(S::CLASS_NAME, \Maatify\RateLimiter\Enum\AdmissionScopeKindEnum::SET_SIZE, 's:pend-gate-full');
+        $this->executor->execute(['ZADD', $fullSetKey, (string) (self::NOW + 500), 'm-blocker']);
+        $this->executor->execute(['EXPIRE', $fullSetKey, '500']);
+        $beforeSettlingRefusals = $this->observe();
+
+        $settlingRefusalAccount = $this->storeOf($this->accountWithSelectors(
+            'settling-refusals-restricted',
+            ['SET', 'ZREMRANGEBYSCORE', 'ZADD', 'HSET', 'EXPIRE', 'DEL', 'ZCOUNT'],
+            ["(+zcount ~{$fullSetKey})", "(+zcount ~{$settledSetKey})"],
+        ));
+        $fullScope = new AdmissionScopeDTO('s', \Maatify\RateLimiter\Enum\AdmissionScopeKindEnum::SET_SIZE, 's:pend-gate-full', 1, 600, 's:pend-gate-full', 'm-blocked', null, false, true);
+        $gateRefused = $settlingRefusalAccount->reserveAdmission(S::withPermit(S::permit('p-pend-blocked', self::NOW + 30), $fullScope), self::NOW);
+        self::assertFalse($gateRefused->admitted);
+        self::assertSame('s', $gateRefused->refusedScope);
+        self::assertSame($beforeSettlingRefusals, $this->observe());
+
+        $dupSettling = $settlingRefusalAccount->reserveAdmission(S::withPermit(S::permit('p-pend-already-settled', self::NOW + 30), new AdmissionScopeDTO('s', \Maatify\RateLimiter\Enum\AdmissionScopeKindEnum::SET_SIZE, 's:pend-already-settled', 4, 600, 's:pend-already-settled', 'm-new', null, false, true)), self::NOW);
+        self::assertFalse($dupSettling->admitted);
+        self::assertSame('permit_exists', $dupSettling->refusedScope);
+        self::assertSame($beforeSettlingRefusals, $this->observe());
+
+        // 6. OUTCOME unused-command controls (each asserts exact before/after snapshot):
         // - Bucket failure needs no DEL/HSET/EXPIRE; absent bucket success needs no DEL/HSET/EXPIRE.
         $noBucketWriteAccount = $this->storeOf($this->account('out-no-bucket-writes', ['DEL', 'HSET', 'EXPIRE']));
+        $beforeNoBucket = $this->observe();
         $noBucketWriteAccount->applyAdmissionOutcome(new AdmissionOutcomeDTO(S::CLASS_NAME, AdmissionOutcomeKindEnum::FAILURE, [S::bucket('tok', 'b:unused-fail', 3, 60)]), self::NOW + 1);
+        $this->assertSnapshotUnchanged($beforeNoBucket);
         $noBucketWriteAccount->applyAdmissionOutcome(new AdmissionOutcomeDTO(S::CLASS_NAME, AdmissionOutcomeKindEnum::SUCCESS, [S::bucket('tok', 'b:unused-absent', 3, 60)]), self::NOW + 1);
+        $this->assertSnapshotUnchanged($beforeNoBucket);
         // - Counter failure with releasesOnFailure=false needs no ZREM.
         $noZremAccount = $this->storeOf($this->account('out-no-zrem', ['ZREM']));
         $noZremAccount->applyAdmissionOutcome(new AdmissionOutcomeDTO(S::CLASS_NAME, AdmissionOutcomeKindEnum::FAILURE, [S::counter('src', 'c:unused-no-rel', 10, member: 'm-1')]), self::NOW + 1);
-        // - Set-size success with keepsSettled=true and no future pending member needs no ZREM.
+        $this->assertSnapshotUnchanged($beforeNoBucket);
+        // - Set-size success with keepsSettled=true and no future pending member needs no ZREM; kept member stays intact.
+        $keptSetKey = $this->keys->scopeKey(S::CLASS_NAME, \Maatify\RateLimiter\Enum\AdmissionScopeKindEnum::SET_SIZE, 's:unused-kept');
         $keptScope = new AdmissionScopeDTO('s', \Maatify\RateLimiter\Enum\AdmissionScopeKindEnum::SET_SIZE, 's:unused-kept', 4, 600, 's:unused-kept', 'm-kept', null, true, true);
-        $this->executor->execute(['ZADD', $this->keys->scopeKey(S::CLASS_NAME, \Maatify\RateLimiter\Enum\AdmissionScopeKindEnum::SET_SIZE, 's:unused-kept'), (string) (self::NOW + 500), 'm-kept']);
-        $this->executor->execute(['EXPIRE', $this->keys->scopeKey(S::CLASS_NAME, \Maatify\RateLimiter\Enum\AdmissionScopeKindEnum::SET_SIZE, 's:unused-kept'), '500']);
+        $this->executor->execute(['ZADD', $keptSetKey, (string) (self::NOW + 500), 'm-kept']);
+        $this->executor->execute(['EXPIRE', $keptSetKey, '500']);
+        $beforeKept = $this->observe();
         $noZremAccount->applyAdmissionOutcome(new AdmissionOutcomeDTO(S::CLASS_NAME, AdmissionOutcomeKindEnum::SUCCESS, [$keptScope]), self::NOW + 1);
-        unset($noWriteSettling);
+        self::assertSame($beforeKept, $this->observe());
     }
 
     public function testNonAclRefusalsAndPublicOverlayBehaviorArePreserved(): void
@@ -284,7 +350,18 @@ final class AdmissionReservationAclPreflightRedisTest extends AdmissionRedisGate
         self::assertSame($prevDumpBefore, $this->executor->execute(['DUMP', $prevCounterKey]), 'Successful admission must read previous without writing it');
         self::assertSame($prevPexpireBefore, $this->executor->execute(['PEXPIRETIME', $prevCounterKey]));
 
-        // Restricted account with writes denied proves Phase 1/2 refusals never require write permissions or touch previous.
+        // Admitted plan with existing previous generation where a late write (HSET permit, step 4 of 5) is denied leaves both cur and previous unchanged.
+        $lateRefusalAccount = $this->storeOf($this->account('prev-admitted-late-hset', ['HSET']));
+        $lateErr = null;
+        try {
+            $lateRefusalAccount->reserveAdmission(new AdmissionReservationRequestDTO(S::CLASS_NAME, [new AdmissionScopeDTO('src', \Maatify\RateLimiter\Enum\AdmissionScopeKindEnum::COUNTER, 'c:ctrl', 3, 600, 'c:ctrl-prev', 'm-late')], S::permit('p-ctrl-late', self::NOW + 30), $cfg1), self::NOW);
+        } catch (RateLimiterException $e) {
+            $lateErr = $e->getMessage();
+        }
+        self::assertSame('NOPERM admission reservation: the account may not run HSET (plan step 4 of 5)', $lateErr);
+        self::assertSame($snap, $this->observe(), 'Late ACL refusal on admitted plan with existing previous must leave cur and previous unchanged');
+
+        // Restricted account with write-commands denied proves Phase 1/2 refusals never require write-command permissions or touch previous.
         $readOnlyRestricted = $this->storeOf($this->account('phase12-no-writes', ['SET', 'ZREMRANGEBYSCORE', 'ZADD', 'HSET', 'EXPIRE', 'DEL']));
 
         // Gate refusal (1 in cur + 1 in prev == cap 2)
@@ -369,7 +446,10 @@ final class AdmissionReservationAclPreflightRedisTest extends AdmissionRedisGate
         if ($case === 'success_set_counter') {
             $set = S::setSize('uset', 's:g4-out-succ', 4, 'acct-g4-2');
             $cnt = S::counter('src', 'c:g4-out-succ', 10, member: 'm-g4-cnt');
-            self::assertTrue($this->store->reserveAdmission(new AdmissionReservationRequestDTO(S::CLASS_NAME, [$set, $cnt]), self::NOW)->admitted);
+            $this->store->applyAdmissionOutcome(new AdmissionOutcomeDTO(S::CLASS_NAME, AdmissionOutcomeKindEnum::FAILURE, [$set]), self::NOW);
+            self::assertTrue($this->store->reserveAdmission(new AdmissionReservationRequestDTO(S::CLASS_NAME, [$cnt]), self::NOW)->admitted);
+            self::assertNotNull($this->executor->execute(['ZSCORE', $this->keys->scopeKey(S::CLASS_NAME, \Maatify\RateLimiter\Enum\AdmissionScopeKindEnum::SET_SIZE, 's:g4-out-succ'), 'acct-g4-2']));
+            self::assertNotNull($this->executor->execute(['ZSCORE', $this->keys->scopeKey(S::CLASS_NAME, \Maatify\RateLimiter\Enum\AdmissionScopeKindEnum::COUNTER, 'c:g4-out-succ'), 'm-g4-cnt']));
 
             return [$set, $cnt];
         }
@@ -390,7 +470,7 @@ final class AdmissionReservationAclPreflightRedisTest extends AdmissionRedisGate
     {
         if ($case === 'failure_set') {
             $setKey = $this->keys->scopeKey(S::CLASS_NAME, \Maatify\RateLimiter\Enum\AdmissionScopeKindEnum::SET_SIZE, 's:g4-out-fail');
-            self::assertNotNull($this->executor->execute(['ZSCORE', $setKey, 'acct-g4-1']));
+            self::assertSame((string) (self::NOW + 2 + 1200), $this->executor->execute(['ZSCORE', $setKey, 'acct-g4-1']));
             self::assertSame(1200, $this->executor->execute(['TTL', $setKey]));
 
             return;
@@ -399,7 +479,8 @@ final class AdmissionReservationAclPreflightRedisTest extends AdmissionRedisGate
             $setKey = $this->keys->scopeKey(S::CLASS_NAME, \Maatify\RateLimiter\Enum\AdmissionScopeKindEnum::SET_SIZE, 's:g4-out-settle');
             $pendingKey = $this->keys->pendingKey(S::CLASS_NAME, 's:g4-out-settle');
             $permitKey = $this->keys->permitKey('p-g4-arr-settle');
-            self::assertNotNull($this->executor->execute(['ZSCORE', $setKey, 'm-g4-settle']));
+            self::assertSame((string) (self::NOW + 2 + 600), $this->executor->execute(['ZSCORE', $setKey, 'm-g4-settle']));
+            self::assertSame(600, $this->executor->execute(['TTL', $setKey]));
             self::assertNull($this->executor->execute(['ZSCORE', $pendingKey, 'm-g4-settle']));
             // applyAdmissionOutcome never claims the permit.
             self::assertSame('ISSUED', $this->executor->execute(['HGET', $permitKey, 'state']));
@@ -427,6 +508,12 @@ final class AdmissionReservationAclPreflightRedisTest extends AdmissionRedisGate
     private function observe(): array
     {
         return StateSnapshot::all($this->executor);
+    }
+
+    /** @param array<string, string> $expected */
+    private function assertSnapshotUnchanged(array $expected): void
+    {
+        self::assertSame($expected, $this->observe());
     }
 
     /** @param list<string> $denied */
