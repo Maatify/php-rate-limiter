@@ -6,7 +6,7 @@
 
 ## Status
 
-`ACTIVE` — activated 2026-11-12 in [PR #205](https://github.com/Maatify/php-rate-limiter/pull/205) on the Owner’s explicit approval. The activation commit records the authorization. The [Lead accepted T-5 on `94d29c8`](https://github.com/Maatify/php-rate-limiter/pull/205#pullrequestreview-5879850196).
+`SUPERSEDED` by [DEC-051](DEC-051_REQUEST_ATOMIC_SAVE_WITH_FAIL_CLOSED_INCOMPLETE_OVERLAY_READ_SETS.md) on 2026-11-28 under [Owner-authorized F-G4-09](https://github.com/Maatify/php-rate-limiter/issues/281#issuecomment-7235113819). Historical activation: activated 2026-11-12 in [PR #205](https://github.com/Maatify/php-rate-limiter/pull/205) on the Owner’s explicit approval. The activation commit records the authorization. The [Lead accepted T-5 on `94d29c8`](https://github.com/Maatify/php-rate-limiter/pull/205#pullrequestreview-5879850196).
 
 ## Date
 
@@ -88,4 +88,4 @@ None. It changes the mechanism of the T-5 design approved earlier on #185 (PHP c
 
 ## Superseded By
 
-None.
+[DEC-051](DEC-051_REQUEST_ATOMIC_SAVE_WITH_FAIL_CLOSED_INCOMPLETE_OVERLAY_READ_SETS.md).

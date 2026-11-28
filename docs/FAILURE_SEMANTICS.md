@@ -306,6 +306,31 @@ A runtime graph, together with the store objects it is built on, serves **one in
 * **Readers are calls too.** The operational readers are refused while a call is in flight on their store; concurrent monitoring uses its own graph, store object and connection.
 * **Ownership is released by unwinding.** A suspended call that is never resumed and never destroyed keeps its resources, and every later call on a graph that shares them is refused until it is destroyed (destroying a Fiber unwinds it). There is no timeout release.
 
+### 2.6.1 Complete read sets before request save (DEC-051)
+
+`RequestAtomicStoreInterface` permits saving only when every read required by the evaluation is provable and unchanged.
+Catching a step failure does not permit saving when that step did not supply a trustworthy read set. A custom store that
+can prove the reads need not adopt the official adapter's private mechanism.
+
+The bundled Redis store remembers the first non-backend error from overlay dispatch or reply/delta import, without
+wrapping or reclassifying it. Delta entries are validated and imported together; a malformed delta's valid prefix never
+becomes trusted state. On normal callback return, an observed backend failure takes precedence (F-G4-07); otherwise the
+same first incomplete-step error is thrown without verify, retry or commit, even with no held writes. Root/E1/nested and
+admission overlay operations share this boundary; each outer attempt and root clone starts without transient failure.
+
+When a Throwable ends the callback, backend/overlap and observed-backend precedence remain unchanged. Otherwise only a
+verified conflict in the previously trusted held set permits bounded retry. Empty state or verify=1 throws the same
+callback error; partial verification does not prove a failed step's unknown reads current. A verification failure itself
+keeps its native error (including ACL refusal), rather than the earlier incomplete-step error. There is no repair read or
+retry merely because an incomplete error was recorded. Pre-dispatch validation and semantic PHP validation after a
+complete delta do not mark every callback error as an incomplete overlay operation.
+
+These errors retain their actual exception contracts: only BackendFailureException participates in circuit/fallback
+accounting (DEC-015/018). PING's handled unhealthy result, independent outcome claim/settlement, unknown outcome after a
+lost commit reply, signals, retry budgets and save ACL/expiry rules are unchanged. This does not extend Redis atomicity
+to OOM or read-only-replica errors after writes begin. DEC-051 supersedes DEC-037 for this completeness boundary;
+historical references to DEC-037 are read with its successor.
+
 ### 2.7 Request save and the Redis ACL (DEC-042)
 
 The request save (`transactRequest()`, DEC-037) asks Redis for three different kinds of permission, and they fail in different places. The account of the Host must grant all of them:

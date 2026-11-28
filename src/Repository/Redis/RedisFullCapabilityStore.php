@@ -115,6 +115,9 @@ final class RedisFullCapabilityStore implements
     /** T-5: the first backend failure a step of the held request met, even when the step handled it and went on. */
     private ?BackendFailureException $requestBackendFailure = null;
 
+    /** First overlay dispatch/import error that left this outer attempt without a complete trusted read set (DEC-051). */
+    private ?\Throwable $requestOverlayFailure = null;
+
     /**
      * DEC-044: the store this object is a layout view of, or null for the store itself. A view shares the request state, the ownership and
      * `transactRequest()` of its root, so both layouts are one transaction.
@@ -1963,7 +1966,7 @@ LUA;
     /**
      * F295-01 / F-G4-05: a copy of a store is its own store, so it never inherits the E1 view
      * or any transient request state or lazy request-bound helpers (`$admission`,
-     * `$outcomeAdmission`, `$requestState`, `$requestBackendFailure`) of the original.
+     * `$outcomeAdmission`, `$requestState`, `$requestBackendFailure`, `$requestOverlayFailure`) of the original.
      *
      * A copy of an E1 view stays a view of the same root (`$this->root !== null` keeps
      * `$this->e1View` cleared only on root copies). Sharing the underlying Redis executor
@@ -1975,6 +1978,7 @@ LUA;
         $this->outcomeAdmission = null;
         $this->requestState = null;
         $this->requestBackendFailure = null;
+        $this->requestOverlayFailure = null;
         if ($this->root === null) {
             $this->e1View = null;
         }
@@ -3246,7 +3250,7 @@ LUA;
     /**
      * Implements `RequestAtomicStoreInterface::transactRequest()`; the guarantees stated there all apply.
      *
-     * Limits of this store, which belong to it and not to the interface (DEC-037):
+     * Limits of this store, which belong to it and not to the interface (DEC-051, successor of DEC-037):
      *
      * - At most 32 evaluations of `$evaluate`.
      * - A random pause between evaluations that grows to 16 milliseconds.
@@ -3263,6 +3267,15 @@ LUA;
      * is not recorded by the transaction: `isHealthy()` returns false and keeps its failed-health-check semantics
      * (DEC-018). This pre-save refusal does not cover a failure while awaiting a commit reply, whose outcome can be
      * unknown as described below.
+     * A non-backend error from overlay dispatch or reply/delta import leaves that step's reads unproven (DEC-051).
+     * Delta import is all-or-none. A normal callback return throws the first such unchanged error without verify,
+     * retry or commit, even with no held writes; an observed backend failure takes precedence as above. If an error
+     * ends the callback, a verified conflict in the previously trusted held set may still retry within the bounds.
+     * Empty state or verify=1 throws that callback error unchanged and does not prove the failed step's unknown
+     * reads current; a failure raised by verify keeps its own exception. Pre-dispatch validation and semantic PHP
+     * validation after a complete delta do not mark the request merely because they throw. Root/E1/nested/admission
+     * overlay operations share the marker, cleared at each outer attempt and exit; a root clone starts clean.
+     *
      * When either bound is reached nothing is saved and `RateLimitConcurrencyException` is thrown.
      * An error over current state, and any `BackendFailureException`, ends the call at once and is thrown as it
      * was raised. Whether anything was saved depends on when a `BackendFailureException` occurred: during the
@@ -3308,6 +3321,7 @@ LUA;
             }
             $this->root()->requestState = [];
             $this->root()->requestBackendFailure = null;
+            $this->root()->requestOverlayFailure = null;
             try {
                 $result = $evaluate();
                 $lost = $this->lostBackend();
@@ -3316,6 +3330,7 @@ LUA;
                     // memory then): what the request holds is incomplete, so none of it is saved.
                     throw $lost;
                 }
+                $incomplete = $this->incompleteOverlay();
                 $state = $this->heldRequestState();
             } catch (BackendFailureException $exception) {
                 throw $exception;
@@ -3330,7 +3345,8 @@ LUA;
                 $state = $this->heldRequestState();
                 $this->root()->requestState = null;
                 // A step that read keys at different moments can see a combination no single moment held and
-                // report it as malformed. Only an error over state that is still current is the request's answer.
+                // report it as malformed. Only a conflict in trusted held state justifies retry; verify=1 cannot
+                // prove the unknown reads of an incomplete step current, so the callback's error still reaches its caller.
                 if ($state !== [] && ! $this->root()->requestStateIsCurrent($state)) {
                     $retryingSince ??= hrtime(true);
                     $this->backOff($attempt);
@@ -3340,6 +3356,11 @@ LUA;
                 throw $exception;
             } finally {
                 $this->root()->requestState = null;
+                $this->root()->requestOverlayFailure = null;
+            }
+            if ($incomplete !== null) {
+                // Outside the callback catch path: a normal return cannot turn an incomplete attempt into conflict retry.
+                throw $incomplete;
             }
             if ($this->commitRequest($state)) {
                 return $result;
@@ -3353,7 +3374,9 @@ LUA;
 
     /**
      * Run one store script against the request overlay: no write reaches Redis,
-     * and the changed or newly read key states are kept for the next step.
+     * and the changed or newly read key states are published together after the complete delta validates.
+     * Dispatch or import failures retain the same first Throwable for this outer attempt (DEC-051); pre-dispatch
+     * serialization is outside that boundary. Backend failure keeps its separate first-backend precedence.
      *
      * @param list<string> $keys
      * @param list<int|string|float> $args
@@ -3375,32 +3398,45 @@ LUA;
         );
         try {
             $reply = $this->command($command);
+            if (! is_array($reply) || ! array_is_list($reply) || $reply === [] || ! is_string($reply[0])) {
+                throw new RateLimiterException('Malformed request overlay response.');
+            }
+            $changes = json_decode($reply[0], true, 512, JSON_THROW_ON_ERROR);
+            if (! is_array($changes)) {
+                throw new RateLimiterException('Malformed request overlay changes.');
+            }
+            // Publish only a completely validated delta. Its valid prefix is not a trusted read set on failure.
+            $next = $this->heldRequestState();
+            foreach ($changes as $change) {
+                if (! is_array($change) || ! isset($change[0], $change[1]) || ! is_string($change[0]) || ! is_string($change[1])) {
+                    throw new RateLimiterException('Malformed request overlay change.');
+                }
+                $next[$change[0]] = $change[1];
+            }
+            $this->root()->requestState = $next;
+
+            return $reply[1] ?? null;
         } catch (BackendFailureException $exception) {
             $this->root()->requestBackendFailure ??= $exception;
 
             throw $exception;
-        }
-        if (! is_array($reply) || ! array_is_list($reply) || $reply === [] || ! is_string($reply[0])) {
-            throw new RateLimiterException('Malformed request overlay response.');
-        }
-        $changes = json_decode($reply[0], true, 512, JSON_THROW_ON_ERROR);
-        if (! is_array($changes)) {
-            throw new RateLimiterException('Malformed request overlay changes.');
-        }
-        foreach ($changes as $change) {
-            if (! is_array($change) || ! isset($change[0], $change[1]) || ! is_string($change[0]) || ! is_string($change[1])) {
-                throw new RateLimiterException('Malformed request overlay change.');
-            }
-            $this->root()->requestState[$change[0]] = $change[1];
-        }
+        } catch (\Throwable $exception) {
+            $this->root()->requestOverlayFailure ??= $exception;
 
-        return $reply[1] ?? null;
+            throw $exception;
+        }
     }
 
     /** T-5: read through a method because steps of the evaluation set it behind the caller's back. */
     private function lostBackend(): ?BackendFailureException
     {
         return $this->root()->requestBackendFailure;
+    }
+
+    /** Read through a method because evaluation steps can record this failure behind the caller's back. */
+    private function incompleteOverlay(): ?\Throwable
+    {
+        return $this->root()->requestOverlayFailure;
     }
 
     /** @return array<string, string> */
