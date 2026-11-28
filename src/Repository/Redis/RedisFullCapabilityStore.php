@@ -3256,7 +3256,10 @@ LUA;
      *   runs to its end.
      *
      * A conflict is a commit that finds a read state changed, or an error from `$evaluate` over state that is no
-     * longer current. When either bound is reached nothing is saved and `RateLimitConcurrencyException` is thrown.
+     * longer current, unless the request already observed an operational backend failure. Such a failure prevents
+     * state verification, re-evaluation and saving even if the callback catches it: a later exception that ends the
+     * callback is thrown unchanged; a normal callback return instead throws the first recorded backend failure.
+     * When either bound is reached nothing is saved and `RateLimitConcurrencyException` is thrown.
      * An error over current state, and any `BackendFailureException`, ends the call at once and is thrown as it
      * was raised. Whether anything was saved depends on when a `BackendFailureException` occurred: during the
      * evaluation the scripts only read, so nothing is saved, and a save that never reached Redis saves nothing; but
@@ -3316,6 +3319,10 @@ LUA;
                 // DEC-041: an overlapping call is refused, never retried and never classified as a conflict over stale state.
                 throw $exception;
             } catch (\Throwable $exception) {
+                if ($this->lostBackend() !== null) {
+                    // An observed backend failure forbids conflict retry; preserve the later callback error's provenance.
+                    throw $exception;
+                }
                 $state = $this->heldRequestState();
                 $this->root()->requestState = null;
                 // A step that read keys at different moments can see a combination no single moment held and
