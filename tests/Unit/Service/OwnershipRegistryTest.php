@@ -812,6 +812,20 @@ final class OwnershipRegistryTest extends TestCase
 
     // ---- F-G4-06: token-wide crossing during nested admit() provider lookup -------------------------------------------------------
 
+    /** @phpstan-impure */
+    private function liveRecord(object $resource): ?\Maatify\RateLimiter\Service\SlotRecord
+    {
+        $slots = (new \ReflectionProperty(OwnershipRegistry::class, 'slots'))->getValue();
+        self::assertInstanceOf(\WeakMap::class, $slots);
+        if (! isset($slots[$resource])) {
+            return null;
+        }
+        $slot = $slots[$resource];
+        self::assertInstanceOf(\Maatify\RateLimiter\Service\ResourceSlot::class, $slot);
+
+        return $slot->record;
+    }
+
     public function testAdmitRejectsReEntryOnSameAndSiblingResourceDuringProviderLookup(): void
     {
         $a = new \stdClass();
@@ -849,9 +863,12 @@ final class OwnershipRegistryTest extends TestCase
 
         OwnershipRegistry::bindAll([$a, $b], $provider);
         $scope = OwnershipRegistry::acquire([$a, $b], 'limit', ContextDomain::forProvider($provider));
-        $records = $scope->records();
-        self::assertCount(2, $records);
-        $token = $records[0]->token;
+        $liveA = $this->liveRecord($a);
+        $liveB = $this->liveRecord($b);
+        self::assertNotNull($liveA);
+        self::assertNotNull($liveB);
+        self::assertSame($liveA->token, $liveB->token);
+        $token = $liveA->token;
 
         $probe->providerCalls = 0;
         $probe->armed = true;
@@ -862,19 +879,26 @@ final class OwnershipRegistryTest extends TestCase
         self::assertInstanceOf(OverlappingRequestException::class, $probe->refusalB, 'Re-entry on a sibling resource of the same token during lookup must be refused.');
         self::assertSame(0, $probe->sideEffectsA);
         self::assertSame(0, $probe->sideEffectsB);
-        self::assertSame(1, $probe->providerCalls, 'Refused re-entries must not invoke the provider again.');
-        self::assertSame(0, $records[0]->lookups);
-        self::assertSame(0, $records[1]->lookups);
+        self::assertSame(1, $providerCalls = $probe->providerCalls, 'Refused re-entries must not invoke the provider again.');
+        self::assertSame(1, $providerCalls);
+        self::assertSame($liveA, $this->liveRecord($a));
+        self::assertSame($liveB, $this->liveRecord($b));
+        self::assertSame(0, $liveA->lookups);
+        self::assertSame(0, $liveB->lookups);
         self::assertSame(0, $token->crossings);
 
         // Positive control: legitimate nested calls on both A and B succeed after the lookup finishes.
         self::assertNull(OwnershipRegistry::admit($a, 'after-a'));
         self::assertNull(OwnershipRegistry::admit($b, 'after-b'));
         self::assertSame(3, $probe->providerCalls);
+        self::assertSame($liveA, $this->liveRecord($a));
+        self::assertSame($liveB, $this->liveRecord($b));
 
         $scope->release();
         self::assertFalse(OwnershipRegistry::isOccupied($a));
         self::assertFalse(OwnershipRegistry::isOccupied($b));
+        self::assertNull($this->liveRecord($a));
+        self::assertNull($this->liveRecord($b));
     }
 
     public function testAdmitRestoresCrossingDepthAndOwnershipWhenProviderThrowsDuringLookup(): void
@@ -896,8 +920,11 @@ final class OwnershipRegistryTest extends TestCase
 
         OwnershipRegistry::bindAll([$a, $b], $provider);
         $scope = OwnershipRegistry::acquire([$a, $b], 'limit', ContextDomain::forProvider($provider));
-        $records = $scope->records();
-        $token = $records[0]->token;
+        $liveA = $this->liveRecord($a);
+        $liveB = $this->liveRecord($b);
+        self::assertNotNull($liveA);
+        self::assertNotNull($liveB);
+        $token = $liveA->token;
 
         $probe->shouldThrow = true;
         $caught = null;
@@ -915,27 +942,28 @@ final class OwnershipRegistryTest extends TestCase
 
         self::assertTrue(OwnershipRegistry::isOccupied($a));
         self::assertTrue(OwnershipRegistry::isOccupied($b));
-        self::assertSame($records, $scope->records());
-        self::assertSame(0, $records[0]->lookups);
-        self::assertSame(0, $records[1]->lookups);
+        self::assertSame($liveA, $this->liveRecord($a));
+        self::assertSame($liveB, $this->liveRecord($b));
+        self::assertSame(0, $liveA->lookups);
+        self::assertSame(0, $liveB->lookups);
         self::assertSame(0, $token->crossings);
 
         self::assertNull(OwnershipRegistry::admit($a, 'ok-a'));
         self::assertNull(OwnershipRegistry::admit($b, 'ok-b'));
+        self::assertSame($liveA, $this->liveRecord($a));
+        self::assertSame($liveB, $this->liveRecord($b));
         $scope->release();
         self::assertFalse(OwnershipRegistry::isOccupied($a));
         self::assertFalse(OwnershipRegistry::isOccupied($b));
     }
 
-    public function testFiberCancellationDuringSuspendedLookupReleasesCrossingAndProtectsReusedSlots(): void
+    public function testFiberCancellationDuringSuspendedLookupReleasesCrossingWhileOwnerLives(): void
     {
-        // C1: owner stays alive in main while a suspended lookup Fiber is destroyed.
         $a = new \stdClass();
         $b = new \stdClass();
         $probe = new class {
             public bool $suspendNext = false;
             public int $providerCalls = 0;
-            public string $context = 'ctx-owner';
         };
 
         $provider = $this->provider(static function () use ($probe): string {
@@ -944,22 +972,29 @@ final class OwnershipRegistryTest extends TestCase
                 $probe->suspendNext = false;
                 Fiber::suspend('in-lookup');
             }
+            $current = Fiber::getCurrent();
 
-            return $probe->context;
+            return $current === null ? 'main' : 'fiber-' . spl_object_id($current);
         });
 
         OwnershipRegistry::bindAll([$a, $b], $provider);
         $scope = OwnershipRegistry::acquire([$a, $b], 'limit', ContextDomain::forProvider($provider));
-        $records = $scope->records();
-        $token = $records[0]->token;
+        $liveA = $this->liveRecord($a);
+        $liveB = $this->liveRecord($b);
+        self::assertNotNull($liveA);
+        self::assertNotNull($liveB);
+        $token = $liveA->token;
 
+        $fLookup = new Fiber(static fn() => OwnershipRegistry::admit($a, 'fiber-lookup'));
+        $fiberIdentity = 'fiber-' . spl_object_id($fLookup);
+        self::assertNotSame($provider->currentContext(), $fiberIdentity, 'Provider must assign distinct identities to main and Fiber.');
         $probe->providerCalls = 0;
         $probe->suspendNext = true;
-        $fLookup = new Fiber(static fn() => OwnershipRegistry::admit($a, 'fiber-lookup'));
         $fLookup->start();
         self::assertTrue($fLookup->isSuspended());
         self::assertSame(1, $probe->providerCalls);
-        self::assertSame(1, $records[0]->lookups + $records[1]->lookups);
+        self::assertSame(1, $liveA->lookups);
+        self::assertSame(0, $liveB->lookups);
         self::assertSame(1, $token->crossings);
 
         $sideEffects = 0;
@@ -985,21 +1020,50 @@ final class OwnershipRegistryTest extends TestCase
         unset($fLookup);
         gc_collect_cycles();
 
-        self::assertSame(0, $records[0]->lookups);
+        self::assertSame($liveA, $this->liveRecord($a));
+        self::assertSame($liveB, $this->liveRecord($b));
+        self::assertSame(0, $liveA->lookups);
+        self::assertSame(0, $liveB->lookups);
         self::assertSame(0, $token->crossings);
         self::assertTrue(OwnershipRegistry::isOccupied($a));
         self::assertTrue(OwnershipRegistry::isOccupied($b));
         self::assertNull(OwnershipRegistry::admit($a, 'after-cancel-a'));
         self::assertNull(OwnershipRegistry::admit($b, 'after-cancel-b'));
+        self::assertSame($liveA, $this->liveRecord($a));
+        self::assertSame($liveB, $this->liveRecord($b));
         $scope->release();
         self::assertFalse(OwnershipRegistry::isOccupied($a));
         self::assertFalse(OwnershipRegistry::isOccupied($b));
+        self::assertNull($this->liveRecord($a));
+        self::assertNull($this->liveRecord($b));
+    }
 
-        // C2: owner1 releases while lookup Fiber is suspended and owner2 re-acquires before old Fiber is destroyed.
-        $probe->suspendNext = false;
-        $scope1 = OwnershipRegistry::acquire([$a, $b], 'limit-1', ContextDomain::forProvider($provider));
-        $records1 = $scope1->records();
-        $token1 = $records1[0]->token;
+    public function testOldLookupFiberCancellationDoesNotCorruptNewOwnerRecordsOrCrossings(): void
+    {
+        $a = new \stdClass();
+        $b = new \stdClass();
+        $probe = new class {
+            public bool $suspendNext = false;
+        };
+
+        $provider = $this->provider(static function () use ($probe): string {
+            if ($probe->suspendNext) {
+                $probe->suspendNext = false;
+                Fiber::suspend('in-lookup');
+            }
+            $current = Fiber::getCurrent();
+
+            return $current === null ? 'main' : 'fiber-' . spl_object_id($current);
+        });
+
+        OwnershipRegistry::bindAll([$a, $b], $provider);
+        $domain = ContextDomain::forProvider($provider);
+        $scope1 = OwnershipRegistry::acquire([$a, $b], 'limit-1', $domain);
+        $liveA1 = $this->liveRecord($a);
+        $liveB1 = $this->liveRecord($b);
+        self::assertNotNull($liveA1);
+        self::assertNotNull($liveB1);
+        $token1 = $liveA1->token;
 
         $probe->suspendNext = true;
         $fOldLookup = new Fiber(static fn() => OwnershipRegistry::admit($a, 'old-lookup'));
@@ -1010,26 +1074,37 @@ final class OwnershipRegistryTest extends TestCase
         $scope1->release();
         self::assertFalse(OwnershipRegistry::isOccupied($a));
         self::assertFalse(OwnershipRegistry::isOccupied($b));
+        self::assertNull($this->liveRecord($a));
+        self::assertNull($this->liveRecord($b));
 
-        $probe->context = 'ctx-owner-2';
-        $scope2 = OwnershipRegistry::acquire([$a, $b], 'limit-2', ContextDomain::forProvider($provider));
-        $records2 = $scope2->records();
-        $token2 = $records2[0]->token;
+        // New owner acquires the same resources in the same domain (same 'main' context identity, new token/records).
+        $scope2 = OwnershipRegistry::acquire([$a, $b], 'limit-2', $domain);
+        $liveA2 = $this->liveRecord($a);
+        $liveB2 = $this->liveRecord($b);
+        self::assertNotNull($liveA2);
+        self::assertNotNull($liveB2);
+        $token2 = $liveA2->token;
         self::assertNotSame($token1, $token2);
-        self::assertNotSame($records1[0], $records2[0]);
-        self::assertSame(0, $records2[0]->lookups);
-        self::assertSame(0, $records2[1]->lookups);
+        self::assertNotSame($liveA1, $liveA2);
+        self::assertNotSame($liveB1, $liveB2);
+        self::assertSame(0, $liveA2->lookups);
+        self::assertSame(0, $liveB2->lookups);
         self::assertSame(0, $token2->crossings);
 
         unset($fOldLookup);
         gc_collect_cycles();
 
         self::assertSame(0, $token1->crossings, 'Old token crossing depth must still unwind to zero.');
-        self::assertSame(0, $records2[0]->lookups, 'Old Fiber finally must not touch new owner record.');
-        self::assertSame(0, $records2[1]->lookups, 'Old Fiber finally must not touch new owner sibling record.');
-        self::assertSame(0, $token2->crossings, 'Old Fiber finally must not touch new owner token.');
+        self::assertSame($liveA2, $this->liveRecord($a), 'Old Fiber finally must leave new owner live record A untouched.');
+        self::assertSame($liveB2, $this->liveRecord($b), 'Old Fiber finally must leave new owner live record B untouched.');
+        self::assertSame($token2, $liveA2->token);
+        self::assertSame(0, $liveA2->lookups);
+        self::assertSame(0, $liveB2->lookups);
+        self::assertSame(0, $token2->crossings);
         self::assertNull(OwnershipRegistry::admit($a, 'new-owner-a'));
         self::assertNull(OwnershipRegistry::admit($b, 'new-owner-b'));
+        self::assertSame($liveA2, $this->liveRecord($a));
+        self::assertSame($liveB2, $this->liveRecord($b));
         $scope2->release();
         self::assertFalse(OwnershipRegistry::isOccupied($a));
         self::assertFalse(OwnershipRegistry::isOccupied($b));
