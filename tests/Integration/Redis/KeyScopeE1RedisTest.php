@@ -134,12 +134,17 @@ final class KeyScopeE1RedisTest extends TestCase
         return $keys;
     }
 
-    /** @return array<string, array{string, string}> every key: byte-exact DUMP (hex) and PEXPIRETIME as text */
-    private function snapshot(): array
+    /**
+     * Byte-exact DUMP (hex) and PEXPIRETIME as text. Request-failure tests exclude independently reported circuit
+     * state by default; direct-store inventory checks explicitly include every key, regardless of prefix or family.
+     *
+     * @return array<string, array{string, string}>
+     */
+    private function snapshot(bool $includeCircuit = false): array
     {
         $state = [];
         foreach ($this->keys() as $key) {
-            if (str_contains($key, ':circuit:')) {
+            if (! $includeCircuit && str_contains($key, ':circuit:')) {
                 continue; // the circuit breaker records a backend failure itself; it is not a write of the request
             }
             $dump = $this->admin->execute(['DUMP', $key]);
@@ -834,10 +839,11 @@ final class KeyScopeE1RedisTest extends TestCase
      * separate from the tested executor. Every physical key is checked after every operation: only the declared new
      * or renewed lifetimes may move; the rest retain exact expiry. Read-only commands retain DUMP as well.
      *
+     * @param ?\Closure(int): void $afterCommand isolated negative-control hook after the real command; absent in parity runs
      * @return array{list<string>, array<string, list<string>>} semantic results and sorted exact DUMPs per family;
      * independent live expiries are validated against their own references before being left out of cross-run parity
      */
-    private function layoutRun(bool $e1): array
+    private function layoutRun(bool $e1, ?\Closure $afterCommand = null): array
     {
         $this->admin->execute(['FLUSHDB']);
         if ($e1) {
@@ -870,14 +876,15 @@ final class KeyScopeE1RedisTest extends TestCase
         $commandIndex = 0;
         $legacyBounds = null;
         $wire = new RespRedisCommandExecutor($this->host, $this->port);
-        $executor = new CallableRedisCommandExecutor(function (array $command) use ($wire, $lifetimes, $readOnly, $key, $current, &$commandIndex, &$legacyBounds): mixed {
+        $executor = new CallableRedisCommandExecutor(function (array $command) use ($wire, $lifetimes, $readOnly, $key, $current, $afterCommand, &$commandIndex, &$legacyBounds): mixed {
             self::assertArrayHasKey($commandIndex, $lifetimes, 'The original fixture sends exactly the declared operations.');
-            $prior = $this->snapshot();
+            $prior = $this->snapshot(true);
             $before = $this->redisTimeMilliseconds();
             $reply = $wire->execute($command);
+            $afterCommand?->__invoke($commandIndex);
             $after = $this->redisTimeMilliseconds();
             self::assertGreaterThanOrEqual($before, $after, 'Redis time must not move backwards.');
-            $actual = $this->snapshot();
+            $actual = $this->snapshot(true);
             $expectedKeys = array_unique([...array_keys($prior), ...array_keys($lifetimes[$commandIndex])]);
             sort($expectedKeys);
             self::assertSame($expectedKeys, array_keys($actual), 'No undeclared, missing or Previous key may appear.');
@@ -928,12 +935,21 @@ final class KeyScopeE1RedisTest extends TestCase
         $returned[] = print_r($target->peekBudgetAt($current, self::NOW + 1), true);
         self::assertSame(13, $commandIndex, 'All per-operation lifetime references were exercised.');
 
+        $final = $this->snapshot(true);
+        $expectedFinalKeys = [];
+        foreach ($lifetimes as $declared) {
+            $expectedFinalKeys = array_unique([...$expectedFinalKeys, ...array_keys($declared)]);
+        }
+        sort($expectedFinalKeys);
+        self::assertSame($expectedFinalKeys, array_keys($final), 'The final complete inventory contains only declared keys.');
+        if ($prefix === '') {
+            self::fail('A layout prefix must not accept every key.');
+        }
         $values = [];
-        foreach (self::under($this->keys(), $prefix) as $physical) {
+        foreach ($final as $physical => [$dump]) {
+            self::assertStringStartsWith($prefix, $physical, 'Every inventoried key belongs to the selected layout.');
             $family = explode(':', substr($physical, strlen($prefix)))[0];
-            $dump = $this->admin->execute(['DUMP', $physical]);
-            self::assertIsString($dump);
-            $values[$family][] = bin2hex($dump);
+            $values[$family][] = $dump;
         }
         ksort($values);
         foreach ($values as &$list) {
@@ -992,6 +1008,50 @@ final class KeyScopeE1RedisTest extends TestCase
         self::assertCount(12, $wrong, 'Every negative control executed without a skip or timing retry.');
     }
 
+    /** The strict layout path must reject an undeclared circuit key even during a read-only operation, in either layout. */
+    public function testLayoutInventoryRejectsAnUndeclaredCircuitKeyOutsideItsPrefix(): void
+    {
+        $sentinel = 'unexpected:circuit:sentinel';
+        foreach ([false, true] as $e1) {
+            $injections = 0;
+            $failure = null;
+            $filtered = [];
+            $complete = [];
+            try {
+                $this->layoutRun($e1, function (int $commandIndex) use ($sentinel, &$injections): void {
+                    if ($commandIndex === 5) {
+                        // The real readDecayPauseState just returned; no store write or TTL fixture is substituted.
+                        $this->admin->execute(['SET', $sentinel, 'unauthorized-key']);
+                        $injections++;
+                    }
+                });
+            } catch (\PHPUnit\Framework\ExpectationFailedException $exception) {
+                $failure = $exception;
+                $filtered = $this->snapshot();
+                $complete = $this->snapshot(true);
+            } finally {
+                $this->admin->execute(['DEL', $sentinel]);
+            }
+            self::assertSame(1, $injections, 'The sentinel was actually inserted after the read in this layout.');
+            self::assertInstanceOf(\PHPUnit\Framework\ExpectationFailedException::class, $failure);
+            self::assertStringContainsString('No undeclared, missing or Previous key may appear.', $failure->getMessage());
+            $comparison = $failure->getComparisonFailure();
+            self::assertNotNull($comparison, 'The rejection came from the actual key-set comparison, before TTL checks.');
+            $expectedKeys = $comparison->getExpected();
+            $actualKeys = $comparison->getActual();
+            self::assertIsArray($expectedKeys);
+            self::assertIsArray($actualKeys);
+            self::assertNotContains($sentinel, $expectedKeys);
+            self::assertContains($sentinel, $actualKeys);
+            $expectedWithSentinel = [...$expectedKeys, $sentinel];
+            sort($expectedWithSentinel);
+            self::assertSame($expectedWithSentinel, $actualKeys, 'The sentinel is the sole inventory mismatch.');
+            self::assertArrayNotHasKey($sentinel, $filtered, 'The default snapshot semantics used by other tests are preserved.');
+            self::assertSame('-1', $complete[$sentinel][1], 'The key-set assertion rejected the key before any live-TTL assertion.');
+            self::assertNotContains($sentinel, $this->keys(), 'The isolated control removes its sentinel.');
+        }
+    }
+
     public function testEveryE1FamilyBehavesLikeItsV1CounterpartOnTheRealStoreIncludingLifecycleAndRotation(): void
     {
         [$v1Returned, $v1Values] = $this->layoutRun(false);
@@ -999,7 +1059,7 @@ final class KeyScopeE1RedisTest extends TestCase
 
         self::assertSame(['block', 'budget', 'cycle', 'pause', 'reentry-claim', 'score', 'watch', 'watch-meta'], array_keys($e1Values), 'All eight E1 families are written, in the E1 prefix.');
         self::assertSame(array_keys($v1Values), array_keys($e1Values));
-        self::assertSame($v1Returned, $e1Returned, 'Every call returns the same result through the view as through the store.');
+        self::assertSame($v1Returned, $e1Returned, 'Every call has the same semantic result after independent legacy-expiry validation.');
         self::assertSame($v1Values, $e1Values, 'Every family stores byte-identical content; each physical lifetime was already checked against its own operation reference.');
     }
 
