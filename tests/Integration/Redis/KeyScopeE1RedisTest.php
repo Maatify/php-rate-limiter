@@ -134,12 +134,17 @@ final class KeyScopeE1RedisTest extends TestCase
         return $keys;
     }
 
-    /** @return array<string, array{string, string}> every key: byte-exact DUMP (hex) and PEXPIRETIME as text */
-    private function snapshot(): array
+    /**
+     * Byte-exact DUMP (hex) and PEXPIRETIME as text. Request-failure tests exclude independently reported circuit
+     * state by default; direct-store inventory checks explicitly include every key, regardless of prefix or family.
+     *
+     * @return array<string, array{string, string}>
+     */
+    private function snapshot(bool $includeCircuit = false): array
     {
         $state = [];
         foreach ($this->keys() as $key) {
-            if (str_contains($key, ':circuit:')) {
+            if (! $includeCircuit && str_contains($key, ':circuit:')) {
                 continue; // the circuit breaker records a backend failure itself; it is not a write of the request
             }
             $dump = $this->admin->execute(['DUMP', $key]);
@@ -743,37 +748,208 @@ final class KeyScopeE1RedisTest extends TestCase
         }
     }
 
-    /** @return array{list<string>, array<string, list<string>>} the results and, per family, the sorted byte-exact values */
-    private function layoutRun(bool $e1): array
+    /**
+     * Millisecond fixtures and contemporary Redis epochs are exact doubles on PHP32/64. No native-int epoch cast
+     * or float outside the exact-integer range is accepted by this oracle.
+     */
+    private static function exactMilliseconds(string $milliseconds): float
+    {
+        self::assertMatchesRegularExpression('/\A(?:0|[1-9][0-9]{0,15})\z/D', $milliseconds);
+        $value = (float) $milliseconds;
+        self::assertLessThanOrEqual(9007199254740991.0, $value);
+
+        return $value;
+    }
+
+    /**
+     * The relative deadline is bounded by independent Redis TIME samples immediately around its creating command.
+     * A backwards clock, fractional sample or out-of-range calculation fails rather than enlarging the window.
+     *
+     * @return array{float, float}
+     */
+    private static function relativeLifetimeBounds(float $before, float $after, int $ttlSeconds): array
+    {
+        self::assertSame(floor($before), $before);
+        self::assertSame(floor($after), $after);
+        self::assertGreaterThanOrEqual(0.0, $before);
+        self::assertGreaterThanOrEqual($before, $after, 'Redis time must not move backwards.');
+        self::assertGreaterThan(0, $ttlSeconds);
+        $lower = $before + $ttlSeconds * 1000.0;
+        $upper = $after + $ttlSeconds * 1000.0;
+        self::assertLessThanOrEqual(9007199254740991.0, $upper);
+
+        return [$lower, $upper];
+    }
+
+    /**
+     * Check absent (-2), persistent (-1), or live physical lifetime without rounding. Equal live bounds express an
+     * exact retained/absolute reference, never an expiry measured from the very result being judged.
+     *
+     * @param array{float, float} $bounds
+     */
+    private static function assertPhysicalLifetime(string $actual, array $bounds): void
+    {
+        [$lower, $upper] = $bounds;
+        self::assertGreaterThanOrEqual($lower, $upper);
+        if ($lower === -2.0 || $lower === -1.0) {
+            self::assertSame($lower, $upper);
+            self::assertSame($lower === -2.0 ? '-2' : '-1', $actual);
+
+            return;
+        }
+        $expiry = self::exactMilliseconds($actual);
+        self::assertGreaterThanOrEqual($lower, $expiry, 'Physical expiry precedes its operation-specific reference.');
+        self::assertLessThanOrEqual($upper, $expiry, 'Physical expiry exceeds its operation-specific reference.');
+    }
+
+    /**
+     * DEC-040's legacy read maps remaining Redis life to the caller's clock. At the read instant t in [before,after],
+     * PTTL is in [physicalExpiry-after,physicalExpiry-before]. The DTO is never an input to these expected bounds.
+     *
+     * @return array{int, int}
+     */
+    private static function legacyReadBounds(string $callerNowMs, string $physicalExpiry, float $before, float $after): array
+    {
+        self::assertSame(floor($before), $before);
+        self::assertSame(floor($after), $after);
+        self::assertGreaterThanOrEqual(0.0, $before);
+        self::assertGreaterThanOrEqual($before, $after, 'The read window must be ordered.');
+        $expiry = self::exactMilliseconds($physicalExpiry);
+        $caller = self::exactMilliseconds($callerNowMs);
+        self::assertGreaterThan($after, $expiry, 'The fixture must stay live for the entire read window.');
+        $latest = $caller + ($expiry - $before);
+        self::assertLessThanOrEqual(9007199254740991.0, $latest);
+        $lower = ceil(($caller + ($expiry - $after)) / 1000.0);
+        $upper = ceil($latest / 1000.0);
+        self::assertGreaterThanOrEqual(0.0, $lower);
+        self::assertLessThanOrEqual((float) PHP_INT_MAX, $upper);
+
+        return [(int) $lower, (int) $upper];
+    }
+
+    /** @param array{int, int} $bounds */
+    private static function assertLegacyReadExpiry(int $actual, array $bounds): void
+    {
+        self::assertGreaterThanOrEqual($bounds[0], $actual, 'Legacy expiry is below caller time plus the minimum possible PTTL.');
+        self::assertLessThanOrEqual($bounds[1], $actual, 'Legacy expiry is above caller time plus the maximum possible PTTL.');
+    }
+
+    /**
+     * Runs the original operations unchanged. Each command gets its own TIME bracket through an oracle connection
+     * separate from the tested executor. Every physical key is checked after every operation: only the declared new
+     * or renewed lifetimes may move; the rest retain exact expiry. Read-only commands retain DUMP as well.
+     *
+     * @param ?\Closure(int): void $afterCommand isolated negative-control hook after the real command; absent in parity runs
+     * @return array{list<string>, array<string, list<string>>} semantic results and sorted exact DUMPs per family;
+     * independent live expiries are validated against their own references before being left out of cross-run parity
+     */
+    private function layoutRun(bool $e1, ?\Closure $afterCommand = null): array
     {
         $this->admin->execute(['FLUSHDB']);
-        $store = new RedisFullCapabilityStore($this->admin, self::NAMESPACE);
         if ($e1) {
-            $target = $store->e1Keyspace();
             $current = E1AccountScopeKeyDeriver::key(self::SECRET, ['k4', self::POLICY, self::ENV, self::ACCOUNT]);
             $previous = E1AccountScopeKeyDeriver::key('previous_secret', ['k4', self::POLICY, self::ENV, self::ACCOUNT]);
             $life = E1AccountScopeKeyDeriver::key(self::SECRET, ['k4p', self::POLICY, self::ENV, self::ACCOUNT]);
             $prefix = self::e1Prefix();
         } else {
-            $target = $store;
             $current = hash_hmac('sha256', 'k4|current', self::SECRET);
             $previous = hash_hmac('sha256', 'k4|previous', 'previous_secret');
             $life = hash_hmac('sha256', 'k4p|current', self::SECRET);
             $prefix = self::v1Prefix();
         }
-        // E1 holds no `distinct` family (invariant 4): the derivative hashes stay in v1.
+        $key = static fn(string $family, string $logical): string => $prefix . $family . ':' . hash('sha256', $logical);
+        // References come from the fixture's API contracts, not TTLs read from the command's result or ARGV.
+        // Hard-block cycle/pause retention is 3600 / (60+3600); the claim has 600-61 seconds of logical life.
+        $lifetimes = [
+            [$key('score', $current) => 600],
+            [$key('block', $current) => 600],
+            [$key('budget', $current) => 86400],
+            [$key('watch', $current) => 600, $key('watch-meta', $current) => 600],
+            [$key('block', $current) => 60, $key('cycle', $current) => 3600, $key('pause', $current) => 3660],
+            [],
+            [$key('score', $life) => 600],
+            [$key('block', $life) => 60, $key('cycle', $life) => 3600, $key('pause', $life) => 3660],
+            [$key('reentry-claim', $life) => 539],
+            [], [], [], [],
+        ];
+        $readOnly = [5, 10, 11, 12];
+        $commandIndex = 0;
+        $legacyBounds = null;
+        $wire = new RespRedisCommandExecutor($this->host, $this->port);
+        $executor = new CallableRedisCommandExecutor(function (array $command) use ($wire, $lifetimes, $readOnly, $key, $current, $afterCommand, &$commandIndex, &$legacyBounds): mixed {
+            self::assertArrayHasKey($commandIndex, $lifetimes, 'The original fixture sends exactly the declared operations.');
+            $prior = $this->snapshot(true);
+            $before = $this->redisTimeMilliseconds();
+            $reply = $wire->execute($command);
+            $afterCommand?->__invoke($commandIndex);
+            $after = $this->redisTimeMilliseconds();
+            self::assertGreaterThanOrEqual($before, $after, 'Redis time must not move backwards.');
+            $actual = $this->snapshot(true);
+            $expectedKeys = array_unique([...array_keys($prior), ...array_keys($lifetimes[$commandIndex])]);
+            sort($expectedKeys);
+            self::assertSame($expectedKeys, array_keys($actual), 'No undeclared, missing or Previous key may appear.');
+            foreach ($actual as $physical => [, $expiry]) {
+                if (isset($lifetimes[$commandIndex][$physical])) {
+                    $bounds = self::relativeLifetimeBounds($before, $after, $lifetimes[$commandIndex][$physical]);
+                } else {
+                    self::assertArrayHasKey($physical, $prior);
+                    $retained = self::exactMilliseconds($prior[$physical][1]);
+                    $bounds = [$retained, $retained];
+                }
+                self::assertPhysicalLifetime($expiry, $bounds);
+                self::assertGreaterThan($after, self::exactMilliseconds($expiry), 'The physical fixture remains live.');
+            }
+            if (in_array($commandIndex, $readOnly, true)) {
+                self::assertSame($prior, $actual, 'A read preserves every DUMP and exact physical expiry.');
+            }
+            if ($commandIndex === 10) {
+                $legacyBounds = self::legacyReadBounds(self::NOW . '000', $prior[$key('score', $current)][1], $before, $after);
+            }
+            $commandIndex++;
+
+            return $reply;
+        });
+        $store = new RedisFullCapabilityStore($executor, self::NAMESPACE);
+        $target = $e1 ? $store->e1Keyspace() : $store;
+        // E1 holds no distinct family. Instrumentation above does not alter everyFamily's operations or other caller.
         $returned = $this->everyFamily($target, $current, $life, $previous, false);
-        $returned[] = print_r($target->readGenerationBoundScoreState($current, $previous), true);
+        $physicalScore = $key('score', $current);
+        $legacyFields = array_keys($this->rawHash($physicalScore));
+        sort($legacyFields);
+        self::assertSame(['updatedAt', 'value'], $legacyFields, 'The read fixture is legacy, without generation or logical expiresAt.');
+        $state = $target->readGenerationBoundScoreStateAtMilliseconds($current, $previous, self::NOW . '000');
+        self::assertNotNull($state);
+        self::assertNotNull($legacyBounds);
+        self::assertLegacyReadExpiry($state->expiresAt, $legacyBounds);
+        self::assertSame('current', $state->source);
+        self::assertSame(1, $state->value);
+        self::assertSame(self::NOW, $state->updatedAt);
+        self::assertNull($state->generation);
+        self::assertNull($state->postPunishmentReentry);
+        $semantic = $state->jsonSerialize();
+        self::assertIsArray($semantic);
+        // The only derived field is already checked independently, including its read-only boundary and source selection.
+        $semantic['expiresAt'] = 'validated caller-time plus independently bounded PTTL';
+        $returned[] = print_r($semantic, true);
         $returned[] = print_r($target->checkBlockAt($current, self::NOW + 1), true);
         $returned[] = print_r($target->peekBudgetAt($current, self::NOW + 1), true);
+        self::assertSame(13, $commandIndex, 'All per-operation lifetime references were exercised.');
 
+        $final = $this->snapshot(true);
+        $expectedFinalKeys = [];
+        foreach ($lifetimes as $declared) {
+            $expectedFinalKeys = array_unique([...$expectedFinalKeys, ...array_keys($declared)]);
+        }
+        sort($expectedFinalKeys);
+        self::assertSame($expectedFinalKeys, array_keys($final), 'The final complete inventory contains only declared keys.');
+        if ($prefix === '') {
+            self::fail('A layout prefix must not accept every key.');
+        }
         $values = [];
-        foreach (self::under($this->keys(), $prefix) as $key) {
-            $family = explode(':', substr($key, strlen($prefix)))[0];
-            $dump = $this->admin->execute(['DUMP', $key]);
-            self::assertIsString($dump);
-            $expiry = (float) $this->expiryText($key);
-            $values[$family][] = bin2hex($dump) . '@' . (string) (int) round($expiry / 60000);
+        foreach ($final as $physical => [$dump]) {
+            self::assertStringStartsWith($prefix, $physical, 'Every inventoried key belongs to the selected layout.');
+            $family = explode(':', substr($physical, strlen($prefix)))[0];
+            $values[$family][] = $dump;
         }
         ksort($values);
         foreach ($values as &$list) {
@@ -783,6 +959,99 @@ final class KeyScopeE1RedisTest extends TestCase
         return [$returned, $values];
     }
 
+    /** Prove the same production-facing oracle accepts valid boundary pairs and refuses concrete wrong lifetimes. */
+    public function testLayoutTimeOraclesAcceptCorrectBoundaryPairsAndRejectWrongLifetimes(): void
+    {
+        // With the SAME physical expiry, a one-ms advance crosses the legacy ceil boundary. Both answers are correct.
+        $first = self::legacyReadBounds(self::NOW . '000', '1800000600001', 1800000000000.0, 1800000000000.0);
+        $second = self::legacyReadBounds(self::NOW . '000', '1800000600001', 1800000000001.0, 1800000000001.0);
+        self::assertSame([1793794201, 1793794201], $first);
+        self::assertSame([1793794200, 1793794200], $second);
+        self::assertLegacyReadExpiry(1793794201, $first);
+        self::assertLegacyReadExpiry(1793794200, $second);
+        self::assertNotSame(1793794201, 1793794200, 'The former cross-run exact comparison rejects this correct pair.');
+
+        // Independent operations straddle the old minute-rounding boundary; each has exactly its contractual 600-s TTL.
+        $left = self::relativeLifetimeBounds(1800000029999.0, 1800000029999.0, 600);
+        $right = self::relativeLifetimeBounds(1800000030001.0, 1800000030001.0, 600);
+        self::assertSame([1800000629999.0, 1800000629999.0], $left);
+        self::assertSame([1800000630001.0, 1800000630001.0], $right);
+        self::assertPhysicalLifetime('1800000629999', $left);
+        self::assertPhysicalLifetime('1800000630001', $right);
+        self::assertNotSame(round(1800000629999.0 / 60000), round(1800000630001.0 / 60000), 'Old minute rounding rejects two correct relative deadlines.');
+        self::assertPhysicalLifetime('-2', [-2.0, -2.0]);
+        self::assertPhysicalLifetime('-1', [-1.0, -1.0]);
+
+        $wrong = [
+            'legacy ceil below range' => static fn() => self::assertLegacyReadExpiry(1793794200, $first),
+            'legacy ceil above range' => static fn() => self::assertLegacyReadExpiry(1793794202, $first),
+            'relative TTL one ms short' => static fn() => self::assertPhysicalLifetime('1800000629998', $left),
+            'relative TTL one ms long' => static fn() => self::assertPhysicalLifetime('1800000630000', $left),
+            'lost expiry' => static fn() => self::assertPhysicalLifetime('-1', $left),
+            'lost key' => static fn() => self::assertPhysicalLifetime('-2', $left),
+            'unapproved renewal of retained expiry' => static fn() => self::assertPhysicalLifetime('1800000630000', [1800000629999.0, 1800000629999.0]),
+            'persistent turned live' => static fn() => self::assertPhysicalLifetime('1800000629999', [-1.0, -1.0]),
+            'absent turned persistent' => static fn() => self::assertPhysicalLifetime('-1', [-2.0, -2.0]),
+            'backwards operation clock' => static fn() => self::relativeLifetimeBounds(1800000000001.0, 1800000000000.0, 600),
+            'backwards read clock' => static fn() => self::legacyReadBounds(self::NOW . '000', '1800000600001', 1800000000001.0, 1800000000000.0),
+            'expired during read' => static fn() => self::legacyReadBounds(self::NOW . '000', '1800000600001', 1800000600000.0, 1800000600001.0),
+        ];
+        foreach ($wrong as $name => $check) {
+            $rejected = false;
+            try {
+                $check();
+            } catch (\PHPUnit\Framework\AssertionFailedError) {
+                $rejected = true;
+            }
+            self::assertTrue($rejected, 'The actual oracle must reject: ' . $name);
+        }
+        self::assertCount(12, $wrong, 'Every negative control executed without a skip or timing retry.');
+    }
+
+    /** The strict layout path must reject an undeclared circuit key even during a read-only operation, in either layout. */
+    public function testLayoutInventoryRejectsAnUndeclaredCircuitKeyOutsideItsPrefix(): void
+    {
+        $sentinel = 'unexpected:circuit:sentinel';
+        foreach ([false, true] as $e1) {
+            $injections = 0;
+            $failure = null;
+            $filtered = [];
+            $complete = [];
+            try {
+                $this->layoutRun($e1, function (int $commandIndex) use ($sentinel, &$injections): void {
+                    if ($commandIndex === 5) {
+                        // The real readDecayPauseState just returned; no store write or TTL fixture is substituted.
+                        $this->admin->execute(['SET', $sentinel, 'unauthorized-key']);
+                        $injections++;
+                    }
+                });
+            } catch (\PHPUnit\Framework\ExpectationFailedException $exception) {
+                $failure = $exception;
+                $filtered = $this->snapshot();
+                $complete = $this->snapshot(true);
+            } finally {
+                $this->admin->execute(['DEL', $sentinel]);
+            }
+            self::assertSame(1, $injections, 'The sentinel was actually inserted after the read in this layout.');
+            self::assertInstanceOf(\PHPUnit\Framework\ExpectationFailedException::class, $failure);
+            self::assertStringContainsString('No undeclared, missing or Previous key may appear.', $failure->getMessage());
+            $comparison = $failure->getComparisonFailure();
+            self::assertNotNull($comparison, 'The rejection came from the actual key-set comparison, before TTL checks.');
+            $expectedKeys = $comparison->getExpected();
+            $actualKeys = $comparison->getActual();
+            self::assertIsArray($expectedKeys);
+            self::assertIsArray($actualKeys);
+            self::assertNotContains($sentinel, $expectedKeys);
+            self::assertContains($sentinel, $actualKeys);
+            $expectedWithSentinel = [...$expectedKeys, $sentinel];
+            sort($expectedWithSentinel);
+            self::assertSame($expectedWithSentinel, $actualKeys, 'The sentinel is the sole inventory mismatch.');
+            self::assertArrayNotHasKey($sentinel, $filtered, 'The default snapshot semantics used by other tests are preserved.');
+            self::assertSame('-1', $complete[$sentinel][1], 'The key-set assertion rejected the key before any live-TTL assertion.');
+            self::assertNotContains($sentinel, $this->keys(), 'The isolated control removes its sentinel.');
+        }
+    }
+
     public function testEveryE1FamilyBehavesLikeItsV1CounterpartOnTheRealStoreIncludingLifecycleAndRotation(): void
     {
         [$v1Returned, $v1Values] = $this->layoutRun(false);
@@ -790,8 +1059,8 @@ final class KeyScopeE1RedisTest extends TestCase
 
         self::assertSame(['block', 'budget', 'cycle', 'pause', 'reentry-claim', 'score', 'watch', 'watch-meta'], array_keys($e1Values), 'All eight E1 families are written, in the E1 prefix.');
         self::assertSame(array_keys($v1Values), array_keys($e1Values));
-        self::assertSame($v1Returned, $e1Returned, 'Every call returns the same result through the view as through the store.');
-        self::assertSame($v1Values, $e1Values, 'Every family stores the same values and the same (minute-rounded) expiries in both layouts.');
+        self::assertSame($v1Returned, $e1Returned, 'Every call has the same semantic result after independent legacy-expiry validation.');
+        self::assertSame($v1Values, $e1Values, 'Every family stores byte-identical content; each physical lifetime was already checked against its own operation reference.');
     }
 
     // ---------------------------------------------------------------------------------------------------------------- F295-04: ACL per layout

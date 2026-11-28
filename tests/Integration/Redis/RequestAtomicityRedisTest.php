@@ -9,6 +9,8 @@ use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
+use Maatify\RateLimiter\Exception\BackendFailureException;
+use Maatify\RateLimiter\Exception\OverlappingRequestException;
 use Maatify\RateLimiter\Exception\RateLimitConcurrencyException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor;
@@ -25,9 +27,10 @@ use PHPUnit\Framework\TestCase;
 /**
  * T-5 (#185, PR #205): one evaluation request is one atomic save. Every step of the request sees the results of the
  * earlier ones, nothing reaches Redis until the decision is final, a classified rejection leaves Redis byte for byte
- * as it was, and a request whose read state moved is calculated again from a fresh read.
+ * as it was, and a request whose read state moved is calculated again from a fresh read only when no operational
+ * backend failure was observed during its evaluation.
  *
- * Everything runs through the public builder on an isolated Redis.
+ * Runtime cases use the public builder; failure-precedence controls use the public store transaction on an isolated Redis.
  */
 #[Group('t5-request-atomicity')]
 #[Group('php32')]
@@ -409,6 +412,216 @@ final class RequestAtomicityRedisTest extends TestCase
             self::assertSame(32, $probe->commits);
         }
         self::assertSame([], $this->state());
+    }
+
+    /**
+     * Exact physical content and expiry through the independent oracle, including absence of every held new key.
+     *
+     * @return array<string, array{string, int|string}>
+     */
+    private function exactSnapshot(): array
+    {
+        $keys = $this->executor->execute(['KEYS', '*']);
+        self::assertIsArray($keys);
+        sort($keys);
+        $snapshot = [];
+        foreach ($keys as $key) {
+            self::assertIsString($key);
+            $dump = $this->executor->execute(['DUMP', $key]);
+            $expiry = $this->executor->execute(['PEXPIRETIME', $key]);
+            self::assertIsString($dump);
+            self::assertTrue(is_int($expiry) || is_string($expiry));
+            $snapshot[$key] = [bin2hex($dump), $expiry];
+        }
+
+        return $snapshot;
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function failurePrecedenceCases(): iterable
+    {
+        yield 'A: observed failure then later error over genuinely stale state' => ['backend-stale'];
+        yield 'B: observed failure then later error over current state' => ['backend-current'];
+        yield 'C: caught backend failures then normal return preserves first identity' => ['backend-return'];
+        yield 'C: direct backend failure preserves identity' => ['backend-direct'];
+        yield 'C: overlap is refused without verification or retry' => ['overlap'];
+        yield 'D: error over current state without backend failure' => ['current'];
+        yield 'D: error over genuinely stale state without backend failure' => ['stale'];
+    }
+
+    /**
+     * F-G4-07: a transient executor outage must not become a successful second evaluation when a later error meets
+     * a real rival write. The same wire/oracle detector also protects exception identity and ordinary stale-state retry.
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('failurePrecedenceCases')]
+    public function testObservedFailurePrecedenceAndOrdinaryStaleStateRetry(string $scenario): void
+    {
+        $host = getenv('REDIS_INTEGRATION_HOST');
+        $port = getenv('REDIS_INTEGRATION_PORT');
+        self::assertIsString($host);
+        self::assertIsString($port);
+        // Neither the tested connection nor the rival connection is the oracle connection.
+        $wire = new RespRedisCommandExecutor($host, (int) $port);
+        $rival = new RedisFullCapabilityStore(new RespRedisCommandExecutor($host, (int) $port), self::NAMESPACE);
+        $rival->incrementAt('precedence-a', 3600, 10, self::NOW);
+        $before = $this->exactSnapshot();
+        $postRival = $before;
+        $backend = new BackendFailureException('F-G4-07 transient overlay outage');
+        $secondBackend = new BackendFailureException('F-G4-07 second overlay outage');
+        $later = new \LogicException('F-G4-07 later callback error');
+        $overlap = new OverlappingRequestException('F-G4-07 narrow overlap control');
+        $hasBackend = str_starts_with($scenario, 'backend-');
+        $hasRival = $scenario === 'backend-stale' || $scenario === 'stale';
+        $probe = new class {
+            public int $evaluations = 0;
+            public int $rivals = 0;
+            public bool $injected = false;
+            public bool $tracingRequest = true;
+            /** @var list<mixed> */
+            public array $verifies = [];
+            /** @var list<mixed> */
+            public array $commits = [];
+            /** @var list<mixed> */
+            public array $followingCommits = [];
+            /** @var list<bool> */
+            public array $caughtBackendIdentities = [];
+            /** @var list<array{int, int, bool}> */
+            public array $heldObservations = [];
+        };
+        $executor = new CallableRedisCommandExecutor(function (array $command) use ($wire, $rival, $probe, $backend, $secondBackend, $hasBackend, $hasRival, &$postRival): mixed {
+            $keys = OverlayWire::keys($command);
+            $faultKey = 'maatify:rate-limiter:v1:' . hash('sha256', self::NAMESPACE) . ':score:' . hash('sha256', 'precedence-fault');
+            $secondFaultKey = 'maatify:rate-limiter:v1:' . hash('sha256', self::NAMESPACE) . ':score:' . hash('sha256', 'precedence-second-fault');
+            if (self::isOverlayEval($command) && in_array($faultKey, $keys, true) && ! $probe->injected) {
+                $probe->injected = true;
+                if ($hasRival) {
+                    $probe->rivals++;
+                    $rival->incrementAt('precedence-a', 3600, 5, self::NOW);
+                    $postRival = $this->exactSnapshot();
+                }
+                if ($hasBackend) {
+                    // Fail before the command is sent; evalInRequest records this actual executor exception.
+                    throw $backend;
+                }
+            }
+            if (self::isOverlayEval($command) && in_array($secondFaultKey, $keys, true)) {
+                throw $secondBackend;
+            }
+            $reply = $wire->execute($command);
+            if (OverlayWire::isScript($command, RedisRequestOverlay::commitScript()) && end($command) === 'verify') {
+                $probe->verifies[] = $reply;
+            } elseif (self::isCommit($command)) {
+                if ($probe->tracingRequest) {
+                    $probe->commits[] = $reply;
+                } else {
+                    $probe->followingCommits[] = $reply;
+                }
+            }
+
+            return $reply;
+        });
+        $store = new RedisFullCapabilityStore($executor, self::NAMESPACE);
+        $e1 = $store->e1Keyspace();
+        $caught = null;
+        $returned = null;
+        try {
+            $returned = $store->transactRequest(function () use ($store, $e1, $probe, $before, $backend, $secondBackend, $later, $overlap, $scenario): string {
+                $probe->evaluations++;
+                $a = $store->incrementAt('precedence-a', 3600, 2, self::NOW);
+                $e = $e1->incrementAt('e1.' . hash('sha256', 'precedence-e1'), 3600, 3, self::NOW);
+                $probe->heldObservations[] = [
+                    $store->get('precedence-a')->value ?? -1,
+                    $e1->get('e1.' . hash('sha256', 'precedence-e1'))->value ?? -1,
+                    $a === ($probe->evaluations === 1 ? 12 : 17) && $e === 3
+                        && ($probe->evaluations !== 1 || $this->exactSnapshot() === $before),
+                ];
+                if ($scenario === 'overlap') {
+                    throw $overlap;
+                }
+                try {
+                    $store->incrementAt('precedence-fault', 3600, 1, self::NOW);
+                } catch (BackendFailureException $failure) {
+                    $probe->caughtBackendIdentities[] = $failure === $backend;
+                    if ($scenario === 'backend-direct') {
+                        throw $failure;
+                    }
+                    if ($scenario === 'backend-return') {
+                        try {
+                            $store->incrementAt('precedence-second-fault', 3600, 1, self::NOW);
+                        } catch (BackendFailureException $secondFailure) {
+                            $probe->caughtBackendIdentities[] = $secondFailure === $secondBackend;
+                        }
+
+                        return 'normal return after observed failures';
+                    }
+
+                    throw $later;
+                }
+                if ($probe->evaluations === 1) {
+                    throw $later;
+                }
+
+                return 'saved second evaluation';
+            });
+        } catch (\Throwable $exception) {
+            $caught = $exception;
+        }
+
+        // Gather outcome, actual verify/commit replies and exact Redis state BEFORE any rejecting assertion. On BASE,
+        // A reports evaluations=2, verify=[0], commit=[1], success, and changed post-rival state in one diagnostic.
+        $after = $this->exactSnapshot();
+        $ordinaryRetry = $scenario === 'stale';
+        $expectedException = match ($scenario) {
+            'backend-return', 'backend-direct' => $backend,
+            'overlap' => $overlap,
+            'stale' => null,
+            default => $later,
+        };
+        $actual = [
+            'evaluations' => $probe->evaluations,
+            'verifyReplies' => $probe->verifies,
+            'commitReplies' => $probe->commits,
+            'rivals' => $probe->rivals,
+            'returned' => $returned,
+            'sameException' => $caught === $expectedException,
+            'caughtType' => $caught === null ? null : $caught::class,
+            'backendIdentities' => $probe->caughtBackendIdentities,
+            'heldObservations' => $probe->heldObservations,
+            'postRivalUnchanged' => $after === $postRival,
+            'finalScores' => [$rival->get('precedence-a')?->value, $rival->e1Keyspace()->get('e1.' . hash('sha256', 'precedence-e1'))?->value, $rival->get('precedence-fault')?->value],
+        ];
+        $expected = [
+            'evaluations' => $ordinaryRetry ? 2 : 1,
+            'verifyReplies' => $ordinaryRetry ? [0] : ($scenario === 'current' ? [1] : []),
+            'commitReplies' => $ordinaryRetry ? [1] : [],
+            'rivals' => $hasRival ? 1 : 0,
+            'returned' => $ordinaryRetry ? 'saved second evaluation' : null,
+            'sameException' => true,
+            'caughtType' => $expectedException === null ? null : $expectedException::class,
+            'backendIdentities' => $scenario === 'backend-return' ? [true, true] : ($hasBackend ? [true] : []),
+            'heldObservations' => $ordinaryRetry ? [[12, 3, true], [17, 3, true]] : [[12, 3, true]],
+            'postRivalUnchanged' => ! $ordinaryRetry,
+            'finalScores' => $ordinaryRetry ? [17, 3, 1] : [$hasRival ? 15 : 10, null, null],
+        ];
+        self::assertSame($expected, $actual, 'F-G4-07 wire/oracle diagnostic: ' . json_encode($actual, JSON_THROW_ON_ERROR));
+
+        // A new request on the same store and E1 view must obtain ownership, start from fresh state and save once.
+        $probe->tracingRequest = false;
+        $following = $store->transactRequest(static function () use ($store, $e1): array {
+            return [
+                $store->incrementAt('precedence-following', 3600, 7, self::NOW),
+                $e1->incrementAt('e1.' . hash('sha256', 'precedence-following-e1'), 3600, 11, self::NOW),
+            ];
+        });
+        self::assertSame([7, 11], $following);
+        self::assertSame([1], $probe->followingCommits);
+        self::assertSame(7, $rival->get('precedence-following')?->value);
+        self::assertSame(11, $rival->e1Keyspace()->get('e1.' . hash('sha256', 'precedence-following-e1'))?->value);
+        $afterFollowing = $this->exactSnapshot();
+        foreach ($after as $key => $physical) {
+            self::assertSame($physical, $afterFollowing[$key]);
+        }
+        self::assertCount(count($after) + 2, $afterFollowing, 'Only the two new requested writes were saved.');
     }
 
     public function testTheRetryBudgetMustBePositive(): void
