@@ -941,6 +941,252 @@ final class RequestSaveAclRedisTest extends TestCase
         self::assertSame([['command', 'lua', 'expire']], array_map(static fn(array $entry): array => [$entry['reason'], $entry['context'], $entry['object']], $log), 'Redis logged the denial of EXPIRE inside a script.');
     }
 
+    /** Lossless JSON evidence for binary DUMP fields inside native wire replies. */
+    private static function f11ReplyBytes(mixed $value): mixed
+    {
+        if (is_string($value)) {
+            return ['hex' => bin2hex($value)];
+        }
+        return is_array($value) ? array_map(self::f11ReplyBytes(...), $value) : $value;
+    }
+
+    /** The exact deadline implied by a relative TTL at an independently observed Redis clock instant (no PHP millisecond int). */
+    private function f11ExpiryDeadline(int $ttl): string
+    {
+        $clock = $this->admin->execute(['TIME']);
+        self::assertIsArray($clock);
+        $seconds = self::text($clock[0]);
+        $micros = self::text($clock[1]);
+        self::assertMatchesRegularExpression('/^[0-9]+$/', $seconds);
+        self::assertMatchesRegularExpression('/^[0-9]+$/', $micros);
+        return (string) ((int) $seconds + $ttl) . str_pad((string) intdiv((int) $micros, 1000), 3, '0', STR_PAD_LEFT);
+    }
+
+    private static function f11CompareDecimal(string $left, string $right): int
+    {
+        return strlen($left) <=> strlen($right) ?: strcmp($left, $right);
+    }
+
+    /** @return iterable<string, array{string, string, string, string, bool, string}> */
+    public static function f11Cases(): iterable
+    {
+        $cases = [
+            ['bounded', 'fresh', 'hset', 'error', false], ['bounded', 'fresh', 'expire', 'error', false],
+            ['bounded', 'fresh', 'sadd', 'clean-error', false], ['bounded', 'fresh', 'del', 'success', false],
+            ['bounded', 'reset', 'hset', 'error', false], ['bounded', 'reset', 'expire', 'error', false],
+            ['bounded', 'reset', 'del', 'clean-error', false], ['bounded', 'reset', 'sadd', 'error', false],
+            ['pair', 'fresh', 'hset', 'error', false], ['pair', 'fresh', 'late-key', 'error', false],
+            ['pair', 'fresh', 'del', 'clean-error', false], ['pair', 'reset', 'hset', 'error', false],
+            ['group', 'fresh', 'hset', 'error', false], ['group', 'fresh', 'set', 'error', false],
+            ['group', 'fresh', 'del', 'error', false], ['group', 'fresh', 'expire', 'error', false],
+            ['group', 'retained', 'set', 'error', false], ['group', 'reset', 'hset', 'error', false],
+            ['bounded', 'retained', 'hset,expire,del', 'success', false], ['bounded', 'retained', 'sadd', 'clean-error', false],
+            ['bounded', 'duplicate', 'all-writes', 'success', false], ['bounded', 'full', 'all-writes', 'success', false],
+            ['bounded', 'fresh', '', 'success', false], ['bounded', 'reset', '', 'success', false],
+            ['pair', 'fresh', '', 'success', false], ['pair', 'reset', '', 'success', false],
+            ['group', 'fresh', '', 'success', false], ['group', 'reset', '', 'success', false],
+            ['group', 'retained', 'hset,expire,del', 'success', false], ['group', 'fresh', 'hset', 'conflict', false],
+            ['bounded', 'fresh', '', 'success', true], ['pair', 'fresh', '', 'success', true],
+            ['group', 'fresh', 'expire', 'success', true], ['group', 'fresh', 'hset', 'error', true],
+            ['pair', 'fresh', 'hset', 'error', true],
+        ];
+        foreach (['resp', 'phpredis'] as $shape) {
+            foreach ($cases as [$mode, $branch, $denied, $expect, $overlay]) {
+                yield "$shape/$mode/$branch/" . ($denied === '' ? 'allowed' : $denied) . '/' . ($overlay ? 'overlay' : 'direct') . "/$expect" => [$shape, $mode, $branch, $denied, $overlay, $expect];
+            }
+        }
+    }
+
+    /** F-G4-11: public direct observations with real restricted accounts; the existing oracle and MONITOR see every data/meta/control key. */
+    #[DataProvider('f11Cases')]
+    public function testF11BoundedObservationWritesArePreflightedAsOneActualPlan(string $shape, string $mode, string $branch, string $denied, bool $overlay, string $expect): void
+    {
+        $now = 1_000_000;
+        $ttl = 600;
+        $adminStore = new RedisFullCapabilityStore($this->admin, self::NAMESPACE);
+        $this->admin->execute(['SET', self::CONTROL_KEY, 'f11-outside-control']);
+        $adminStore->addDistinctBoundedWithSnapshotAt('f11-previous', 'previous-secret', $ttl, 2, $now);
+        $seedTime = $branch === 'reset' ? $now - $ttl - 1 : $now;
+        if ($branch !== 'fresh' || $mode === 'group') {
+            $adminStore->addDistinctBoundedWithSnapshotAt('f11-a', $branch === 'duplicate' ? 'new-a' : 'old-a', $ttl, 2, $seedTime);
+            if ($branch === 'full') {
+                $adminStore->addDistinctBoundedWithSnapshotAt('f11-a', 'old-b', $ttl, 2, $seedTime);
+            }
+            if ($mode === 'pair') {
+                $adminStore->addDistinctBoundedWithSnapshotAt('f11-b', 'old-b', $ttl, 2, $seedTime);
+            }
+            if ($mode === 'group' && $branch !== 'fresh') {
+                $adminStore->incrementWatchFlagAt('f11-watch', $ttl, $seedTime);
+            }
+        }
+        $subject = 'f11-' . $shape;
+        $rules = ['~' . self::SCOPE];
+        if ($denied === 'late-key') {
+            $rules = ['%R~' . self::SCOPE];
+            foreach ([['distinct', 'f11-a'], ['distinct-meta', 'f11-a'], ['distinct-meta', 'f11-b']] as [$family, $logical]) {
+                $rules[] = '%W~' . $this->keyOf($family, $logical);
+            }
+        }
+        $this->createUser($subject, [], $rules);
+        if ($denied === 'late-key') {
+            // EVAL may declare all read scopes; write permissions still come only from the restricted command selector.
+            $this->admin->execute(['ACL', 'SETUSER', $subject, '(+eval ~' . self::SCOPE . ')']);
+        }
+        $this->admin->execute(['ACL', 'SETUSER', $subject, '+ttl', '+scard', '+sismember', '+hget', '+dump', '+expire']);
+        $denials = $denied === 'all-writes' ? ['del', 'sadd', 'hset', 'expire', 'set', 'pexpireat']
+            : ($denied === '' || $denied === 'late-key' ? [] : explode(',', $denied));
+        foreach ($denials as $command) {
+            $this->admin->execute(['ACL', 'SETUSER', $subject, '-' . $command]);
+        }
+        $host = $this->host($shape, $subject);
+        $trace = new class ($host) implements RedisCommandExecutorInterface {
+            /** @var list<array{kind: string, keys: list<string>, reply?: mixed, error?: string}> */
+            public array $calls = [];
+            public function __construct(private readonly RedisCommandExecutorInterface $inner) {}
+            public function execute(array $command): mixed
+            {
+                $script = is_string($command[1] ?? null) ? $command[1] : '';
+                $kind = OverlayWire::isScript($command, \Maatify\RateLimiter\Repository\Redis\RedisRequestOverlay::commitScript()) ? 'request-commit'
+                    : (str_contains($script, 'local scopes = #KEYS / 2') ? 'observation-commit' : 'read-or-bounded');
+                $entry = ['kind' => $kind, 'keys' => OverlayWire::keys($command)];
+                try {
+                    $reply = $this->inner->execute($command);
+                    $entry['reply'] = $reply;
+                    $this->calls[] = $entry;
+                    return $reply;
+                } catch (\Throwable $error) {
+                    $entry['error'] = $error::class . ': ' . $error->getMessage();
+                    $this->calls[] = $entry;
+                    throw $error;
+                }
+            }
+        };
+        $store = new RedisFullCapabilityStore($trace, self::NAMESPACE);
+        $groupEvaluations = 0;
+        $outerEvaluations = 0;
+        $reference = $this->keyspace();
+        $before = $reference;
+        $invoke = function () use ($store, $adminStore, $mode, $now, $ttl, $expect, &$groupEvaluations, &$reference): array {
+            if ($mode === 'bounded') {
+                return ['bounded' => get_object_vars($store->addDistinctBoundedWithSnapshotAt('f11-a', 'new-a', $ttl, 2, $now))];
+            }
+            if ($mode === 'pair') {
+                return ['pair' => array_map(get_object_vars(...), $store->addDeviceCapPairAt('f11-a', 'new-a', 2, 'f11-b', 'new-b', 2, $ttl, $now))];
+            }
+            $evaluate = function () use ($store, $now, $ttl, &$groupEvaluations): array {
+                $groupEvaluations++;
+                [$bounded, $boundedPlan] = $store->readBoundedObservationPlanAt('f11-a', 'new-a', 2, $ttl, $now);
+                [$watch, $watchPlan] = $store->readWatchObservationPlanAt('f11-watch', $ttl, $now);
+                return [['bounded' => get_object_vars($bounded), 'watch' => $watch], [$boundedPlan, $watchPlan]];
+            };
+            if ($expect === 'conflict') {
+                [, $plans] = $evaluate();
+                $adminStore->addDistinctBoundedWithSnapshotAt('f11-a', 'rival-secret', $ttl, 2, $now);
+                $reference = $this->keyspace();
+                $this->markMonitor(); // Keep rival writes outside the subject commit's observation window.
+                return ['committed' => $store->commitDeviceCapPlans($plans)];
+            }
+            return $store->commitBoundedObservationGroup($evaluate);
+        };
+        $firstPossibleExpiry = $this->f11ExpiryDeadline($ttl);
+        $this->markMonitor();
+        $fallbackBefore = self::fallbackSnapshot();
+        $result = null;
+        $caught = null;
+        try {
+            $result = $overlay ? $store->transactRequest(function () use ($invoke, &$outerEvaluations): array {
+                $outerEvaluations++;
+                return $invoke();
+            }) : $invoke();
+        } catch (\Throwable $error) {
+            $caught = $error;
+        }
+        $lastPossibleExpiry = $this->f11ExpiryDeadline($ttl);
+        $this->admin->execute(['ECHO', 'f11-end']);
+        $window = $this->drainMonitor('f11-end');
+        $writes = [];
+        foreach ($window as $line) {
+            if (preg_match('/\[\d+ lua\] "([A-Za-z]+)"/', $line, $match) === 1 && in_array(strtoupper($match[1]), self::WRITES, true)) {
+                $writes[] = $line;
+            }
+        }
+        $after = $this->keyspace();
+        $actual = ['thrown' => $caught !== null, 'backend' => $caught instanceof BackendFailureException,
+            'same' => $reference === $after, 'groupEvaluations' => $groupEvaluations, 'outerEvaluations' => $outerEvaluations,
+            'requestCommits' => count(array_filter($trace->calls, static fn(array $call): bool => $call['kind'] === 'request-commit')),
+            'observationCommits' => count(array_filter($trace->calls, static fn(array $call): bool => $call['kind'] === 'observation-commit')),
+            'fallbackChanged' => self::fallbackSnapshot() !== $fallbackBefore];
+        $record = ['actual' => $actual, 'result' => $result, 'errorClass' => $caught === null ? null : $caught::class,
+            'message' => $caught?->getMessage(), 'wireBytes' => self::f11ReplyBytes($trace->calls), 'luaWrites' => $writes, 'aclLog' => $this->aclLog($subject),
+            'expiryClockBounds' => [$firstPossibleExpiry, $lastPossibleExpiry],
+            'before' => $before, 'referenceAfterRival' => $reference, 'after' => $after];
+        $diagnostic = json_encode($record, JSON_THROW_ON_ERROR);
+        fwrite(STDERR, "\nF-G4-11 $shape/$mode/$branch/" . ($denied === '' ? 'allowed' : $denied) . '/' . ($overlay ? 'overlay' : 'direct') . "/$expect diagnostic: $diagnostic\n");
+        $isError = $expect === 'error' || $expect === 'clean-error';
+        $noChange = $isError || $expect === 'conflict' || $branch === 'duplicate' || $branch === 'full';
+        self::assertSame(['thrown' => $isError, 'backend' => false, 'same' => $noChange,
+            'groupEvaluations' => $mode === 'group' ? 1 : 0, 'outerEvaluations' => $overlay ? 1 : 0,
+            'requestCommits' => $overlay ? 1 : 0, 'observationCommits' => $mode === 'bounded' ? 0 : 1,
+            'fallbackChanged' => false], $actual, $diagnostic);
+        if ($isError) {
+            self::assertNotNull($caught);
+            foreach (['f11-a', 'f11-b', 'f11-watch', 'new-a', 'old-a', 'new-b', self::NAMESPACE] as $secret) {
+                self::assertStringNotContainsString($secret, $caught->getMessage());
+            }
+            if ($expect === 'error') {
+                self::assertMatchesRegularExpression('/^NOPERM (bounded observation|request commit):.*(?:plan step) [0-9]+/', $caught->getMessage());
+            }
+        }
+        if ($isError || $expect === 'conflict' || $branch === 'duplicate' || $branch === 'full') {
+            self::assertSame([], $writes, 'A refusal/conflict/no-op executes no write command, including no temporary write followed by cleanup.');
+        }
+        if ($expect === 'conflict') {
+            self::assertSame(['committed' => false], $result);
+        }
+        if ($expect === 'success') {
+            self::assertIsArray($result);
+            $active = $branch === 'retained' || ($mode === 'group' && $branch === 'fresh');
+            $expectedA = ['count' => $active ? 2 : 1, 'accepted' => true, 'added' => true,
+                'members' => $active ? ['new-a', 'old-a'] : ['new-a'], 'expiresAt' => $now + $ttl];
+            if ($branch === 'duplicate') {
+                $expectedA = ['count' => 1, 'accepted' => true, 'added' => false, 'members' => ['new-a'], 'expiresAt' => $now + $ttl];
+            } elseif ($branch === 'full') {
+                $expectedA = ['count' => 2, 'accepted' => false, 'added' => false, 'members' => ['old-a', 'old-b'], 'expiresAt' => $now + $ttl];
+            }
+            $expected = $mode === 'pair' ? ['pair' => [$expectedA, ['count' => 1, 'accepted' => true, 'added' => true, 'members' => ['new-b'], 'expiresAt' => $now + $ttl]]]
+                : ($mode === 'group' ? ['bounded' => $expectedA, 'watch' => $branch === 'retained' ? 2 : 1] : ['bounded' => $expectedA]);
+            self::assertSame($expected, $result);
+            $scopes = $mode === 'pair' ? [['distinct', 'distinct-meta', 'f11-a'], ['distinct', 'distinct-meta', 'f11-b']]
+                : ($mode === 'group' ? [['distinct', 'distinct-meta', 'f11-a'], ['watch', 'watch-meta', 'f11-watch']] : [['distinct', 'distinct-meta', 'f11-a']]);
+            foreach ($scopes as [$dataFamily, $metaFamily, $logical]) {
+                $dataKey = $this->keyOf($dataFamily, $logical);
+                $metaKey = $this->keyOf($metaFamily, $logical);
+                self::assertSame((string) ($now + $ttl), self::text($this->admin->execute(['HGET', $metaKey, 'expiresAt'])));
+                if ($branch === 'retained' || $branch === 'duplicate' || $branch === 'full' || ($mode === 'group' && $branch === 'fresh' && $dataFamily === 'distinct')) {
+                    self::assertSame($before[$dataKey]['expires'], $after[$dataKey]['expires'], 'Retained physical lifetime is fixed.');
+                    self::assertSame($before[$metaKey]['expires'], $after[$metaKey]['expires']);
+                } else {
+                    // Separate EXPIRE/SET EX commands may choose different milliseconds. Each exact deadline must
+                    // belong to the independently measured Redis interval plus the requested TTL, without slack.
+                    foreach ([$dataKey, $metaKey] as $key) {
+                        self::assertGreaterThanOrEqual(0, self::f11CompareDecimal($after[$key]['expires'], $firstPossibleExpiry));
+                        self::assertLessThanOrEqual(0, self::f11CompareDecimal($after[$key]['expires'], $lastPossibleExpiry));
+                    }
+                }
+                if ($dataFamily === 'distinct') {
+                    $members = (array) $this->admin->execute(['SMEMBERS', $dataKey]);
+                    sort($members);
+                    self::assertSame($logical === 'f11-b' ? ['new-b'] : $expectedA['members'], $members);
+                } else {
+                    self::assertSame($branch === 'retained' ? '2' : '1', self::text($this->admin->execute(['GET', $dataKey])));
+                }
+            }
+        }
+        foreach ([self::CONTROL_KEY, $this->keyOf('distinct', 'f11-previous'), $this->keyOf('distinct-meta', 'f11-previous')] as $control) {
+            self::assertSame($before[$control], $after[$control]);
+        }
+    }
+
     /** @param array<string, mixed> $case */
     #[DataProvider('cases')]
     public function testCase(string $name, array $case): void
