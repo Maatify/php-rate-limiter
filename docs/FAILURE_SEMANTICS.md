@@ -293,6 +293,21 @@ keyspace only for the states it measured: a new key, an existing key, and the
 prerequisite states listed there. No claim of state invariance is made beyond
 them.
 
+
+**Direct bounded snapshot and observation-group ACL refusal (F-G4-11).** On Redis 7+, the non-rotating
+`addDistinctBounded*` snapshot operation, `addDeviceCapPairAt`, and the bounded/WATCH plans saved through
+`commitBoundedObservationGroup` / `commitDeviceCapPlans` check their entire actual write plan before the first modification.
+The check uses the same commands, keys, arguments, order and required operations as execution. A duplicate/full bounded
+observation requires no write permission. Group fingerprint comparison and required-TTL validation precede the check;
+a genuine conflict retains its existing result without writing. ACL refusal is native `NOPERM bounded observation: …`
+with the command and plan position only, never a key/value: no data, metadata or prior scope is changed and no retry or
+fallback is caused by this refusal. Other explicit errors retain their own contracts (DEC-015/018).
+
+This direct preflight is absent inside the request overlay; DEC-042 still checks the final actual request save. Relative
+expiry commands, retained TTLs, membership/cap/WATCH semantics and clock authority do not change. A genuine expiry range
+failure still uses the existing DEC-043 judge and created-key cleanup described above; this is not rollback for other Redis
+errors, and does not claim that every direct script has a whole-plan ACL preflight.
+
 ---
 
 ### 2.6 Overlapping calls (DEC-041)

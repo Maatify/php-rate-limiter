@@ -1193,6 +1193,13 @@ if not value or (value ~= '0' and string.match(value, '^[1-9]%d*$') == nil) then
 return value
 LUA;
 
+    /**
+     * Direct non-rotating bounded snapshots and observation groups plan their exact ordered writes before execution.
+     * Redis 7+ checks every actual command/key/argument with acl_check_cmd before the first write; a refusal is native
+     * NOPERM naming only the command and plan position. Duplicate/full bounded observations add no write operations.
+     * The overlay hides acl_check_cmd and holds these same operations for DEC-042's final request preflight.
+     * Expiry operations retain DEC-043's existing pcall judge and created-key cleanup; other Redis errors are not rolled back.
+     */
     private const BOUNDED_SNAPSHOT_PLAN = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local function validBackendExpiry(value)
   if type(value) ~= 'string' or value == '0' then return value == '0' end
@@ -1254,25 +1261,49 @@ local function planBoundedSnapshot(setKey, metaKey, ttl, member, capacity, nativ
   return {members = members, accepted = 1, added = 1, expires = expires}
 end
 
-local function applyBoundedSnapshot(plan, setKey, metaKey, ttl, member)
+-- Build the actual ordered operations once. `created` keeps the existing DEC-043 cleanup for a genuine expiry refusal.
+local function appendBoundedSnapshot(ops, plan, setKey, metaKey, ttl, member)
   table.sort(plan.members)
   if plan.added == 1 then
-    if plan.replaceExpired then redis.call('DEL', setKey, metaKey) end
-    redis.call('SADD', setKey, member)
+    if plan.replaceExpired then ops[#ops + 1] = {'DEL', setKey, metaKey} end
+    ops[#ops + 1] = {'SADD', setKey, member}
     if plan.initialize then
-      if not expiryApplied({setKey}, 'EXPIRE', setKey, ttl) then return redis.error_reply(expiryError) end
-      redis.call('HSET', metaKey, 'expiresAt', plan.expires)
-      if not expiryApplied({setKey, metaKey}, 'EXPIRE', metaKey, ttl) then return redis.error_reply(expiryError) end
+      ops[#ops + 1] = {'EXPIRE', setKey, ttl, created = {setKey}}
+      ops[#ops + 1] = {'HSET', metaKey, 'expiresAt', plan.expires}
+      ops[#ops + 1] = {'EXPIRE', metaKey, ttl, created = {setKey, metaKey}}
     end
   end
   return {#plan.members, plan.accepted, plan.added, plan.expires, unpack(plan.members)}
 end
+
+local function executeBoundedObservationPlan(ops)
+  -- The request overlay deliberately hides this function: DEC-042 judges the final request save, not its held operations.
+  if redis.acl_check_cmd then
+    for index, op in ipairs(ops) do
+      if not redis.acl_check_cmd(unpack(op)) then
+        return redis.error_reply('NOPERM bounded observation: the account may not run ' .. op[1] .. ' (plan step ' .. index .. ' of ' .. #ops .. ')')
+      end
+    end
+  end
+  for _, op in ipairs(ops) do
+    if op.created then
+      if not expiryApplied(op.created, unpack(op)) then return redis.error_reply(expiryError) end
+    else
+      redis.call(unpack(op))
+    end
+  end
+end
 LUA;
 
+    /** Plan and preflight this one direct observation before applying its unchanged write sequence. */
     private const BOUNDED_SNAPSHOT = self::BOUNDED_SNAPSHOT_PLAN . "\n" . <<<'LUA'
 local plan, reason = planBoundedSnapshot(KEYS[1], KEYS[2], ARGV[1], ARGV[2], tonumber(ARGV[3]), ARGV[4])
 if not plan then return redis.error_reply(reason) end
-return applyBoundedSnapshot(plan, KEYS[1], KEYS[2], ARGV[1], ARGV[2])
+local ops = {}
+local snapshot = appendBoundedSnapshot(ops, plan, KEYS[1], KEYS[2], ARGV[1], ARGV[2])
+local refused = executeBoundedObservationPlan(ops)
+if refused then return refused end
+return snapshot
 LUA;
 
     private const DEVICE_CAP_PAIR_STATE = <<<'LUA'
@@ -1316,6 +1347,7 @@ end
 return {readPairState(), expires, value}
 LUA;
 
+    /** Compare all scopes and validate required TTLs first, then preflight the one actual group plan before any scope writes. */
     private const DEVICE_CAP_COMMIT = self::BOUNDED_SNAPSHOT_PLAN . "\n" . self::DEVICE_CAP_PAIR_STATE . "\n" . <<<'LUA'
 local current = readPairState()
 local scopes = #KEYS / 2
@@ -1330,6 +1362,7 @@ for scope = 1, scopes do
     return redis.error_reply('correlation TTL exceeds Redis backend expiry representability')
   end
 end
+local ops = {}
 for scope = 1, scopes do
   local offset = (scope - 1) * argumentsPerScope
   local ttl = ARGV[offset + 1]
@@ -1338,21 +1371,22 @@ for scope = 1, scopes do
   if ARGV[offset + 5] == 'watch' then
     local value = ARGV[offset + 2]
     if reset then
-      redis.call('SET', setKey, value, 'EX', ttl)
-      redis.call('DEL', metaKey)
-      redis.call('HSET', metaKey, 'expiresAt', addDecimalStrings(nowStr, ttl))
-      redis.call('EXPIRE', metaKey, ttl)
+      ops[#ops + 1] = {'SET', setKey, value, 'EX', ttl}
+      ops[#ops + 1] = {'DEL', metaKey}
+      ops[#ops + 1] = {'HSET', metaKey, 'expiresAt', addDecimalStrings(nowStr, ttl)}
+      ops[#ops + 1] = {'EXPIRE', metaKey, ttl}
     else
-      redis.call('SET', setKey, value, 'KEEPTTL')
+      ops[#ops + 1] = {'SET', setKey, value, 'KEEPTTL'}
     end
   else
-    local result = applyBoundedSnapshot({
+    appendBoundedSnapshot(ops, {
       members = {}, expires = addDecimalStrings(nowStr, ttl), accepted = 1,
       added = tonumber(ARGV[offset + 4]), initialize = reset, replaceExpired = reset
     }, setKey, metaKey, ttl, ARGV[offset + 2])
-    if result.err then return result end
   end
 end
+local refused = executeBoundedObservationPlan(ops)
+if refused then return refused end
 return {1}
 LUA;
 

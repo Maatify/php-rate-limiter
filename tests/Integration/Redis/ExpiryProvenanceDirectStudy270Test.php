@@ -18,7 +18,9 @@ use PHPUnit\Framework\TestCase;
  * #270 (DEC-015, DEC-018, LT-P2-12): provenance of a failed expiry in DIRECT store calls (not `transactRequest()`).
  * It started as the study of #276 (read-only, against the shipped code) and is now the before / after verification of the fix: the same
  * matrix runs under `EXPIRY_270_CONTRACT=before` (the swallowed denial answers `expiry not representable`, the study's finding) and under
- * the default `after` (the denial answers `NOPERM` naming the command; the genuine range refusal keeps `expiry not representable`). Every case has its own temporary ACL account;
+ * the default current `after`: F-G4-11 preflights required expiry in fresh non-rotating bounded snapshots/device-cap pairs,
+ * while other reached expiry denials retain DEC-043 NOPERM and genuine range refusal keeps `expiry not representable`.
+ * Historical `before` is replayed only against its historical source SHA. Every case has its own temporary ACL account;
  * the data is synthetic; the keyspace is read from outside Lua with DUMP and PEXPIRETIME. With `EXPIRY_270_EVIDENCE` set to a file
  * path each case appends one JSON line of what it observed.
  */
@@ -37,7 +39,8 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
 
     /**
      * The branch each (call, denied command, state) is EXPECTED to take. A listed state means the call reaches the denied expiry command
-     * (Redis logs the denial, the caller sees the pcall-swallowed range text, nothing is left behind). Anything not listed must NOT reach it:
+     * (historical/current expiry-judge expectations below). F-G4-11 may refuse a required expiry before execution in the six
+     * explicitly selected fresh cases; that is recorded separately from reached/unreached. Anything not listed must NOT require it:
      * the call returns exactly what the unrestricted control returned and leaves the same keyspace change.
      *
      * @var array<string, array<string, list<string>>>
@@ -78,7 +81,8 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
     /**
      * The SECOND expiry of a pair (a data key, then its metadata key). A command-level denial stops at the first one, so these are
      * reached with Redis ACL selectors: the account may run the command on every key the call creates EXCEPT its hash (metadata) keys, so the
-     * first application succeeds and only the second is refused. Same shape as REACHED: label => denied command => states.
+     * historical application succeeds and only the second is refused. Current F-G4-11 preflights the explicitly selected
+     * fresh bounded/pair cases before either expiry executes. Same shape as REACHED: label => denied command => states.
      *
      * @var array<string, array<string, list<string>>>
      */
@@ -319,7 +323,7 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
 
     /**
      * @param callable(RedisFullCapabilityStore, int): mixed $call
-     * @return array{outcome: string, class: string, message: string, result: string, diff: list<string>, acl: list<array{reason: string, context: string, object: string}>, stats: array<string, string>, after: array<string, array{type: string, dump: string, expires: string}>}
+     * @return array{outcome: string, class: string, message: string, result: string, diff: list<string>, acl: list<array{reason: string, context: string, object: string}>, stats: array<string, string>, before: array<string, array{type: string, dump: string, expires: string}>, after: array<string, array{type: string, dump: string, expires: string}>}
      */
     private function observe(callable $call, RedisFullCapabilityStore $store, int $now, string $user): array
     {
@@ -344,7 +348,7 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
 
         return [
             'outcome' => $outcome, 'class' => $class, 'message' => substr($message, 0, 100), 'result' => $result,
-            'diff' => $this->diff($before, $after), 'acl' => $this->aclLog($user), 'stats' => $this->expiryStats(), 'after' => $after,
+            'diff' => $this->diff($before, $after), 'acl' => $this->aclLog($user), 'stats' => $this->expiryStats(), 'before' => $before, 'after' => $after,
         ];
     }
 
@@ -445,11 +449,41 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
             : $this->account($kind . '-' . $shape, $denied, $kind === 'limited');
         $row = $this->observe($call, new RedisFullCapabilityStore($this->host($shape, $user), self::NAMESPACE), $now, $user);
         $expectReached = in_array($state, ($kind === 'second' ? self::SECOND : self::REACHED)[$label][$denied] ?? [], true);
-        $this->record([
-            'kind' => $kind, 'label' => $label, 'denied' => $denied, 'shape' => $shape, 'state' => $state, 'expected' => $expectReached ? 'denied' : 'unreached',
+        // Select the oracle from the fixture and contract, never from the response or a detected source capability.
+        $expectPreflight = self::contract() === 'after' && $state === 'fresh' && $denied === 'expire'
+            && ($kind === 'wide' || $kind === 'second')
+            && in_array($label, ['addDistinctBoundedAt', 'addDistinctBoundedWithSnapshotAt', 'addDeviceCapPairAt'], true);
+        $expectedMessage = '';
+        if ($expectPreflight) {
+            // A single snapshot plans SADD/EXPIRE/HSET/EXPIRE; the pair prepends DEL to each five-operation scope.
+            $position = $label === 'addDeviceCapPairAt' ? ($kind === 'second' ? 5 : 3) : ($kind === 'second' ? 4 : 2);
+            $total = $label === 'addDeviceCapPairAt' ? 10 : 4;
+            $expectedMessage = "NOPERM bounded observation: the account may not run EXPIRE (plan step $position of $total)";
+        }
+        $evidence = [
+            'kind' => $kind, 'label' => $label, 'denied' => $denied, 'shape' => $shape, 'state' => $state, 'expected' => $expectPreflight ? 'preflight' : ($expectReached ? 'denied' : 'unreached'),
             'outcome' => $row['outcome'], 'class' => $row['class'], 'message' => $row['message'], 'diff' => $row['diff'], 'acl' => $row['acl'], 'stats' => $row['stats'], 'sentinel_dump' => md5($row['after'][self::SENTINEL]['dump']), 'int' => PHP_INT_SIZE,
-        ]);
+        ];
+        if ($expectPreflight) {
+            $evidence['preflight'] = ['expectedMessage' => $expectedMessage, 'fullSnapshotEqual' => $row['before'] === $row['after'],
+                'before' => $row['before'], 'after' => $row['after']];
+            fwrite(STDERR, "\nF-G4-11-270 $label/$kind/$shape diagnostic: " . json_encode($evidence, JSON_THROW_ON_ERROR) . "\n");
+        }
+        $this->record($evidence);
         $id = "$label / -$denied / $shape / $state / $kind";
+        if ($expectPreflight) {
+            self::assertSame('threw', $row['outcome'], $id);
+            self::assertSame(self::CLIENT_CLASS[$shape], $row['class'], $id . ': native client provenance is unchanged.');
+            self::assertSame($expectedMessage, $row['message'], $id . ': exact actual-plan command and position.');
+            self::assertStringNotContainsString(self::NAMESPACE, $row['message'], $id);
+            self::assertStringNotContainsString('maatify:', $row['message'], $id);
+            self::assertSame([], $row['acl'], $id . ': no denied expiry was executed.');
+            if (isset($row['stats']['expire'])) {
+                self::assertSame('calls=0,rejected_calls=0,failed_calls=0', $row['stats']['expire'], $id . ': all expiry counters are zero.');
+            }
+            self::assertSame($row['before'], $row['after'], $id . ': full type/DUMP/PEXPIRETIME snapshot is unchanged.');
+            return;
+        }
         if ($expectReached) {
             // A denial that was REACHED: Redis logs exactly the denied command, the caller sees the range text, and nothing is left behind.
             if ($kind === 'second') {
@@ -924,7 +958,7 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
         return $kept;
     }
 
-    /** `before` reproduces the study's finding on the unfixed code; the default `after` is the contract of #270. */
+    /** Historical `before` replays its original source SHA; current `after` adds only the six explicit F-G4-11 preflight fixtures. */
     private static function contract(): string
     {
         return getenv('EXPIRY_270_CONTRACT') === 'before' ? 'before' : 'after';
