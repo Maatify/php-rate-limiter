@@ -594,6 +594,12 @@ LUA;
      * it was read from; otherwise applies every changed key and returns 1.
      * With ARGV[2] = 'verify' it only answers whether every key still matches.
      *
+     * After comparison and the exact-expiry guard, all changed entries validate before plan execution. ZSET scores
+     * retain their original bytes and must be full decimal/scientific values or emitted explicit infinities accepted
+     * by Redis, without NaN, overflow to infinity or nonzero-mantissa underflow to zero; nonzero subnormals remain valid.
+     * HASH field order must be a contiguous string list containing each value-map field exactly once. Validation
+     * preserves the accepted order, arguments and batching; its refusal is the existing malformed-plan server error.
+     *
      * After the comparison and the validation, and before the first write, the write plan (the exact commands, keys, arguments, order and batches
      * the save will issue) is checked, command by command, with `redis.acl_check_cmd` (Redis 7.0), and the same plan is then executed. A command
      * the account may not run refuses the whole save with a `NOPERM request commit: …` error reply that names the command and its position, never a
@@ -633,6 +639,18 @@ if __writes then
   end
 end
 -- The whole plan is validated before the first write: a script error after a write has started cannot be undone.
+local function __validScore(raw)
+  -- Redis/Lua emit decimal/scientific scores or explicit infinities. Validate their full bytes, not Lua's more permissive strtod alone.
+  if raw == 'inf' or raw == '+inf' or raw == '-inf' then return true end
+  local unsigned = string.gsub(raw, '^[+-]', '')
+  local mantissa = string.match(unsigned, '^(.-)[eE][+-]?%d+$') or unsigned
+  if not string.match(mantissa, '^%d+%.?%d*$') and not string.match(mantissa, '^%.%d+$') then return false end
+  local number = tonumber(raw)
+  if number == nil or number ~= number or number == math.huge or number == -math.huge then return false end
+  -- Redis string2d accepts nonzero subnormals, but refuses ERANGE underflow to zero. Exponent digits do not make a zero mantissa nonzero.
+  if number == 0 and string.find(mantissa, '[1-9]') then return false end
+  return true
+end
 for _, entry in ipairs(__entries) do
   local e = entry[2]
   if e.d == 1 then
@@ -643,18 +661,23 @@ for _, entry in ipairs(__entries) do
         for name, value in pairs(e.v) do
           if type(name) ~= 'string' then valid = false end
           if e.t == 'h' and type(value) ~= 'string' then valid = false end
-          if e.t == 'z' and (type(value) ~= 'string' or tonumber(value) == nil) then valid = false end
+          if e.t == 'z' and (type(value) ~= 'string' or not __validScore(value)) then valid = false end
           if e.t == 'e' and value ~= true then valid = false end
         end
       end
     end
     if valid and e.t == 'h' then
-      local ordered = 0
+      local ordered, seen = 0, {}
       if type(e.f) ~= 'table' then valid = false else
-        for _, field in ipairs(e.f) do
+        for index, field in pairs(e.f) do
           ordered = ordered + 1
-          if e.v[field] == nil then valid = false end
+          if type(index) ~= 'number' or index < 1 or index % 1 ~= 0 or type(field) ~= 'string' or e.v[field] == nil or seen[field] then
+            valid = false
+          else
+            seen[field] = true
+          end
         end
+        for index = 1, ordered do if e.f[index] == nil then valid = false end end
         local total = 0
         for _ in pairs(e.v) do total = total + 1 end
         if total ~= ordered then valid = false end

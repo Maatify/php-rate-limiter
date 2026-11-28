@@ -1246,6 +1246,216 @@ final class RequestAtomicityRedisTest extends TestCase
         self::assertSame(7, $rival->get('verify-following')?->value);
     }
 
+    /** @return iterable<string, array{string, string, bool, string}> */
+    public static function f10MalformedPlans(): iterable
+    {
+        foreach (['leading-space', 'trailing-space', 'nul', 'nan', 'overflow', 'underflow', 'text', 'exponent', 'sign', 'dots'] as $case) {
+            yield 'zset/' . $case . '/absent' => ['z', $case, false, 'validation'];
+        }
+        foreach (['duplicate', 'missing', 'foreign', 'non-string', 'non-list', 'gap'] as $case) {
+            yield 'hash/' . $case . '/absent' => ['h', $case, false, 'validation'];
+        }
+        foreach (['z' => 'leading-space', 'h' => 'duplicate'] as $kind => $case) {
+            yield $kind . '/existing' => [$kind, $case, true, 'validation'];
+            yield $kind . '/conflict-first' => [$kind, $case, true, 'conflict'];
+            yield $kind . '/expiry-first' => [$kind, $case, true, 'expiry'];
+        }
+    }
+
+    /** Synthetic internal plans extend the existing direct COMMIT detector; they are not public-caller exploit fixtures. */
+    #[\PHPUnit\Framework\Attributes\DataProvider('f10MalformedPlans')]
+    public function testF10TheWholePlanRejectsMalformedScoresAndHashOrderBeforeWriting(string $kind, string $case, bool $existing, string $precedence): void
+    {
+        $wire = $this->independentWire();
+        $clock = $this->executor->execute(['TIME']);
+        self::assertIsArray($clock);
+        self::assertIsString($clock[0]);
+        $expiry = (string) ((int) $clock[0] + 3600) . '000';
+        $keys = ['f10-first', 'f10-second', 'f10-later'];
+        $this->executor->execute(['SET', 'f10-control', 'outside-plan']);
+        $this->executor->execute(['PEXPIREAT', 'f10-control', $expiry]);
+        if ($existing) {
+            $this->executor->execute(['SET', $keys[0], 'first-before']);
+            $this->executor->execute($kind === 'z' ? ['ZADD', $keys[1], '10', 'old-member'] : ['HSET', $keys[1], 'a', 'old-a', 'b', 'old-b']);
+            $this->executor->execute(['SET', $keys[2], 'later-before']);
+            foreach ($keys as $key) {
+                $this->executor->execute(['PEXPIREAT', $key, $expiry]);
+            }
+        }
+        if ($precedence === 'expiry') {
+            $this->executor->execute(['PEXPIREAT', $keys[0], '9007199254740993']);
+        }
+        // Derive every fingerprint from a real overlay read, including the existing fixture's physical expiry.
+        $read = $wire->execute(['EVAL', RedisRequestOverlay::wrap("for _, key in ipairs(KEYS) do redis.call('TYPE', key) end return 1"), 3, ...$keys, '[]']);
+        self::assertIsArray($read);
+        self::assertIsString($read[0]);
+        $delta = json_decode($read[0], true, 512, JSON_THROW_ON_ERROR);
+        self::assertIsArray($delta);
+        $states = [];
+        foreach ($delta as $pair) {
+            self::assertIsArray($pair);
+            self::assertIsString($pair[0]);
+            self::assertIsString($pair[1]);
+            $states[$pair[0]] = json_decode($pair[1], true, 512, JSON_THROW_ON_ERROR);
+        }
+        $scores = ['leading-space' => ' 1', 'trailing-space' => "1\t", 'nul' => "1\0", 'nan' => 'nan', 'overflow' => '1e9999',
+            'underflow' => '1e-9999', 'text' => 'not-a-score', 'exponent' => '1e+', 'sign' => '+', 'dots' => '1..2'];
+        $fields = match ($case) {
+            'duplicate' => ['a', 'a'], 'missing' => ['a'], 'foreign' => ['a', 'foreign'], 'non-string' => ['a', 1],
+            'non-list' => (object) ['named' => 'a', 'extra' => 'b'], 'gap' => ['a', null, 'b'], default => ['a', 'b'],
+        };
+        $plan = [];
+        foreach ($keys as $index => $key) {
+            self::assertArrayHasKey($key, $states);
+            self::assertIsArray($states[$key]);
+            $entry = $states[$key];
+            $entry['d'] = 1;
+            $entry['x'] = $expiry;
+            $entry['t'] = $index === 1 ? $kind : 's';
+            $entry['v'] = $index === 1 ? ($kind === 'z' ? ['member' => $scores[$case]] : ['a' => 'new-a', 'b' => 'new-b']) : ($index === 0 ? 'first-after' : 'later-after');
+            if ($kind === 'h' && $index === 1) {
+                $entry['f'] = $fields;
+            }
+            $plan[] = [$key, json_encode($entry, JSON_THROW_ON_ERROR)];
+        }
+        if ($precedence === 'conflict') {
+            $rival = $this->independentWire();
+            $rival->execute(['SET', $keys[0], 'rival-first']);
+            $rival->execute(['PEXPIREAT', $keys[0], $expiry]);
+        }
+        $before = $this->exactSnapshot();
+        $reply = null;
+        $caught = null;
+        try {
+            $reply = $wire->execute(['EVAL', RedisRequestOverlay::commitScript(), 3, ...$keys, json_encode($plan, JSON_THROW_ON_ERROR)]);
+        } catch (\Throwable $error) {
+            $caught = $error;
+        }
+        $after = $this->exactSnapshot();
+        $message = $caught?->getMessage();
+        $category = $caught === null ? ($reply === 0 ? 'conflict' : 'success')
+            : (str_contains($message ?? '', 'malformed plan') ? 'malformed' : (str_contains($message ?? '', 'expiry beyond the exactly readable range') ? 'expiry' : 'other-error'));
+        $actual = ['reply' => $reply, 'category' => $category, 'backend' => $caught instanceof BackendFailureException, 'unchanged' => $before === $after];
+        $diagnostic = json_encode(['actual' => $actual, 'errorClass' => $caught === null ? null : $caught::class, 'errorMessage' => $message,
+            'keys' => $keys, 'plan' => $plan, 'beforeSnapshot' => $before, 'afterSnapshot' => $after], JSON_THROW_ON_ERROR);
+        fwrite(STDERR, "\nF-G4-10 reject/$kind/$case/" . ($existing ? 'existing' : 'absent') . "/$precedence diagnostic: $diagnostic\n");
+        self::assertSame(['reply' => $precedence === 'conflict' ? 0 : null, 'category' => $precedence === 'validation' ? 'malformed' : $precedence,
+            'backend' => false, 'unchanged' => true], $actual, $diagnostic);
+        if ($precedence !== 'conflict') {
+            self::assertInstanceOf(RateLimiterException::class, $caught);
+        }
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function f10ValidScores(): iterable
+    {
+        foreach (['1', '-1', '1.25', '-1.25', '1e2', '-2.5e-3', '0', '-0', '+0', '0.000e-9999',
+            '1.7976931348623157e308', '-1.7976931348623157e308', '2.2250738585072014e-308',
+            '4.9406564584124654e-324', '-4.9406564584124654e-324', 'inf', '+inf', '-inf'] as $score) {
+            yield $score => [$score];
+        }
+    }
+
+    /** Direct Redis is the independent score parser/canonical-content oracle; the second save consumes real overlay output. */
+    #[\PHPUnit\Framework\Attributes\DataProvider('f10ValidScores')]
+    public function testF10ValidScoresMatchDirectRedisAndRoundTripTheRealOverlay(string $score): void
+    {
+        $wire = $this->independentWire();
+        $oracle = $this->independentWire();
+        $clock = $oracle->execute(['TIME']);
+        self::assertIsArray($clock);
+        self::assertIsString($clock[0]);
+        $expiry = (string) ((int) $clock[0] + 3600) . '000';
+        $direct = $oracle->execute(['ZADD', 'f10-score-oracle', $score, 'member']);
+        $oracle->execute(['PEXPIREAT', 'f10-score-oracle', $expiry]);
+        $before = $this->exactSnapshot();
+        $entry = json_encode(['t' => 'z', 'v' => ['member' => $score], 'o' => 'n', 'd' => 1, 'x' => $expiry], JSON_THROW_ON_ERROR);
+        $reply = null;
+        $caught = null;
+        try {
+            $reply = $wire->execute(['EVAL', RedisRequestOverlay::commitScript(), 1, 'f10-score-target', json_encode([['f10-score-target', $entry]], JSON_THROW_ON_ERROR)]);
+        } catch (\Throwable $error) {
+            $caught = $error;
+        }
+        $canonical = $oracle->execute(['ZRANGE', 'f10-score-oracle', 0, -1, 'WITHSCORES']);
+        $saved = $oracle->execute(['ZRANGE', 'f10-score-target', 0, -1, 'WITHSCORES']);
+        $actualExpiry = $oracle->execute(['PEXPIRETIME', 'f10-score-target']);
+        $diagnostic = json_encode(['rawScoreHex' => bin2hex($score), 'directReply' => $direct, 'commitReply' => $reply,
+            'error' => $caught?->getMessage(), 'referenceContents' => $canonical, 'savedContents' => $saved,
+            'plannedExpiry' => $expiry, 'actualExpiry' => $actualExpiry, 'beforeSnapshot' => $before, 'afterSnapshot' => $this->exactSnapshot()], JSON_THROW_ON_ERROR);
+        fwrite(STDERR, "\nF-G4-10 valid-score/$score diagnostic: $diagnostic\n");
+        self::assertNull($caught, $diagnostic);
+        self::assertSame(1, $direct);
+        self::assertSame(1, $reply);
+        self::assertSame($canonical, $saved);
+        self::assertTrue(is_int($actualExpiry) || is_string($actualExpiry));
+        self::assertSame($expiry, (string) $actualExpiry);
+        $roundTrip = $wire->execute(['EVAL', RedisRequestOverlay::wrap("local flat = redis.call('ZRANGE', KEYS[1], 0, -1, 'WITHSCORES'); redis.call('ZADD', KEYS[1], flat[2], 'copy'); return redis.call('ZRANGE', KEYS[1], 0, -1, 'WITHSCORES')"), 1, 'f10-score-target', '[]']);
+        self::assertIsArray($roundTrip);
+        self::assertIsString($roundTrip[0]);
+        $oracle->execute(['ZADD', 'f10-score-oracle', $score, 'copy']);
+        $roundReply = $wire->execute(['EVAL', RedisRequestOverlay::commitScript(), 1, 'f10-score-target', $roundTrip[0]]);
+        $expectedContents = $oracle->execute(['ZRANGE', 'f10-score-oracle', 0, -1, 'WITHSCORES']);
+        $actualContents = $oracle->execute(['ZRANGE', 'f10-score-target', 0, -1, 'WITHSCORES']);
+        $roundExpiry = $oracle->execute(['PEXPIRETIME', 'f10-score-target']);
+        $roundDiagnostic = json_encode(['delta' => $roundTrip[0], 'reply' => $roundReply, 'referenceContents' => $expectedContents,
+            'savedContents' => $actualContents, 'plannedExpiry' => $expiry, 'actualExpiry' => $roundExpiry, 'snapshot' => $this->exactSnapshot()], JSON_THROW_ON_ERROR);
+        fwrite(STDERR, "\nF-G4-10 overlay-score/$score diagnostic: $roundDiagnostic\n");
+        self::assertSame(1, $roundReply, $roundDiagnostic);
+        self::assertSame($expectedContents, $actualContents);
+        self::assertTrue(is_int($roundExpiry) || is_string($roundExpiry));
+        self::assertSame($expiry, (string) $roundExpiry);
+    }
+
+    /** @return iterable<string, array{int}> */
+    public static function f10ValidHashes(): iterable
+    {
+        yield 'nonalphabetical binary fields' => [3];
+        yield '121 pairs crossing the 200 argument batch' => [121];
+    }
+
+    /** The listpack fixture exposes insertion order; every pair and absolute expiry is checked, including across HSET batches. */
+    #[\PHPUnit\Framework\Attributes\DataProvider('f10ValidHashes')]
+    public function testF10ValidHashOrderAndBatchesPreserveEveryFieldAndValue(int $count): void
+    {
+        $wire = $this->independentWire();
+        $oracle = $this->independentWire();
+        $clock = $oracle->execute(['TIME']);
+        self::assertIsArray($clock);
+        self::assertIsString($clock[0]);
+        $expiry = (string) ((int) $clock[0] + 3600) . '000';
+        $fields = $count === 3 ? ['zeta', 'alpha', "binary\0field"] : array_map(static fn(int $i): string => 'field-' . $i, range($count, 1));
+        $values = [];
+        $flat = [];
+        foreach ($fields as $index => $field) {
+            $value = $index === 1 ? '' : "value\0" . $index;
+            $values[$field] = $value;
+            $flat[] = $field;
+            $flat[] = $value;
+        }
+        foreach (array_chunk($flat, 200) as $batch) {
+            $oracle->execute(['HSET', 'f10-hash-oracle', ...$batch]);
+        }
+        $oracle->execute(['PEXPIREAT', 'f10-hash-oracle', $expiry]);
+        $before = $this->exactSnapshot();
+        $entry = json_encode(['t' => 'h', 'v' => $values, 'f' => $fields, 'o' => 'n', 'd' => 1, 'x' => $expiry], JSON_THROW_ON_ERROR);
+        $reply = $wire->execute(['EVAL', RedisRequestOverlay::commitScript(), 1, 'f10-hash-target', json_encode([['f10-hash-target', $entry]], JSON_THROW_ON_ERROR)]);
+        $saved = $oracle->execute(['HGETALL', 'f10-hash-target']);
+        $reference = $oracle->execute(['HGETALL', 'f10-hash-oracle']);
+        $encoding = $oracle->execute(['OBJECT', 'ENCODING', 'f10-hash-target']);
+        $actualExpiry = $oracle->execute(['PEXPIRETIME', 'f10-hash-target']);
+        $diagnostic = json_encode(['reply' => $reply, 'plannedPairs' => $flat, 'savedPairs' => $saved, 'referencePairs' => $reference,
+            'encoding' => $encoding, 'plannedExpiry' => $expiry, 'actualExpiry' => $actualExpiry,
+            'beforeSnapshot' => $before, 'afterSnapshot' => $this->exactSnapshot()], JSON_THROW_ON_ERROR);
+        fwrite(STDERR, "\nF-G4-10 valid-hash/$count diagnostic: $diagnostic\n");
+        self::assertSame(1, $reply, $diagnostic);
+        self::assertSame('listpack', $encoding);
+        self::assertSame($flat, $reference);
+        self::assertSame($flat, $saved, 'All fields/values and their planned order survive both HSET batches.');
+        self::assertTrue(is_int($actualExpiry) || is_string($actualExpiry));
+        self::assertSame($expiry, (string) $actualExpiry);
+    }
+
     public function testTheRetryBudgetMustBePositive(): void
     {
         $this->expectException(RateLimiterException::class);
