@@ -357,6 +357,10 @@ final class OwnershipRegistry
     /**
      * Admission of an operation on one resource: nested in the owner's call (null), a short-lived owner when nobody owns it, or refused.
      *
+     * F-G4-06: the Host provider lookup on an owned resource is a Host crossing of the whole owning token (`$token->crossings`), not only
+     * the target slot's record (`$record->lookups`), so re-entry through any sibling resource on the same token is refused until the
+     * lookup finishes or unwinds.
+     *
      * @throws OverlappingRequestException
      * @throws RateLimiterException
      */
@@ -374,6 +378,7 @@ final class OwnershipRegistry
         $domain = self::domainOf($resource, $slot, $own);
         $lease = $domain->provider();
         $record->lookups++;
+        $token->crossings++;
         try {
             $key = $lease->currentContext();
         } catch (\Throwable $failure) {
@@ -382,6 +387,7 @@ final class OwnershipRegistry
             if ($slot->record === $record) {
                 $record->lookups--;
             }
+            $token->crossings--;
         }
         if (! $token->sameContext($key)) {
             throw new OverlappingRequestException($entry);
