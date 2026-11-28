@@ -308,8 +308,12 @@ implementations:
 
   A callback must not assume that catching an overlay step's error permits saving its other changes. The official Redis
   store rejects normal return after such an incomplete step with its first native/decoding/validation error, without
-  verify/retry/commit; an observed backend failure retains precedence. If a later error ends the callback, it keeps its
-  identity unless trusted held state proves a conflict; a verify failure keeps its own error. Unknown reads alone never
+  verify/retry/commit; observed backend followed by normal return throws the first backend failure. With observed
+  backend, a later callback Throwable is thrown unchanged without verify/retry, as are explicit backend/overlap errors.
+  Otherwise only a proven conflict in trusted held state permits retry. When verify is reached, only 0/'0' proves
+  conflict and 1/'1' means unchanged; other replies throw non-backend
+  `RateLimiterException('Malformed request verify response.')` without retry. Executor errors propagate unchanged, and
+  verification failure takes precedence over the callback error. Unknown reads alone never
   justify retry or save. A custom store with provable reads may implement that guarantee differently. PING, independent
   admission outcome claims, ownership and unknown outcome after a lost commit reply keep their documented boundaries.
   See [failure semantics](../FAILURE_SEMANTICS.md#261-complete-read-sets-before-request-save-dec-051) and DEC-051.

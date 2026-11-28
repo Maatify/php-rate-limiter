@@ -318,10 +318,13 @@ becomes trusted state. On normal callback return, an observed backend failure ta
 same first incomplete-step error is thrown without verify, retry or commit, even with no held writes. Root/E1/nested and
 admission overlay operations share this boundary; each outer attempt and root clone starts without transient failure.
 
-When a Throwable ends the callback, backend/overlap and observed-backend precedence remain unchanged. Otherwise only a
+When a Throwable ends the callback, explicit backend/overlap errors propagate unchanged without verify/retry. With an
+observed backend failure, a later callback Throwable also propagates unchanged without verify/retry. Otherwise only a
 verified conflict in the previously trusted held set permits bounded retry. Empty state or verify=1 throws the same
-callback error; partial verification does not prove a failed step's unknown reads current. A verification failure itself
-keeps its native error (including ACL refusal), rather than the earlier incomplete-step error. There is no repair read or
+callback error; partial verification does not prove a failed step's unknown reads current. When verification is reached,
+only 0/'0' proves conflict and 1/'1' means unchanged. Other replies throw non-backend
+`RateLimiterException('Malformed request verify response.')` without retry. An executor failure propagates unchanged
+(including ACL refusal) and takes precedence over the callback error. There is no repair read or
 retry merely because an incomplete error was recorded. Pre-dispatch validation and semantic PHP validation after a
 complete delta do not mark every callback error as an incomplete overlay operation.
 

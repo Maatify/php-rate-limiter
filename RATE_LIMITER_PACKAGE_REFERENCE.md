@@ -539,11 +539,14 @@ The operational reader derives only the real enforcement keys for the supplied c
 A caught failed step does not authorize saving when its required reads cannot be proved. The official Redis adapter
 records the first unchanged non-backend error from overlay dispatch or reply/delta import, stages the entire delta
 before publishing it, and refuses a normal callback return with that first error without verify/retry/commit. An observed
-backend failure takes precedence; a later Throwable ending the callback keeps its identity under F-G4-07.
+backend failure followed by normal return throws the first backend failure; with observed backend, a later callback
+Throwable is thrown unchanged without verify/retry (F-G4-07). Explicit backend/overlap also bypass verification.
 
 Without an observed backend failure, a thrown callback error may trigger bounded retry only after verification proves a
 conflict in previously trusted held state. Empty state or verify=1 does not prove unknown reads current and throws the
-callback error unchanged; a failure of verify keeps its own exception. Pre-dispatch and post-import semantic validation
+callback error unchanged. When verify is reached, only 0/'0' proves conflict and 1/'1' means unchanged; any other reply
+throws non-backend `RateLimiterException('Malformed request verify response.')` without retry. An executor
+Throwable propagates unchanged; verification failure takes precedence over the callback error. Pre-dispatch and post-import semantic validation
 are not generically classified as incomplete overlay dispatch. Base/E1, nested evaluation and admission overlay share
 the boundary; subsequent attempts, independent requests and root clones start clean. Custom implementations may prove
 completeness differently without adopting an adapter-specific marker. Independent claims, PING, failure-mode policy,

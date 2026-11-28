@@ -3272,7 +3272,9 @@ LUA;
      * retry or commit, even with no held writes; an observed backend failure takes precedence as above. If an error
      * ends the callback, a verified conflict in the previously trusted held set may still retry within the bounds.
      * Empty state or verify=1 throws that callback error unchanged and does not prove the failed step's unknown
-     * reads current; a failure raised by verify keeps its own exception. Pre-dispatch validation and semantic PHP
+     * reads current. Verify accepts only 0/'0' as conflict and 1/'1' as unchanged; any other reply throws
+     * `RateLimiterException('Malformed request verify response.')` without retry. When verification is reached,
+     * its own error (including an executor's unchanged Throwable) takes precedence. Pre-dispatch validation and semantic PHP
      * validation after a complete delta do not mark the request merely because they throw. Root/E1/nested/admission
      * overlay operations share the marker, cleared at each outer attempt and exit; a root clone starts clean.
      *
@@ -3460,7 +3462,9 @@ LUA;
     }
 
     /**
-     * Whether every key the request read still matches the state it was read in. Writes nothing.
+     * Whether the supplied trusted held set still matches its read fingerprints. Writes nothing.
+     * It need not include unknown reads of an incomplete step. Only 1/'1' means unchanged and 0/'0'
+     * proves a conflict; any other reply is refused without retry. Executor errors propagate unchanged.
      *
      * @param array<string, string> $state
      */
@@ -3472,7 +3476,14 @@ LUA;
         }
         $result = $this->eval(RedisRequestOverlay::commitScript(), array_map('strval', array_keys($state)), [json_encode($held, JSON_THROW_ON_ERROR), 'verify']);
 
-        return $result === 1 || $result === '1';
+        if ($result === 1 || $result === '1') {
+            return true;
+        }
+        if ($result === 0 || $result === '0') {
+            return false;
+        }
+
+        throw new RateLimiterException('Malformed request verify response.');
     }
 
     /**

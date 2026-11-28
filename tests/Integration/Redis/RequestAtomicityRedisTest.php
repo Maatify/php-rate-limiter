@@ -1116,6 +1116,136 @@ final class RequestAtomicityRedisTest extends TestCase
         self::assertSame([], $signals->getEmitted());
     }
 
+    /** @return iterable<string, array{bool, bool, string, mixed}> */
+    public static function requestVerifyReplyCases(): iterable
+    {
+        foreach ([true, false] as $incomplete) {
+            $context = $incomplete ? 'incomplete overlay' : 'complete delta then callback error';
+            foreach (['false' => false, 'null' => null, 'two' => 2, 'zero-zero' => '00', 'zero-one' => '01',
+                'true' => true, 'float-zero' => 0.0, 'float-one' => 1.0, 'array' => []] as $name => $reply) {
+                yield $context . ' / invalid ' . $name => [$incomplete, false, 'invalid', $reply];
+            }
+            foreach (['int', 'string'] as $shape) {
+                yield $context . ' / real zero as ' . $shape => [$incomplete, true, $shape, null];
+                yield $context . ' / real one as ' . $shape => [$incomplete, false, $shape, null];
+            }
+        }
+    }
+
+    /** A real verify=1 is not a conflict when the executor supplies malformed data; canonical 0/1 retain their meaning. */
+    #[\PHPUnit\Framework\Attributes\DataProvider('requestVerifyReplyCases')]
+    public function testOnlyCanonicalVerifyRepliesCanClassifyTheTrustedHeldSet(bool $incomplete, bool $conflict, string $shape, mixed $malformed): void
+    {
+        $rival = new RedisFullCapabilityStore($this->independentWire(), self::NAMESPACE);
+        $rival->incrementAt('verify-a', 3600, 10, self::NOW);
+        $rival->incrementAt('verify-b', 3600, PHP_INT_MAX, self::NOW);
+        $expectedState = $this->exactSnapshot();
+        $probe = new class {
+            public int $evaluations = 0;
+            public int $rivals = 0;
+            public ?\Throwable $callbackError = null;
+            /** @var list<array{string, list<string>, mixed}> */
+            public array $trace = [];
+            /** @var list<mixed> */
+            public array $supplied = [];
+        };
+        if (! $incomplete) {
+            $probe->callbackError = new \LogicException('complete step callback error');
+        }
+        $mutateRival = function () use ($rival, $probe, $conflict, &$expectedState): void {
+            if ($probe->rivals === 0) {
+                $probe->rivals++;
+                $rival->incrementAt('verify-b', 3600, -1, self::NOW);
+                if ($conflict) {
+                    $rival->incrementAt('verify-a', 3600, 5, self::NOW);
+                }
+                $expectedState = $this->exactSnapshot();
+            }
+        };
+        $wire = $this->independentWire();
+        $executor = new CallableRedisCommandExecutor(function (array $command) use ($wire, $probe, $mutateRival, $conflict, $shape, $malformed): mixed {
+            try {
+                $reply = $wire->execute($command);
+            } catch (\Throwable $error) {
+                $probe->trace[] = ['error', OverlayWire::keys($command), $error::class . ': ' . $error->getMessage()];
+                $probe->callbackError ??= $error;
+                $mutateRival();
+                throw $error;
+            }
+            self::traceRequestWire($command, $reply, $probe->trace);
+            if (OverlayWire::isScript($command, RedisRequestOverlay::commitScript()) && end($command) === 'verify' && $probe->supplied === []) {
+                // The real Redis fingerprint comparison runs first. Valid shape controls never change its value.
+                self::assertSame($conflict ? 0 : 1, $reply);
+                $supplied = $shape === 'invalid' ? $malformed : ($shape === 'string' ? (string) $reply : $reply);
+                $probe->supplied[] = $supplied;
+
+                return $supplied;
+            }
+
+            return $reply;
+        });
+        $store = new RedisFullCapabilityStore($executor, self::NAMESPACE);
+        $caught = null;
+        $returned = null;
+        try {
+            $returned = $store->transactRequest(function () use ($store, $probe, $incomplete, $mutateRival): string {
+                $probe->evaluations++;
+                $store->incrementAt('verify-a', 3600, 2, self::NOW);
+                if ($probe->evaluations > 1) {
+                    $store->incrementAt('verify-b', 3600, 1, self::NOW);
+
+                    return 'clean evaluation';
+                }
+                if ($incomplete) {
+                    $store->incrementAt('verify-b', 3600, 1, self::NOW); // Real native overflow, not an injected error.
+                }
+                $mutateRival();
+                self::assertNotNull($probe->callbackError);
+                throw $probe->callbackError;
+            });
+        } catch (\Throwable $error) {
+            $caught = $error;
+        }
+        $after = $this->exactSnapshot();
+        $summary = self::requestSaveTrace($probe->trace);
+        $invalid = $shape === 'invalid';
+        $retry = ! $invalid && $conflict;
+        $actual = [
+            'evaluations' => $probe->evaluations, 'rivals' => $probe->rivals, 'realVerify' => $summary['verify'],
+            'suppliedVerify' => $probe->supplied, 'suppliedType' => get_debug_type($probe->supplied[0] ?? null),
+            'commit' => $summary['commit'], 'returned' => $returned,
+            'errorClass' => $caught === null ? null : $caught::class, 'errorMessage' => $caught?->getMessage(),
+            'sameCallbackError' => $caught !== null && $caught === $probe->callbackError,
+            'stateUnchanged' => $after === $expectedState, 'A' => $rival->get('verify-a')?->value,
+            'B' => $rival->get('verify-b')?->value,
+        ];
+        $validReply = $shape === 'string' ? (string) (int) ! $conflict : (int) ! $conflict;
+        $expectedReply = $invalid ? $malformed : $validReply;
+        $expected = [
+            'evaluations' => $retry ? 2 : 1, 'rivals' => 1, 'realVerify' => [$conflict ? 0 : 1],
+            'suppliedVerify' => [$expectedReply], 'suppliedType' => get_debug_type($expectedReply),
+            'commit' => $retry ? [1] : [], 'returned' => $retry ? 'clean evaluation' : null,
+            'errorClass' => $retry ? null : ($invalid || $incomplete ? RateLimiterException::class : \LogicException::class),
+            'errorMessage' => $retry ? null : ($invalid ? 'Malformed request verify response.' : $probe->callbackError?->getMessage()),
+            'sameCallbackError' => ! $invalid && ! $retry, 'stateUnchanged' => ! $retry,
+            'A' => $retry ? 17 : 10, 'B' => $retry ? PHP_INT_MAX : PHP_INT_MAX - 1,
+        ];
+        self::assertSame($expected, $actual, self::incompleteDiagnostic(
+            'verify/' . ($incomplete ? 'incomplete' : 'complete') . '/' . $shape . '/' . get_debug_type($expectedReply) . '/' . json_encode($expectedReply, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION),
+            ['actual' => $actual, 'wire' => $probe->trace, 'expectedSnapshot' => $expectedState, 'afterSnapshot' => $after],
+        ));
+        self::assertNotNull($probe->callbackError);
+        if ($incomplete) {
+            self::assertStringContainsString('score integer overflow', $probe->callbackError->getMessage());
+        }
+        self::assertSame([[self::physicalScore('verify-a')]], $summary['verifyKeys'], 'No new read repairs the unknown B provenance.');
+        self::assertNotInstanceOf(BackendFailureException::class, $caught);
+        $probe->trace = [];
+        $store->transactRequest(static fn(): int => $store->incrementAt('verify-following', 3600, 7, self::NOW));
+        self::assertSame([1], self::requestSaveTrace($probe->trace)['commit']);
+        self::assertSame(7, $rival->get('verify-following')?->value);
+    }
+
     public function testTheRetryBudgetMustBePositive(): void
     {
         $this->expectException(RateLimiterException::class);

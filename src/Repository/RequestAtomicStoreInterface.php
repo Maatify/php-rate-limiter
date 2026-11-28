@@ -28,9 +28,13 @@ namespace Maatify\RateLimiter\Repository;
  *   error with no proven conflict is thrown unchanged. A verified change in a trustworthy held read set may
  *   identify a combination of reads that no single moment held, so the implementation may recalculate within its
  *   bound. Unknown reads alone do not establish a conflict; a partial verification cannot prove them current.
- *   The bundled Redis store refuses a normal return after an incomplete overlay step with that step's first
- *   unchanged Throwable. If a later error ends the callback, that later error remains the answer unless a trusted
- *   held read proves a conflict. A failure of verification itself keeps its own exception contract.
+ *   In the bundled Redis store, observed backend failure followed by normal return throws the first backend
+ *   failure; otherwise an incomplete step's first unchanged Throwable is thrown. With an observed backend failure,
+ *   a later Throwable ending the callback is thrown unchanged, without verify or retry. Explicit backend and overlap
+ *   exceptions also retain their identities without verify or retry. Only otherwise may trusted held state be
+ *   verified: 0/'0' proves conflict, 1/'1' means unchanged, and any other reply throws a non-backend
+ *   `RateLimiterException('Malformed request verify response.')` without retry. When verification is actually reached,
+ *   its failure takes precedence over the callback error, and an executor's Throwable propagates unchanged.
  * - A `BackendFailureException` is not retried; it is thrown so that the engine's failure handling applies (DEC-015).
  *   What it says about the save depends on when it was raised. A failure while `$evaluate` runs, or a save the
  *   backend never received, leaves nothing saved. A failure while the implementation waits for the reply to the save
@@ -54,9 +58,12 @@ interface RequestAtomicStoreInterface
      * Failure: when the state kept changing until the implementation's recalculation bound was reached, it throws
      * `RateLimitConcurrencyException` with nothing saved. An error that `$evaluate` throws over state that was still
      * current is thrown unchanged, with nothing saved, and is not retried. Unknown reads from a failed step do not
-     * authorize saving or prove a conflict. The bundled Redis store rejects normal return after an incomplete step
-     * with its first native/decoding/validation error; a later callback error and verification failures keep the
-     * precedence documented above. A `BackendFailureException` is not retried
+     * authorize saving or prove a conflict. In the bundled Redis store, observed backend plus normal return throws
+     * the first backend failure; otherwise an incomplete step's first native/decoding/validation error is thrown.
+     * Observed backend plus a later callback Throwable throws that same later error without verify/retry; explicit
+     * backend/overlap errors also bypass verification. Only when verify is reached does its own failure take
+     * precedence: malformed replies are refused without retry, and executor errors propagate unchanged.
+     * A `BackendFailureException` is not retried
      * either: raised before the save was applied it leaves nothing saved, but raised while awaiting the reply to the
      * save it leaves the outcome unknown, because the save may have been applied completely (never in part).
      *
