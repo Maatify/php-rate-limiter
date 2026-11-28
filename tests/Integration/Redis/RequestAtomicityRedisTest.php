@@ -27,7 +27,8 @@ use PHPUnit\Framework\TestCase;
 /**
  * T-5 (#185, PR #205): one evaluation request is one atomic save. Every step of the request sees the results of the
  * earlier ones, nothing reaches Redis until the decision is final, a classified rejection leaves Redis byte for byte
- * as it was, and a request whose read state moved is calculated again from a fresh read.
+ * as it was, and a request whose read state moved is calculated again from a fresh read only when no operational
+ * backend failure was observed during its evaluation.
  *
  * Runtime cases use the public builder; failure-precedence controls use the public store transaction on an isolated Redis.
  */

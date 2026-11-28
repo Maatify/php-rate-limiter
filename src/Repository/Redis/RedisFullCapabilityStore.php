@@ -3256,9 +3256,13 @@ LUA;
      *   runs to its end.
      *
      * A conflict is a commit that finds a read state changed, or an error from `$evaluate` over state that is no
-     * longer current, unless the request already observed an operational backend failure. Such a failure prevents
-     * state verification, re-evaluation and saving even if the callback catches it: a later exception that ends the
-     * callback is thrown unchanged; a normal callback return instead throws the first recorded backend failure.
+     * longer current, provided no operational backend failure was recorded by the transaction during `$evaluate`
+     * before the save. A failure recorded during that evaluation prevents state verification, re-evaluation and
+     * sending the save even if the callback catches it: a later exception that ends the callback is thrown unchanged;
+     * a normal callback return instead throws the first recorded backend failure. A connection failure during `PING`
+     * is not recorded by the transaction: `isHealthy()` returns false and keeps its failed-health-check semantics
+     * (DEC-018). This pre-save refusal does not cover a failure while awaiting a commit reply, whose outcome can be
+     * unknown as described below.
      * When either bound is reached nothing is saved and `RateLimitConcurrencyException` is thrown.
      * An error over current state, and any `BackendFailureException`, ends the call at once and is thrown as it
      * was raised. Whether anything was saved depends on when a `BackendFailureException` occurred: during the
